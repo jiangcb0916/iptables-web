@@ -53,6 +53,9 @@
       .status-indicator {
         @apply inline-block w-2 h-2 rounded-full mr-2;
       }
+      .toast {
+        @apply fixed top-4 right-4 px-4 py-3 rounded-lg shadow-lg transform transition-all translate-x-full opacity-0 z-50 flex items-center;
+      }
     }
   </style>
 </head>
@@ -77,7 +80,7 @@
           </div>
 
           <div class="sidebar-item">
-            <i class="fa fa-firewall fa-list-alt w-5 h-5 mr-3"></i>
+            <i class="fa fa-list-alt w-5 h-5 mr-3"></i>
             <span>模板管理</span>
           </div>
 
@@ -163,7 +166,7 @@
                   <th scope="col" class="px-6 py-4 text-right text-xs font-semibold text-secondary uppercase tracking-wider">操作</th>
                 </tr>
               </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
+              <tbody class="bg-white divide-y divide-gray-200" id="hosts-table-body">
                 <!-- 主机1 -->
                 <tr class="hover:bg-gray-50 transition-colors">
                   <td class="px-6 py-4 whitespace-nowrap">
@@ -302,6 +305,16 @@
     </div>
   </div>
 
+  <!-- 提示消息 -->
+  <div id="success-toast" class="toast bg-success text-white">
+    <i class="fa fa-check-circle mr-2"></i>
+    <span>操作成功！</span>
+  </div>
+  <div id="error-toast" class="toast bg-danger text-white">
+    <i class="fa fa-times-circle mr-2"></i>
+    <span>操作失败，请重试！</span>
+  </div>
+
   <script>
     // 移动端菜单按钮交互
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
@@ -335,6 +348,7 @@
     const cancelBtn = document.getElementById('cancel-btn');
     const saveBtn = document.getElementById('save-btn');
     const modalTitle = document.getElementById('modal-title');
+    const hostsTableBody = document.getElementById('hosts-table-body');
 
     // 打开新增主机模态框
     addHostBtn.addEventListener('click', () => {
@@ -349,6 +363,7 @@
         modal.querySelector('div').classList.remove('scale-95');
       }, 10);
     });
+
     // 关闭模态框的函数
     const closeModal = () => {
       modal.querySelector('div').classList.remove('scale-100');
@@ -368,19 +383,107 @@
       }
     });
 
-    // 保存主机
-    saveBtn.addEventListener('click', () => {
-      // 保存主机的逻辑
+    // 显示提示消息
+    function showToast(elementId) {
+      const toast = document.getElementById(elementId);
+      toast.classList.remove('translate-x-full', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-x-full', 'opacity-0');
+      }, 3000);
+    }
 
-      alert('主机保存成功！');
-      closeModal();
+    // 保存主机 - 发送AJAX请求
+    saveBtn.addEventListener('click', () => {
+      // 获取表单数据
+      const formData = {
+        host_name: document.getElementById('host-name').value,
+        host_identifier: document.getElementById('host-id').value,
+        ip_address: document.getElementById('ip-address').value,
+        operating_system: document.getElementById('os-type').value,
+        ssh_port: document.getElementById('ssh-port').value || 22,
+        username: document.getElementById('auth-username').value,
+        auth_method: document.getElementById('auth-method').value,
+        password: document.getElementById('auth-method').value === 'password'
+          ? document.getElementById('auth-password').value
+          : null,
+        private_key: document.getElementById('auth-method').value === 'key'
+          ? document.getElementById('auth-key').value
+          : null
+      };
+
+      // 简单验证
+      if (!formData.host_name || !formData.host_identifier || !formData.ip_address || !formData.operating_system) {
+        alert('请填写必填字段');
+        return;
+      }
+
+      // 发送POST请求
+      fetch('/host_add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // 可以添加CSRF令牌等其他头部
+        },
+        body: JSON.stringify(formData)
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('网络响应不正常');
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.success) {
+          // 显示成功提示
+          showToast('success-toast');
+
+          // 关闭模态框
+          closeModal();
+
+          // 添加新主机到表格（模拟）
+          const newRow = document.createElement('tr');
+          newRow.className = 'hover:bg-gray-50 transition-colors';
+          newRow.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap">
+              <div class="flex items-center">
+                <i class="fa fa-server text-primary text-lg mr-3"></i>
+                <div>
+                  <div class="text-sm font-medium text-dark">${formData.host_name}</div>
+                  <div class="text-xs text-secondary">${formData.host_identifier}</div>
+                </div>
+              </div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${formData.ip_address}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${formData.operating_system}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${new Date().toLocaleString()}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+              <button class="text-primary hover:text-primary/80 mr-3 transition-colors">
+                <i class="fa fa-fire"></i> 规则
+              </button>
+              <button class="text-warning hover:text-warning/80 mr-3 transition-colors">
+                <i class="fa fa-pencil"></i> 编辑
+              </button>
+              <button class="text-danger hover:text-red-700 transition-colors">
+                <i class="fa fa-trash"></i> 删除
+              </button>
+            </td>
+          `;
+          hostsTableBody.appendChild(newRow);
+        } else {
+          showToast('error-toast');
+        }
+      })
+      .catch(error => {
+        console.error('错误:', error);
+        showToast('error-toast');
+      });
     });
 
     // 编辑按钮交互
     document.querySelectorAll('button:has(.fa-pencil)').forEach(btn => {
       btn.addEventListener('click', () => {
         modalTitle.textContent = '编辑主机';
-        // 加载主机数据到表单的逻辑
+        // 这里应该加载主机数据到表单
         modal.classList.remove('hidden');
         setTimeout(() => {
           modal.querySelector('div').classList.add('scale-100');
@@ -393,16 +496,24 @@
     document.querySelectorAll('button:has(.fa-trash)').forEach(btn => {
       btn.addEventListener('click', () => {
         if (confirm('确定要删除这台主机吗？相关的防火墙规则也将被删除。')) {
-          // 删除主机的逻辑
-          alert('主机已删除！');
+          // 发送删除请求
+          fetch('/api/hosts/1', { // 假设1是主机ID
+            method: 'DELETE'
+          })
+          .then(response => {
+            if (response.ok) {
+              // 从DOM中移除行
+              btn.closest('tr').remove();
+              showToast('success-toast');
+            } else {
+              showToast('error-toast');
+            }
+          })
+          .catch(error => {
+            console.error('错误:', error);
+            showToast('error-toast');
+          });
         }
-      });
-    });
-
-    // 查看按钮交互
-    document.querySelectorAll('button:has(.fa-eye)').forEach(btn => {
-      btn.addEventListener('click', () => {
-        alert('查看主机详情');
       });
     });
 
@@ -410,7 +521,8 @@
     document.querySelectorAll('button:has(.fa-fire)').forEach(btn => {
       btn.addEventListener('click', () => {
         // 跳转到该主机的规则管理页面
-        alert('跳转到该主机的防火墙规则管理');
+        const hostId = btn.closest('tr').querySelector('.text-secondary').textContent;
+        window.location.href = `/host-rules?ip=${hostId}`;
       });
     });
   </script>
