@@ -95,7 +95,7 @@ def get_rule(iptables_output):
 
 # 查看规则
 @app.route("/rules", methods=['GET'])
-def index():
+def rules():
     iptables_output = shell_cmd(cmd='iptables -nL INPUT --line-number -t filter')
     data_list = get_rule(iptables_output)
     return render_template('rule.html', data_list=data_list)
@@ -117,7 +117,7 @@ def hosts():
 
 # 查看模板
 @app.route("/templates", methods=['GET'])
-def hosts():
+def templates():
     return render_template('templates.html')
 
 
@@ -127,13 +127,13 @@ def hosts():
 
 # 系统设置
 @app.route("/systemseting", methods=['GET'])
-def hosts():
+def systemseting():
     return render_template('systemseting.html')
 
 
 # 操作日志
 @app.route("/logs", methods=['GET'])
-def hosts():
+def logs():
     return render_template('logs.html')
 
 
