@@ -112,6 +112,11 @@ def hosts():
 
 
 # 添加主机
+@app.route("/host_add", methods=['GET'])
+def host_add(request):
+    # 拿到用户传递过来的数据
+
+    return render_template('host.html')
 # 删除主机
 # 修改主机
 
