@@ -132,9 +132,42 @@ def rules():
 # 删除规则
 
 # 查看主机
+# 主机管理页面路由 - 读取数据库并返回数据到前端
 @app.route("/hosts", methods=['GET'])
 def hosts():
-    return render_template('host.html')
+    try:
+        # 获取数据库连接
+        db = get_db()
+        cursor = db.cursor()
+        # 查询所有主机数据
+        cursor.execute('''
+        SELECT id, host_name, host_identifier, ip_address, 
+               operating_system, created_at 
+        FROM hosts 
+        ORDER BY created_at DESC
+        ''')
+
+        # 获取所有记录
+        hosts = cursor.fetchall()
+
+        # 转换为字典列表，方便前端处理
+        host_list = []
+        for host in hosts:
+            host_list.append({
+                'id': host['id'],
+                'host_name': host['host_name'],
+                'host_identifier': host['host_identifier'],
+                'ip_address': host['ip_address'],
+                'operating_system': host['operating_system'],
+                'created_at': host['created_at']
+            })
+        print(host_list)
+        # 将主机数据传递到模板
+        return render_template('host.html', host_list=host_list)
+
+    except Exception as e:
+        # 错误处理
+        return f"获取主机数据失败: {str(e)}", 500
 
 
 # 添加主机
