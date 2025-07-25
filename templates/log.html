@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>操作日志 - FireVision</title>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+
+  <!-- 配置Tailwind自定义颜色和字体 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#6B7280',
+            success: '#10B981',
+            danger: '#EF4444',
+            warning: '#F59E0B',
+            info: '#3B82F6',
+            light: '#F3F4F6',
+            dark: '#1F2937'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+
+  <!-- 自定义工具类 -->
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .table-shadow {
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      }
+      .btn-hover {
+        @apply transition-all duration-200 hover:shadow-md transform hover:-translate-y-0.5;
+      }
+      .sidebar-item {
+        @apply flex items-center px-4 py-3 text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer;
+      }
+      .sidebar-item.active {
+        @apply bg-primary/10 text-primary border-l-4 border-primary;
+      }
+      .filter-item {
+        @apply px-3 py-2 border border-gray-200 rounded-md mb-3 bg-white;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 font-sans text-dark antialiased">
+  <div class="flex h-screen overflow-hidden">
+    <!-- 侧边栏 -->
+    <div class="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:block">
+      <div class="p-4 border-b border-gray-200">
+        <h2 class="text-xl font-bold text-primary flex items-center">
+          <i class="fa fa-shield mr-2"></i> FireVision
+        </h2>
+      </div>
+
+      <div class="h-full overflow-y-auto py-4">
+        <nav class="px-2 space-y-1">
+          <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-4">主菜单</p>
+
+          <div class="sidebar-item">
+            <i class="fa fa-list-alt w-5 h-5 mr-3"></i>
+            <span>规则管理</span>
+          </div>
+
+          <div class="sidebar-item">
+            <i class="fa fa-server w-5 h-5 mr-3"></i>
+            <span>主机管理</span>
+          </div>
+
+          <div class="sidebar-item">
+            <i class="fa fa-tasks w-5 h-5 mr-3"></i>
+            <span>模板管理</span>
+          </div>
+
+          <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-6">系统</p>
+
+          <div class="sidebar-item">
+            <i class="fa fa-cog w-5 h-5 mr-3"></i>
+            <span>系统设置</span>
+          </div>
+
+          <div class="sidebar-item active">
+            <i class="fa fa-history w-5 h-5 mr-3"></i>
+            <span>操作日志</span>
+          </div>
+        </nav>
+      </div>
+
+      <!-- 侧边栏底部用户信息 -->
+      <div class="p-4 border-t border-gray-200 absolute bottom-0 w-64">
+        <div class="flex items-center">
+          <img class="h-8 w-8 rounded-full object-cover" src="https://picsum.photos/id/1005/200/200" alt="用户头像">
+          <div class="ml-3">
+            <p class="text-sm font-medium text-gray-700">管理员</p>
+            <p class="text-xs text-gray-500">admin@example.com</p>
+          </div>
+          <button class="ml-auto text-gray-400 hover:text-gray-500">
+            <i class="fa fa-sign-out"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- 顶部导航栏 -->
+      <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+        <div class="flex items-center justify-between h-16 px-6">
+          <!-- 移动端菜单按钮 -->
+          <button id="mobile-menu-btn" class="md:hidden text-gray-500 hover:text-gray-700">
+            <i class="fa fa-bars text-xl"></i>
+          </button>
+
+          <!-- 搜索框 -->
+          <div class="flex-1 max-w-md mx-4 hidden md:block">
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="fa fa-search text-gray-400"></i>
+              </div>
+              <input type="text" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" placeholder="搜索日志内容...">
+            </div>
+          </div>
+
+          <!-- 右侧工具栏 -->
+          <div class="flex items-center space-x-4">
+            <button class="text-gray-500 hover:text-gray-700 relative">
+              <i class="fa fa-bell text-xl"></i>
+              <span class="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
+            </button>
+            <button class="text-gray-500 hover:text-gray-700">
+              <i class="fa fa-question-circle text-xl"></i>
+            </button>
+            <div class="hidden md:block h-6 w-px bg-gray-300"></div>
+            <button class="md:hidden text-gray-500 hover:text-gray-700">
+              <i class="fa fa-search text-xl"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- 页面内容 -->
+      <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+        <div class="container mx-auto max-w-7xl">
+          <!-- 页面标题和操作区 -->
+          <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div>
+              <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">操作日志</h1>
+              <p class="text-secondary">查看和管理系统操作记录，追踪用户行为</p>
+            </div>
+
+            <div class="flex flex-wrap gap-3 self-end md:self-auto ml-auto">
+              <button id="refresh-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium flex items-center btn-hover">
+                <i class="fa fa-refresh mr-2"></i> 刷新
+              </button>
+
+              <button id="export-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium flex items-center btn-hover">
+                <i class="fa fa-download mr-2"></i> 导出
+              </button>
+
+              <button id="clear-btn" class="bg-danger text-white px-4 py-2 rounded-lg font-medium flex items-center btn-hover">
+                <i class="fa fa-trash mr-2"></i> 清空
+              </button>
+            </div>
+          </div>
+
+          <div class="flex flex-col lg:flex-row gap-6">
+            <!-- 筛选面板 -->
+            <div class="lg:w-1/4">
+              <div class="bg-white rounded-xl table-shadow p-5">
+                <h3 class="font-semibold text-lg mb-4">日志筛选</h3>
+
+                <div class="filter-item">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">时间范围</label>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="text-xs text-secondary mb-1 block">开始时间</label>
+                      <input type="datetime-local" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+                    <div>
+                      <label class="text-xs text-secondary mb-1 block">结束时间</label>
+                      <input type="datetime-local" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap gap-2 mt-2">
+                    <button class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors">今天</button>
+                    <button class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors">昨天</button>
+                    <button class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors">本周</button>
+                    <button class="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors">本月</button>
+                  </div>
+                </div>
+
+                <div class="filter-item">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">操作用户</label>
+                  <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                    <option value="">所有用户</option>
+                    <option value="admin">admin (管理员)</option>
+                    <option value="operator">operator (操作员)</option>
+                    <option value="audit">audit (审计员)</option>
+                  </select>
+                </div>
+
+                <div class="filter-item">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">操作类型</label>
+                  <div class="space-y-2">
+                    <label class="flex items-center">
+                      <input type="checkbox" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                      <span class="ml-2 text-sm text-gray-700">登录/登出</span>
+                    </label>
+                    <label class="flex items-center">
+                      <input type="checkbox" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                      <span class="ml-2 text-sm text-gray-700">规则管理</span>
+                    </label>
+                    <label class="flex items-center">
+                      <input type="checkbox" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                      <span class="ml-2 text-sm text-gray-700">主机管理</span>
+                    </label>
+                    <label class="flex items-center">
+                      <input type="checkbox" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                      <span class="ml-2 text-sm text-gray-700">模板管理</span>
+                    </label>
+                    <label class="flex items-center">
+                      <input type="checkbox" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                      <span class="ml-2 text-sm text-gray-700">系统设置</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="filter-item">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">操作结果</label>
+                  <div class="space-y-2">
+                    <label class="flex items-center">
+                      <input type="checkbox" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                      <span class="ml-2 text-sm text-gray-700">成功</span>
+                    </label>
+                    <label class="flex items-center">
+                      <input type="checkbox" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+                      <span class="ml-2 text-sm text-gray-700">失败</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="flex gap-3 mt-4">
+                  <button id="filter-btn" class="flex-1 bg-primary text-white px-4 py-2 rounded-lg font-medium btn-hover">
+                    应用筛选
+                  </button>
+                  <button id="reset-filter-btn" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
+                    重置
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 日志列表 -->
+            <div class="lg:w-3/4">
+              <div class="bg-white rounded-xl table-shadow overflow-hidden">
+                <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                  <div class="text-sm text-secondary">
+                    共 <span class="font-medium text-dark">128</span> 条记录
+                  </div>
+                  <div class="relative">
+                    <select class="pl-3 pr-10 py-1.5 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none">
+                      <option>20条/页</option>
+                      <option>50条/页</option>
+                      <option>100条/页</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                      <i class="fa fa-chevron-down text-xs"></i>
+                    </div>
+                  </div>
+                </div>
+
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/6">操作时间</th>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/8">操作用户</th>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/8">IP地址</th>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/8">操作类型</th>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/4">操作内容</th>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/10">结果</th>
+                      <th scope="col" class="px-6 py-3 text-right text-xs font-semibold text-secondary uppercase tracking-wider">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    <!-- 日志1 -->
+                    <tr class="hover:bg-gray-50 transition-colors">
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-16 14:32:15</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-dark">admin</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.50</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">规则管理</span>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-secondary">
+                        添加了新的防火墙规则：允许TCP 80端口访问
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="text-success flex items-center">
+                          <i class="fa fa-check-circle mr-1"></i> 成功
+                        </span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button class="text-primary hover:text-primary/80 transition-colors">
+                          <i class="fa fa-eye"></i> 详情
+                        </button>
+                      </td>
+                    </tr>
+
+                    <!-- 日志2 -->
+                    <tr class="hover:bg-gray-50 transition-colors">
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-16 13:45:02</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-dark">operator</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.51</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">主机管理</span>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-secondary">
+                        添加了新主机：Web服务器(192.168.1.100)
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="text-success flex items-center">
+                          <i class="fa fa-check-circle mr-1"></i> 成功
+                        </span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button class="text-primary hover:text-primary/80 transition-colors">
+                          <i class="fa fa-eye"></i> 详情
+                        </button>
+                      </td>
+                    </tr>
+
+                    <!-- 日志3 -->
+                    <tr class="hover:bg-gray-50 transition-colors">
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-16 10:18:37</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-dark">admin</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.50</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-800">模板管理</span>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-secondary">
+                        将"Web服务器安全模板"应用到主机：Web服务器、负载均衡器
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="text-success flex items-center">
+                          <i class="fa fa-check-circle mr-1"></i> 成功
+                        </span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button class="text-primary hover:text-primary/80 transition-colors">
+                          <i class="fa fa-eye"></i> 详情
+                        </button>
+                      </td>
+                    </tr>
+
+                    <!-- 日志4 -->
+                    <tr class="hover:bg-gray-50 transition-colors">
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-16 09:25:11</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-dark">audit</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.52</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">登录/登出</span>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-secondary">
+                        用户登录系统
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="text-success flex items-center">
+                          <i class="fa fa-check-circle mr-1"></i> 成功
+                        </span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button class="text-primary hover:text-primary/80 transition-colors">
+                          <i class="fa fa-eye"></i> 详情
+                        </button>
+                      </td>
+                    </tr>
+
+                    <!-- 日志5 -->
+                    <tr class="hover:bg-gray-50 transition-colors">
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-15 18:42:05</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-dark">test</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.120</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">登录/登出</span>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-secondary">
+                        用户登录系统
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="text-danger flex items-center">
+                          <i class="fa fa-times-circle mr-1"></i> 失败
+                        </span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button class="text-primary hover:text-primary/80 transition-colors">
+                          <i class="fa fa-eye"></i> 详情
+                        </button>
+                      </td>
+                    </tr>
+
+                    <!-- 日志6 -->
+                    <tr class="hover:bg-gray-50 transition-colors">
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-15 16:30:42</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-dark">admin</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.50</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">系统设置</span>
+                      </td>
+                      <td class="px-6 py-4 text-sm text-secondary">
+                        修改了系统设置：会话超时时间改为30分钟
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <span class="text-success flex items-center">
+                          <i class="fa fa-check-circle mr-1"></i> 成功
+                        </span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button class="text-primary hover:text-primary/80 transition-colors">
+                          <i class="fa fa-eye"></i> 详情
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <!-- 分页 -->
+                <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                  <div class="text-sm text-secondary">
+                    显示 1 到 6 条，共 128 条
+                  </div>
+                  <div class="flex space-x-1">
+                    <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50" disabled>
+                      <i class="fa fa-chevron-left"></i>
+                    </button>
+                    <button class="px-3 py-1 rounded border border-primary bg-primary text-white">1</button>
+                    <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">2</button>
+                    <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">3</button>
+                    <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">4</button>
+                    <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">5</button>
+                    <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">
+                      <i class="fa fa-chevron-right"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 日志详情模态框 -->
+  <div id="log-detail-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all scale-95">
+      <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 class="text-lg font-semibold">日志详情</h3>
+        <button id="close-detail-modal" class="text-gray-400 hover:text-gray-500">
+          <i class="fa fa-times"></i>
+        </button>
+      </div>
+
+      <div class="px-6 py-5">
+        <div class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <div class="text-sm text-secondary">操作时间</div>
+              <div class="font-medium">2023-06-16 14:32:15</div>
+            </div>
+            <div>
+              <div class="text-sm text-secondary">操作用户</div>
+              <div class="font-medium">admin (管理员)</div>
+            </div>
+            <div>
+              <div class="text-sm text-secondary">IP地址</div>
+              <div class="font-medium">192.168.1.50</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <div class="text-sm text-secondary">操作类型</div>
+              <div>
+                <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">规则管理</span>
+              </div>
+            </div>
+            <div>
+              <div class="text-sm text-secondary">操作结果</div>
+              <div class="font-medium text-success">成功</div>
+            </div>
+            <div>
+              <div class="text-sm text-secondary">用户代理</div>
+              <div class="font-medium text-sm">Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="text-sm text-secondary mb-1">操作内容</div>
+            <div class="bg-gray-50 p-3 rounded-lg">
+              添加了新的防火墙规则：允许TCP 80端口访问
+            </div>
+          </div>
+
+          <div>
+            <div class="text-sm text-secondary mb-1">详细信息</div>
+            <div class="bg-gray-50 p-3 rounded-lg text-sm font-mono overflow-x-auto">
+              <pre>{
+  "action": "add_rule",
+  "timestamp": "2023-06-16T14:32:15.782Z",
+  "user": "admin",
+  "ip_address": "192.168.1.50",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0",
+  "rule": {
+    "id": "rule-1285",
+    "name": "允许HTTP访问",
+    "policy": "ACCEPT",
+    "protocol": "tcp",
+    "port": "80",
+    "source": "0.0.0.0/0",
+    "destination": "192.168.1.100",
+    "description": "允许外部访问Web服务器的HTTP服务"
+  },
+  "result": "success",
+  "message": "规则添加成功"
+}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+        <button id="close-detail-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 清空日志确认模态框 -->
+  <div id="clear-confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl w-full max-w-md transform transition-all scale-95">
+      <div class="px-6 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-semibold">清空操作日志</h3>
+      </div>
+
+      <div class="px-6 py-5">
+        <div class="flex items-start mb-4">
+          <div class="flex-shrink-0 pt-0.5">
+            <i class="fa fa-exclamation-triangle text-warning text-xl"></i>
+          </div>
+          <div class="ml-3">
+            <p class="text-gray-700">
+              确定要清空所有操作日志吗？此操作不可恢复。
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center">
+          <input type="checkbox" id="clear-with-backup" class="mr-2 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+          <label for="clear-with-backup" class="text-sm text-gray-700">清空前备份日志</label>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+        <button id="cancel-clear-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
+        <button id="confirm-clear-btn" class="px-4 py-2 bg-danger text-white rounded-md hover:bg-danger/90 transition-colors">确认清空</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导出日志选项模态框 -->
+  <div id="export-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl w-full max-w-md transform transition-all scale-95">
+      <div class="px-6 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-semibold">导出操作日志</h3>
+      </div>
+
+      <div class="px-6 py-5">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">导出范围</label>
+          <div class="space-y-2">
+            <label class="flex items-center">
+              <input type="radio" name="export-scope" value="filtered" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300">
+              <span class="ml-2 text-sm text-gray-700">当前筛选结果</span>
+            </label>
+            <label class="flex items-center">
+              <input type="radio" name="export-scope" value="all" class="h-4 w-4 text-primary focus:ring-primary border-gray-300">
+              <span class="ml-2 text-sm text-gray-700">所有日志</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">导出格式</label>
+          <div class="space-y-2">
+            <label class="flex items-center">
+              <input type="radio" name="export-format" value="csv" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300">
+              <span class="ml-2 text-sm text-gray-700">CSV (逗号分隔值)</span>
+            </label>
+            <label class="flex items-center">
+              <input type="radio" name="export-format" value="json" class="h-4 w-4 text-primary focus:ring-primary border-gray-300">
+              <span class="ml-2 text-sm text-gray-700">JSON</span>
+            </label>
+            <label class="flex items-center">
+              <input type="radio" name="export-format" value="txt" class="h-4 w-4 text-primary focus:ring-primary border-gray-300">
+              <span class="ml-2 text-sm text-gray-700">TXT (文本文件)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+        <button id="cancel-export-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
+        <button id="confirm-export-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">确认导出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 操作成功提示 -->
+  <div id="success-toast" class="fixed top-4 right-4 bg-success text-white px-4 py-3 rounded-lg shadow-lg transform transition-all translate-x-full opacity-0 z-50 flex items-center">
+    <i class="fa fa-check-circle mr-2"></i>
+    <span id="toast-message">操作成功</span>
+  </div>
+
+  <script>
+    // 移动端菜单按钮交互
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    mobileMenuBtn.addEventListener('click', () => {
+      const sidebar = document.querySelector('.w-64');
+      sidebar.classList.toggle('hidden');
+      sidebar.classList.toggle('fixed');
+      sidebar.classList.toggle('z-50');
+      sidebar.classList.toggle('h-full');
+    });
+
+    // 模态框元素
+    const logDetailModal = document.getElementById('log-detail-modal');
+    const clearConfirmModal = document.getElementById('clear-confirm-modal');
+    const exportModal = document.getElementById('export-modal');
+    const successToast = document.getElementById('success-toast');
+    const toastMessage = document.getElementById('toast-message');
+
+    // 打开日志详情模态框
+    document.querySelectorAll('button:has(.fa-eye)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        logDetailModal.classList.remove('hidden');
+        setTimeout(() => {
+          logDetailModal.querySelector('div').classList.add('scale-100');
+          logDetailModal.querySelector('div').classList.remove('scale-95');
+        }, 10);
+      });
+    });
+
+    // 关闭日志详情模态框
+    function closeLogDetailModal() {
+      logDetailModal.querySelector('div').classList.remove('scale-100');
+      logDetailModal.querySelector('div').classList.add('scale-95');
+      setTimeout(() => {
+        logDetailModal.classList.add('hidden');
+      }, 200);
+    }
+
+    document.getElementById('close-detail-modal').addEventListener('click', closeLogDetailModal);
+    document.getElementById('close-detail-btn').addEventListener('click', closeLogDetailModal);
+
+    // 点击日志详情模态框外部关闭
+    logDetailModal.addEventListener('click', (e) => {
+      if (e.target === logDetailModal) {
+        closeLogDetailModal();
+      }
+    });
+
+    // 打开清空日志确认模态框
+    document.getElementById('clear-btn').addEventListener('click', () => {
+      clearConfirmModal.classList.remove('hidden');
+      setTimeout(() => {
+        clearConfirmModal.querySelector('div').classList.add('scale-100');
+        clearConfirmModal.querySelector('div').classList.remove('scale-95');
+      }, 10);
+    });
+
+    // 关闭清空日志确认模态框
+    function closeClearConfirmModal() {
+      clearConfirmModal.querySelector('div').classList.remove('scale-100');
+      clearConfirmModal.querySelector('div').classList.add('scale-95');
+      setTimeout(() => {
+        clearConfirmModal.classList.add('hidden');
+      }, 200);
+    }
+
+    document.getElementById('cancel-clear-btn').addEventListener('click', closeClearConfirmModal);
+
+    // 点击清空日志确认模态框外部关闭
+    clearConfirmModal.addEventListener('click', (e) => {
+      if (e.target === clearConfirmModal) {
+        closeClearConfirmModal();
+      }
+    });
+
+    // 确认清空日志
+    document.getElementById('confirm-clear-btn').addEventListener('click', () => {
+      closeClearConfirmModal();
+
+      // 显示成功提示
+      toastMessage.textContent = '操作日志已清空';
+      successToast.classList.remove('translate-x-full', 'opacity-0');
+
+      // 3秒后隐藏提示
+      setTimeout(() => {
+        successToast.classList.add('translate-x-full', 'opacity-0');
+      }, 3000);
+    });
+
+    // 打开导出日志模态框
+    document.getElementById('export-btn').addEventListener('click', () => {
+      exportModal.classList.remove('hidden');
+      setTimeout(() => {
+        exportModal.querySelector('div').classList.add('scale-100');
+        exportModal.querySelector('div').classList.remove('scale-95');
+      }, 10);
+    });
+
+    // 关闭导出日志模态框
+    function closeExportModal() {
+      exportModal.querySelector('div').classList.remove('scale-100');
+      exportModal.querySelector('div').classList.add('scale-95');
+      setTimeout(() => {
+        exportModal.classList.add('hidden');
+      }, 200);
+    }
+
+    document.getElementById('cancel-export-btn').addEventListener('click', closeExportModal);
+
+    // 点击导出日志模态框外部关闭
+    exportModal.addEventListener('click', (e) => {
+      if (e.target === exportModal) {
+        closeExportModal();
+      }
+    });
+
+    // 确认导出日志
+    document.getElementById('confirm-export-btn').addEventListener('click', () => {
+      closeExportModal();
+
+      // 显示成功提示
+      toastMessage.textContent = '日志导出成功';
+      successToast.classList.remove('translate-x-full', 'opacity-0');
+
+      // 3秒后隐藏提示
+      setTimeout(() => {
+        successToast.classList.add('translate-x-full', 'opacity-0');
+      }, 3000);
+    });
+
+    // 刷新日志
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      // 显示加载状态
+      const originalText = refreshBtn.innerHTML;
+      refreshBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i> 刷新中...';
+      refreshBtn.disabled = true;
+
+      // 模拟刷新延迟
+      setTimeout(() => {
+        refreshBtn.innerHTML = originalText;
+        refreshBtn.disabled = false;
+
+        // 显示成功提示
+        toastMessage.textContent = '日志已刷新';
+        successToast.classList.remove('translate-x-full', 'opacity-0');
+
+        // 3秒后隐藏提示
+        setTimeout(() => {
+          successToast.classList.add('translate-x-full', 'opacity-0');
+        }, 3000);
+      }, 1000);
+    });
+
+    // 应用筛选
+    document.getElementById('filter-btn').addEventListener('click', () => {
+      // 模拟筛选操作
+      toastMessage.textContent = '筛选条件已应用';
+      successToast.classList.remove('translate-x-full', 'opacity-0');
+
+      // 3秒后隐藏提示
+      setTimeout(() => {
+        successToast.classList.add('translate-x-full', 'opacity-0');
+      }, 3000);
+    });
+
+    // 重置筛选
+    document.getElementById('reset-filter-btn').addEventListener('click', () => {
+      // 重置筛选条件的逻辑
+      alert('筛选条件已重置');
+    });
+  </script>
+</body>
+</html>

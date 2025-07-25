@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>系统设置 - FireVision</title>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome -->
+  <link href="https://cdn.jsdelivr.net.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+
+  <!-- 配置Tailwind自定义颜色和字体 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#6B7280',
+            success: '#10B981',
+            danger: '#EF4444',
+            warning: '#F59E0B',
+            info: '#3B82F6',
+            light: '#F3F4F6',
+            dark: '#1F2937'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+
+  <!-- 自定义工具类 -->
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .card-shadow {
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      }
+      .btn-hover {
+        @apply transition-all duration-200 hover:shadow-md transform hover:-translate-y-0.5;
+      }
+      .sidebar-item {
+        @apply flex items-center px-4 py-3 text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer;
+      }
+      .sidebar-item.active {
+        @apply bg-primary/10 text-primary border-l-4 border-primary;
+      }
+      .setting-item {
+        @apply py-4 border-b border-gray-100 last:border-0;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 font-sans text-dark antialiased">
+  <div class="flex h-screen overflow-hidden">
+    <!-- 侧边栏 -->
+    <div class="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:block">
+      <div class="p-4 border-b border-gray-200">
+        <h2 class="text-xl font-bold text-primary flex items-center">
+          <i class="fa fa-shield mr-2"></i> FireVision
+        </h2>
+      </div>
+
+      <div class="h-full overflow-y-auto py-4">
+        <nav class="px-2 space-y-1">
+          <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-4">主菜单</p>
+
+          <div class="sidebar-item">
+            <i class="fa fa-list-alt w-5 h-5 mr-3"></i>
+            <span>规则管理</span>
+          </div>
+
+          <div class="sidebar-item">
+            <i class="fa fa-server w-5 h-5 mr-3"></i>
+            <span>主机管理</span>
+          </div>
+
+          <div class="sidebar-item">
+            <i class="fa fa-tasks w-5 h-5 mr-3"></i>
+            <span>模板管理</span>
+          </div>
+
+          <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-6">系统</p>
+
+          <div class="sidebar-item active">
+            <i class="fa fa-cog w-5 h-5 mr-3"></i>
+            <span>系统设置</span>
+          </div>
+
+          <div class="sidebar-item">
+            <i class="fa fa-history w-5 h-5 mr-3"></i>
+            <span>操作日志</span>
+          </div>
+        </nav>
+      </div>
+
+      <!-- 侧边栏底部用户信息 -->
+      <div class="p-4 border-t border-gray-200 absolute bottom-0 w-64">
+        <div class="flex items-center">
+          <img class="h-8 w-8 rounded-full object-cover" src="https://picsum.photos/id/1005/200/200" alt="用户头像">
+          <div class="ml-3">
+            <p class="text-sm font-medium text-gray-700">管理员</p>
+            <p class="text-xs text-gray-500">admin@example.com</p>
+          </div>
+          <button class="ml-auto text-gray-400 hover:text-gray-500">
+            <i class="fa fa-sign-out"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- 顶部导航栏 -->
+      <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+        <div class="flex items-center justify-between h-16 px-6">
+          <!-- 移动端菜单按钮 -->
+          <button id="mobile-menu-btn" class="md:hidden text-gray-500 hover:text-gray-700">
+            <i class="fa fa-bars text-xl"></i>
+          </button>
+
+          <!-- 搜索框 -->
+          <div class="flex-1 max-w-md mx-4 hidden md:block">
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="fa fa-search text-gray-400"></i>
+              </div>
+              <input type="text" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" placeholder="搜索设置项...">
+            </div>
+          </div>
+
+          <!-- 右侧工具栏 -->
+          <div class="flex items-center space-x-4">
+            <button class="text-gray-500 hover:text-gray-700 relative">
+              <i class="fa fa-bell text-xl"></i>
+              <span class="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
+            </button>
+            <button class="text-gray-500 hover:text-gray-700">
+              <i class="fa fa-question-circle text-xl"></i>
+            </button>
+            <div class="hidden md:block h-6 w-px bg-gray-300"></div>
+            <button class="md:hidden text-gray-500 hover:text-gray-700">
+              <i class="fa fa-search text-xl"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- 页面内容 -->
+      <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+        <div class="container mx-auto max-w-7xl">
+          <!-- 页面标题 -->
+          <div class="mb-8">
+            <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">系统设置</h1>
+            <p class="text-secondary">配置系统参数、用户权限和安全选项</p>
+          </div>
+
+          <!-- 设置选项卡 -->
+          <div class="border-b border-gray-200 mb-6">
+            <nav class="-mb-px flex flex-wrap">
+              <button class="border-primary text-primary whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+                基本设置
+              </button>
+              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+                用户管理
+              </button>
+              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+                角色权限
+              </button>
+              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+                安全设置
+              </button>
+              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+                通知设置
+              </button>
+              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+                系统备份
+              </button>
+            </nav>
+          </div>
+
+          <!-- 基本设置内容 -->
+          <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
+            <div class="px-6 py-5 border-b border-gray-100">
+              <h2 class="text-lg font-semibold">系统信息</h2>
+            </div>
+
+            <div class="p-6">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-gray-50 p-4 rounded-lg">
+                  <div class="text-sm text-secondary mb-1">系统版本</div>
+                  <div class="font-medium">v1.2.0</div>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-lg">
+                  <div class="text-sm text-secondary mb-1">最后更新</div>
+                  <div class="font-medium">2023-06-10</div>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-lg">
+                  <div class="text-sm text-secondary mb-1">许可状态</div>
+                  <div class="font-medium text-success">已激活</div>
+                </div>
+              </div>
+
+              <div class="mt-6">
+                <button class="text-primary hover:text-primary/80 text-sm font-medium transition-colors">
+                  <i class="fa fa-refresh mr-1"></i> 检查更新
+                </button>
+                <button class="ml-4 text-primary hover:text-primary/80 text-sm font-medium transition-colors">
+                  <i class="fa fa-info-circle mr-1"></i> 查看版本信息
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 系统配置 -->
+          <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
+            <div class="px-6 py-5 border-b border-gray-100">
+              <h2 class="text-lg font-semibold">系统配置</h2>
+            </div>
+
+            <div class="p-6">
+              <form id="system-config-form">
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">系统名称</label>
+                      <p class="text-xs text-secondary mt-1">显示在浏览器标题和页面顶部的名称</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <input type="text" value="FireVision 防火墙管理系统" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">默认语言</label>
+                      <p class="text-xs text-secondary mt-1">系统界面默认显示语言</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="zh-CN">简体中文</option>
+                        <option value="en">English</option>
+                        <option value="ja">日本語</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">时区设置</label>
+                      <p class="text-xs text-secondary mt-1">系统时间显示的时区</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="Asia/Shanghai">Asia/Shanghai (GMT+8)</option>
+                        <option value="UTC">UTC</option>
+                        <option value="Europe/London">Europe/London (GMT)</option>
+                        <option value="America/New_York">America/New_York (GMT-5)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">自动刷新间隔</label>
+                      <p class="text-xs text-secondary mt-1">主机状态和规则的自动刷新时间</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="30">30秒</option>
+                        <option value="60" selected>1分钟</option>
+                        <option value="300">5分钟</option>
+                        <option value="600">10分钟</option>
+                        <option value="0">禁用自动刷新</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">操作日志保留时间</label>
+                      <p class="text-xs text-secondary mt-1">超过此时间的操作日志将被自动清理</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="7">7天</option>
+                        <option value="30" selected>30天</option>
+                        <option value="90">90天</option>
+                        <option value="180">180天</option>
+                        <option value="365">1年</option>
+                        <option value="0">永久保留</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">启用审计日志</label>
+                      <p class="text-xs text-secondary mt-1">记录所有防火墙规则的变更历史</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">启用批量操作确认</label>
+                      <p class="text-xs text-secondary mt-1">执行批量操作前显示确认提示</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- 安全设置 -->
+          <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
+            <div class="px-6 py-5 border-b border-gray-100">
+              <h2 class="text-lg font-semibold">安全设置</h2>
+            </div>
+
+            <div class="p-6">
+              <form id="security-settings-form">
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">密码策略</label>
+                      <p class="text-xs text-secondary mt-1">设置用户密码的复杂度要求</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="low">低 (至少6位字符)</option>
+                        <option value="medium" selected>中 (至少8位，包含数字和字母)</option>
+                        <option value="high">高 (至少10位，包含大小写字母、数字和特殊字符)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">会话超时时间</label>
+                      <p class="text-xs text-secondary mt-1">用户未活动多久后自动登出</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="15">15分钟</option>
+                        <option value="30">30分钟</option>
+                        <option value="60" selected>1小时</option>
+                        <option value="120">2小时</option>
+                        <option value="240">4小时</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">登录失败锁定</label>
+                      <p class="text-xs text-secondary mt-1">连续登录失败次数达到阈值后锁定账户</p>
+                    </div>
+                    <div class="md:w-2/3 flex items-center">
+                      <label class="relative inline-flex items-center cursor-pointer mr-4">
+                        <input type="checkbox" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                      </label>
+                      <div class="text-sm">
+                        失败 <input type="number" value="5" min="1" max="20" class="w-16 px-2 py-1 border border-gray-300 rounded text-center"> 次后锁定 <input type="number" value="15" min="1" max="120" class="w-16 px-2 py-1 border border-gray-300 rounded text-center"> 分钟
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="setting-item">
+                  <div class="flex flex-col md:flex-row md:items-center">
+                    <div class="md:w-1/3 mb-2 md:mb-0">
+                      <label class="block text-sm font-medium text-gray-700">启用HTTPS强制跳转</label>
+                      <p class="text-xs text-secondary mt-1">所有HTTP请求自动跳转到HTTPS</p>
+                    </div>
+                    <div class="md:w-2/3">
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- 按钮操作区 -->
+          <div class="flex justify-end space-x-3">
+            <button id="reset-btn" class="px-6 py-2.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">
+              重置
+            </button>
+            <button id="save-settings-btn" class="px-6 py-2.5 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors btn-hover">
+              保存设置
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 确认保存模态框 -->
+  <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl w-full max-w-md transform transition-all scale-95">
+      <div class="px-6 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-semibold">保存系统设置</h3>
+      </div>
+
+      <div class="px-6 py-5">
+        <p class="text-gray-700 mb-4">
+          部分设置需要重启系统才能生效，是否继续？
+        </p>
+        <div class="flex items-center">
+          <input type="checkbox" id="dont-ask-again" class="mr-2 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
+          <label for="dont-ask-again" class="text-sm text-gray-700">不再提示</label>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+        <button id="cancel-confirm-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
+        <button id="confirm-save-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">确认保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 操作成功提示 -->
+  <div id="success-toast" class="fixed top-4 right-4 bg-success text-white px-4 py-3 rounded-lg shadow-lg transform transition-all translate-x-full opacity-0 z-50 flex items-center">
+    <i class="fa fa-check-circle mr-2"></i>
+    <span>设置已成功保存</span>
+  </div>
+
+  <script>
+    // 移动端菜单按钮交互
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    mobileMenuBtn.addEventListener('click', () => {
+      const sidebar = document.querySelector('.w-64');
+      sidebar.classList.toggle('hidden');
+      sidebar.classList.toggle('fixed');
+      sidebar.classList.toggle('z-50');
+      sidebar.classList.toggle('h-full');
+    });
+
+    // 模态框元素
+    const confirmModal = document.getElementById('confirm-modal');
+    const successToast = document.getElementById('success-toast');
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const cancelConfirmBtn = document.getElementById('cancel-confirm-btn');
+    const confirmSaveBtn = document.getElementById('confirm-save-btn');
+
+    // 打开确认保存模态框
+    saveSettingsBtn.addEventListener('click', () => {
+      confirmModal.classList.remove('hidden');
+      setTimeout(() => {
+        confirmModal.querySelector('div').classList.add('scale-100');
+        confirmModal.querySelector('div').classList.remove('scale-95');
+      }, 10);
+    });
+
+    // 关闭确认模态框
+    function closeConfirmModal() {
+      confirmModal.querySelector('div').classList.remove('scale-100');
+      confirmModal.querySelector('div').classList.add('scale-95');
+      setTimeout(() => {
+        confirmModal.classList.add('hidden');
+      }, 200);
+    }
+
+    cancelConfirmBtn.addEventListener('click', closeConfirmModal);
+
+    // 点击模态框外部关闭
+    confirmModal.addEventListener('click', (e) => {
+      if (e.target === confirmModal) {
+        closeConfirmModal();
+      }
+    });
+
+    // 确认保存设置
+    confirmSaveBtn.addEventListener('click', () => {
+      closeConfirmModal();
+
+      // 显示成功提示
+      successToast.classList.remove('translate-x-full', 'opacity-0');
+
+      // 3秒后隐藏提示
+      setTimeout(() => {
+        successToast.classList.add('translate-x-full', 'opacity-0');
+      }, 3000);
+    });
+
+    // 重置设置
+    resetBtn.addEventListener('click', () => {
+      if (confirm('确定要重置所有设置为默认值吗？')) {
+        // 重置表单的逻辑
+        alert('所有设置已重置为默认值');
+      }
+    });
+
+    // 设置选项卡切换
+    document.querySelectorAll('.border-b button').forEach(tab => {
+      tab.addEventListener('click', () => {
+        // 移除所有选项卡的活跃状态
+        document.querySelectorAll('.border-b button').forEach(t => {
+          t.classList.remove('border-primary', 'text-primary');
+          t.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        });
+
+        // 设置当前选项卡为活跃状态
+        tab.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        tab.classList.add('border-primary', 'text-primary');
+
+        // 这里可以添加切换不同设置内容的逻辑
+        console.log('切换到:', tab.textContent.trim());
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>主机管理 - FireVision</title>
+  <!-- 引入Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+
+  <!-- 配置Tailwind自定义颜色和字体 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#6B7280',
+            success: '#10B981',
+            danger: '#EF4444',
+            warning: '#F59E0B',
+            info: '#3B82F6',
+            light: '#F3F4F6',
+            dark: '#1F2937'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+
+  <!-- 自定义工具类 -->
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .table-shadow {
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      }
+      .btn-hover {
+        @apply transition-all duration-200 hover:shadow-md transform hover:-translate-y-0.5;
+      }
+      .sidebar-item {
+        @apply flex items-center px-4 py-3 text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer;
+      }
+      .sidebar-item.active {
+        @apply bg-primary/10 text-primary border-l-4 border-primary;
+      }
+      .status-indicator {
+        @apply inline-block w-2 h-2 rounded-full mr-2;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 font-sans text-dark antialiased">
+  <div class="flex h-screen overflow-hidden">
+    <!-- 侧边栏 -->
+    <div class="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:block">
+      <div class="p-4 border-b border-gray-200">
+        <h2 class="text-xl font-bold text-primary flex items-center">
+          <i class="fa fa-shield mr-2"></i> FireVision
+        </h2>
+      </div>
+
+      <div class="h-full overflow-y-auto py-4">
+        <nav class="px-2 space-y-1">
+          <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-4">主菜单</p>
+
+          <div class="sidebar-item">
+            <i class="fa fa-list-alt w-5 h-5 mr-3"></i>
+            <span>规则管理</span>
+          </div>
+
+          <div class="sidebar-item active">
+            <i class="fa fa-server w-5 h-5 mr-3"></i>
+            <span>主机管理</span>
+          </div>
+
+          <div class="sidebar-item">
+            <i class="fa fa-tasks w-5 h-5 mr-3"></i>
+            <span>模板管理</span>
+          </div>
+
+          <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-6">系统</p>
+
+          <div class="sidebar-item">
+            <i class="fa fa-cog w-5 h-5 mr-3"></i>
+            <span>系统设置</span>
+          </div>
+
+          <div class="sidebar-item">
+            <i class="fa fa-history w-5 h-5 mr-3"></i>
+            <span>操作日志</span>
+          </div>
+        </nav>
+      </div>
+
+      <!-- 侧边栏底部用户信息 -->
+      <div class="p-4 border-t border-gray-200 absolute bottom-0 w-64">
+        <div class="flex items-center">
+          <img class="h-8 w-8 rounded-full object-cover" src="https://picsum.photos/id/1005/200/200" alt="用户头像">
+          <div class="ml-3">
+            <p class="text-sm font-medium text-gray-700">管理员</p>
+            <p class="text-xs text-gray-500">admin@example.com</p>
+          </div>
+          <button class="ml-auto text-gray-400 hover:text-gray-500">
+            <i class="fa fa-sign-out"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- 顶部导航栏 -->
+      <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+        <div class="flex items-center justify-between h-16 px-6">
+          <!-- 移动端菜单按钮 -->
+          <button id="mobile-menu-btn" class="md:hidden text-gray-500 hover:text-gray-700">
+            <i class="fa fa-bars text-xl"></i>
+          </button>
+
+          <!-- 搜索框 -->
+          <div class="flex-1 max-w-md mx-4 hidden md:block">
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="fa fa-search text-gray-400"></i>
+              </div>
+              <input type="text" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" placeholder="搜索主机、IP地址...">
+            </div>
+          </div>
+
+          <!-- 右侧工具栏 -->
+          <div class="flex items-center space-x-4">
+            <button class="text-gray-500 hover:text-gray-700 relative">
+              <i class="fa fa-bell text-xl"></i>
+              <span class="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
+            </button>
+            <button class="text-gray-500 hover:text-gray-700">
+              <i class="fa fa-question-circle text-xl"></i>
+            </button>
+            <div class="hidden md:block h-6 w-px bg-gray-300"></div>
+            <button class="md:hidden text-gray-500 hover:text-gray-700">
+              <i class="fa fa-search text-xl"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- 页面内容 -->
+      <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+        <div class="container mx-auto max-w-7xl">
+          <!-- 页面标题和操作区 -->
+          <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div>
+              <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">主机管理</h1>
+              <p class="text-secondary">管理所有受防火墙保护的主机设备</p>
+            </div>
+
+            <div class="flex flex-wrap gap-3 self-end md:self-auto ml-auto">
+              <div class="relative">
+                <select class="pl-3 pr-10 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none">
+                  <option>所有状态</option>
+                  <option>在线</option>
+                  <option>离线</option>
+                  <option>维护中</option>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                  <i class="fa fa-chevron-down text-xs"></i>
+                </div>
+              </div>
+
+              <button id="add-host-btn" class="bg-primary text-white px-5 py-2 rounded-lg font-medium flex items-center btn-hover">
+                <i class="fa fa-plus mr-2"></i> 添加主机
+              </button>
+            </div>
+          </div>
+
+          <!-- 主机列表 -->
+          <div class="bg-white rounded-xl table-shadow overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">主机名称</th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">IP地址</th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">操作系统</th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">防火墙状态</th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">在线状态</th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">规则数量</th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">最后同步</th>
+                  <th scope="col" class="px-6 py-4 text-right text-xs font-semibold text-secondary uppercase tracking-wider">操作</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <!-- 主机1 -->
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                      <i class="fa fa-server text-primary text-lg mr-3"></i>
+                      <div>
+                        <div class="text-sm font-medium text-dark">Web服务器</div>
+                        <div class="text-xs text-secondary">web-server-01</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.100</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">Ubuntu 20.04 LTS</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-success">运行中</span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="flex items-center text-success">
+                      <span class="status-indicator bg-success"></span>在线
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">12</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-15 09:32</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button class="text-info hover:text-primary mr-3 transition-colors">
+                      <i class="fa fa-eye"></i> 查看
+                    </button>
+                    <button class="text-primary hover:text-primary/80 mr-3 transition-colors">
+                      <i class="fa fa-fire"></i> 规则
+                    </button>
+                    <button class="text-warning hover:text-warning/80 mr-3 transition-colors">
+                      <i class="fa fa-pencil"></i> 编辑
+                    </button>
+                    <button class="text-danger hover:text-red-700 transition-colors">
+                      <i class="fa fa-trash"></i> 删除
+                    </button>
+                  </td>
+                </tr>
+
+                <!-- 主机2 -->
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                      <i class="fa fa-database text-primary text-lg mr-3"></i>
+                      <div>
+                        <div class="text-sm font-medium text-dark">数据库服务器</div>
+                        <div class="text-xs text-secondary">db-server-01</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.101</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">CentOS 8</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-success">运行中</span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="flex items-center text-success">
+                      <span class="status-indicator bg-success"></span>在线
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">8</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-15 10:15</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button class="text-info hover:text-primary mr-3 transition-colors">
+                      <i class="fa fa-eye"></i> 查看
+                    </button>
+                    <button class="text-primary hover:text-primary/80 mr-3 transition-colors">
+                      <i class="fa fa-fire"></i> 规则
+                    </button>
+                    <button class="text-warning hover:text-warning/80 mr-3 transition-colors">
+                      <i class="fa fa-pencil"></i> 编辑
+                    </button>
+                    <button class="text-danger hover:text-red-700 transition-colors">
+                      <i class="fa fa-trash"></i> 删除
+                    </button>
+                  </td>
+                </tr>
+
+                <!-- 主机3 -->
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                      <i class="fa fa-sitemap text-primary text-lg mr-3"></i>
+                      <div>
+                        <div class="text-sm font-medium text-dark">网关服务器</div>
+                        <div class="text-xs text-secondary">gateway-01</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.1</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">Debian 11</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-warning">维护中</span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="flex items-center text-warning">
+                      <span class="status-indicator bg-warning"></span>离线
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">24</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-14 18:45</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button class="text-info hover:text-primary mr-3 transition-colors">
+                      <i class="fa fa-eye"></i> 查看
+                    </button>
+                    <button class="text-primary hover:text-primary/80 mr-3 transition-colors">
+                      <i class="fa fa-fire"></i> 规则
+                    </button>
+                    <button class="text-warning hover:text-warning/80 mr-3 transition-colors">
+                      <i class="fa fa-pencil"></i> 编辑
+                    </button>
+                    <button class="text-danger hover:text-red-700 transition-colors">
+                      <i class="fa fa-trash"></i> 删除
+                    </button>
+                  </td>
+                </tr>
+
+                <!-- 主机4 -->
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex items-center">
+                      <i class="fa fa-desktop text-primary text-lg mr-3"></i>
+                      <div>
+                        <div class="text-sm font-medium text-dark">开发工作站</div>
+                        <div class="text-xs text-secondary">dev-workstation-01</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">192.168.1.200</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">Fedora 36</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-danger">已停止</span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="flex items-center text-danger">
+                      <span class="status-indicator bg-danger"></span>离线
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">5</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">2023-06-14 10:20</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button class="text-info hover:text-primary mr-3 transition-colors">
+                      <i class="fa fa-eye"></i> 查看
+                    </button>
+                    <button class="text-primary hover:text-primary/80 mr-3 transition-colors">
+                      <i class="fa fa-fire"></i> 规则
+                    </button>
+                    <button class="text-warning hover:text-warning/80 mr-3 transition-colors">
+                      <i class="fa fa-pencil"></i> 编辑
+                    </button>
+                    <button class="text-danger hover:text-red-700 transition-colors">
+                      <i class="fa fa-trash"></i> 删除
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- 分页 -->
+            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+              <div class="text-sm text-secondary">
+                显示 1 到 4 条，共 16 条
+              </div>
+              <div class="flex space-x-1">
+                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50" disabled>
+                  <i class="fa fa-chevron-left"></i>
+                </button>
+                <button class="px-3 py-1 rounded border border-primary bg-primary text-white">1</button>
+                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">2</button>
+                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">3</button>
+                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">4</button>
+                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">
+                  <i class="fa fa-chevron-right"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- 添加/编辑主机模态框 -->
+  <div id="host-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all scale-95">
+      <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 class="text-lg font-semibold" id="modal-title">添加主机</h3>
+        <button id="close-modal" class="text-gray-400 hover:text-gray-500">
+          <i class="fa fa-times"></i>
+        </button>
+      </div>
+
+      <div class="px-6 py-5">
+        <form id="host-form">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label for="host-name" class="block text-sm font-medium text-gray-700 mb-1">主机名称 <span class="text-danger">*</span></label>
+              <input type="text" id="host-name" name="host-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：Web服务器">
+            </div>
+
+            <div>
+              <label for="host-id" class="block text-sm font-medium text-gray-700 mb-1">主机标识 <span class="text-danger">*</span></label>
+              <input type="text" id="host-id" name="host-id" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：web-server-01">
+            </div>
+
+            <div>
+              <label for="ip-address" class="block text-sm font-medium text-gray-700 mb-1">IP地址 <span class="text-danger">*</span></label>
+              <input type="text" id="ip-address" name="ip-address" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：192.168.1.100">
+            </div>
+
+            <div>
+              <label for="os-type" class="block text-sm font-medium text-gray-700 mb-1">操作系统 <span class="text-danger">*</span></label>
+              <select id="os-type" name="os-type" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                <option value="">请选择操作系统</option>
+                <option value="ubuntu">Ubuntu</option>
+                <option value="centos">CentOS</option>
+                <option value="debian">Debian</option>
+                <option value="fedora">Fedora</option>
+                <option value="redhat">RedHat</option>
+                <option value="other">其他</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="ssh-port" class="block text-sm font-medium text-gray-700 mb-1">SSH端口</label>
+              <input type="number" id="ssh-port" name="ssh-port" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" value="22" min="1" max="65535">
+            </div>
+
+            <div>
+              <label for="firewall-status" class="block text-sm font-medium text-gray-700 mb-1">防火墙状态</label>
+              <select id="firewall-status" name="firewall-status" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                <option value="running">运行中</option>
+                <option value="stopped">已停止</option>
+                <option value="maintenance">维护中</option>
+              </select>
+            </div>
+
+            <div class="md:col-span-2">
+              <label for="host-description" class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+              <textarea id="host-description" name="host-description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="主机详细描述信息"></textarea>
+            </div>
+
+            <div class="md:col-span-2 bg-gray-50 p-4 rounded-lg">
+              <h4 class="font-medium mb-2">认证信息</h4>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label for="auth-username" class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+                  <input type="text" id="auth-username" name="auth-username" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="SSH用户名">
+                </div>
+
+                <div>
+                  <label for="auth-method" class="block text-sm font-medium text-gray-700 mb-1">认证方式</label>
+                  <select id="auth-method" name="auth-method" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                    <option value="password">密码</option>
+                    <option value="key">SSH密钥</option>
+                  </select>
+                </div>
+
+                <div id="password-field" class="md:col-span-2">
+                  <label for="auth-password" class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+                  <input type="password" id="auth-password" name="auth-password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="SSH登录密码">
+                </div>
+
+                <div id="key-field" class="md:col-span-2 hidden">
+                  <label for="auth-key" class="block text-sm font-medium text-gray-700 mb-1">SSH密钥</label>
+                  <textarea id="auth-key" name="auth-key" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="私钥内容"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+        <button id="cancel-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
+        <button id="save-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 移动端菜单按钮交互
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    mobileMenuBtn.addEventListener('click', () => {
+      const sidebar = document.querySelector('.w-64');
+      sidebar.classList.toggle('hidden');
+      sidebar.classList.toggle('fixed');
+      sidebar.classList.toggle('z-50');
+      sidebar.classList.toggle('h-full');
+    });
+
+    // 认证方式切换
+    const authMethod = document.getElementById('auth-method');
+    const passwordField = document.getElementById('password-field');
+    const keyField = document.getElementById('key-field');
+
+    authMethod.addEventListener('change', () => {
+      if (authMethod.value === 'password') {
+        passwordField.classList.remove('hidden');
+        keyField.classList.add('hidden');
+      } else {
+        passwordField.classList.add('hidden');
+        keyField.classList.remove('hidden');
+      }
+    });
+
+    // 模态框交互
+    const modal = document.getElementById('host-modal');
+    const addHostBtn = document.getElementById('add-host-btn');
+    const closeModalBtn = document.getElementById('close-modal');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const saveBtn = document.getElementById('save-btn');
+    const modalTitle = document.getElementById('modal-title');
+
+    // 打开新增主机模态框
+    addHostBtn.addEventListener('click', () => {
+      modalTitle.textContent = '添加主机';
+      document.getElementById('host-form').reset();
+      passwordField.classList.remove('hidden');
+      keyField.classList.add('hidden');
+      modal.classList.remove('hidden');
+      // 显示模态框时添加动画效果
+      setTimeout(() => {
+        modal.querySelector('div').classList.add('scale-100');
+        modal.querySelector('div').classList.remove('scale-95');
+      }, 10);
+    });
+
+    // 关闭模态框的函数
+    const closeModal = () => {
+      modal.querySelector('div').classList.remove('scale-100');
+      modal.querySelector('div').classList.add('scale-95');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+      }, 200);
+    };
+
+    closeModalBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+
+    // 点击模态框外部关闭
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        closeModal();
+      }
+    });
+
+    // 保存主机
+    saveBtn.addEventListener('click', () => {
+      // 保存主机的逻辑
+      alert('主机保存成功！');
+      closeModal();
+    });
+
+    // 编辑按钮交互
+    document.querySelectorAll('button:has(.fa-pencil)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        modalTitle.textContent = '编辑主机';
+        // 加载主机数据到表单的逻辑
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+          modal.querySelector('div').classList.add('scale-100');
+          modal.querySelector('div').classList.remove('scale-95');
+        }, 10);
+      });
+    });
+
+    // 删除按钮交互
+    document.querySelectorAll('button:has(.fa-trash)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (confirm('确定要删除这台主机吗？相关的防火墙规则也将被删除。')) {
+          // 删除主机的逻辑
+          alert('主机已删除！');
+        }
+      });
+    });
+
+    // 查看按钮交互
+    document.querySelectorAll('button:has(.fa-eye)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        alert('查看主机详情');
+      });
+    });
+
+    // 规则按钮交互
+    document.querySelectorAll('button:has(.fa-fire)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        // 跳转到该主机的规则管理页面
+        alert('跳转到该主机的防火墙规则管理');
+      });
+    });
+  </script>
+</body>
+</html>
