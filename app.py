@@ -93,38 +93,49 @@ def get_rule(iptables_output):
     return data_list
 
 
-# # 查看规则
-@app.route("/", methods=['GET'])
+# 查看规则
+@app.route("/rules", methods=['GET'])
 def index():
     iptables_output = shell_cmd(cmd='iptables -nL INPUT --line-number -t filter')
     data_list = get_rule(iptables_output)
-    print(data_list)
-    # for data in data_list:
-    #     num = data['num']
-    #     target = data['target']
-    #     prot = data['prot']
-    #     source = data['source']
-    #     port = data['port']
-    #     comment = '客户名称'
-    #     cmd = 'iptables -I INPUT {} -s {} -p {} --dport {} -j {} -m comment --comment {}'.format(num, source, prot,
-    #                                                                                              port, target, comment)
-    #     print(cmd)
-    #     shell_cmd(cmd=cmd)
-    return render_template('index.html', data_list=data_list)
+    return render_template('rule.html', data_list=data_list)
 
 
 # 修改规则
+# 添加规则
+# 删除规则
+
+# 查看主机
+@app.route("/hosts", methods=['GET'])
+def hosts():
+    return render_template('host.html')
+
+
+# 添加主机
+# 删除主机
+# 修改主机
+
+# 查看模板
+@app.route("/templates", methods=['GET'])
+def hosts():
+    return render_template('templates.html')
+
+
+# 添加模板
+# 删除模板
+# 修改模板
+
+# 系统设置
+@app.route("/systemseting", methods=['GET'])
+def hosts():
+    return render_template('systemseting.html')
+
+
+# 操作日志
+@app.route("/logs", methods=['GET'])
+def hosts():
+    return render_template('logs.html')
 
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=80)
-
-# 删除规则
-
-# 添加模板
-
-# 修改模板
-
-# 删除模板
-
-#
