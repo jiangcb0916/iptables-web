@@ -68,8 +68,8 @@
         <nav class="px-2 space-y-1">
           <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-4">主菜单</p>
 
-          <div class="sidebar-item">
-            <a href="/hosts">
+          <div class="sidebar-item active">
+            <a href="/hosts?page=1">
             <i class="fa fa-server w-5 h-5 mr-3"></i>
             <span>主机管理</span>
             </a>
@@ -110,21 +110,23 @@
 {% endblock script %}
 
 <script>
-// 页面加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
-  // 1. 获取当前页面的URL路径（如 "/hosts"、"/templates"）
-  const currentUrl = window.location.pathname;
+  // 1. 获取当前页面的URL路径（仅路径部分，不含查询参数）
+  const currentPath = window.location.pathname;
 
   // 2. 获取所有侧边栏按钮（.sidebar-item）
   const sidebarItems = document.querySelectorAll('.sidebar-item');
 
-  // 3. 遍历每个按钮，判断是否匹配当前URL
+  // 3. 遍历每个按钮，判断路径是否匹配（忽略查询参数）
   sidebarItems.forEach(item => {
-    // 获取按钮内的链接（<a>标签）的href属性
-    const linkHref = item.querySelector('a').getAttribute('href');
+    const link = item.querySelector('a');
+    const linkHref = link.getAttribute('href');
 
-    // 如果链接的href与当前页面URL一致，则添加active类，否则移除
-    if (currentUrl === linkHref) {
+    // 解析链接的路径部分（忽略查询参数）
+    const linkPath = new URL(linkHref, window.location.origin).pathname;
+
+    // 比较路径部分是否一致
+    if (currentPath === linkPath) {
       item.classList.add('active');
     } else {
       item.classList.remove('active');

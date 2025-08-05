@@ -101,21 +101,29 @@
 
             <!-- 分页 -->
             <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-              <div class="text-sm text-secondary">
-                显示 1 到 4 条，共 16 条
+              <div class="text-sm text-secondary" id="showsum"
+                   data-start="{{ start }}"
+                   data-end="{{ end }}"
+                   data-sum="{{ sum }}">
+                  显示 {{ start }} 到 {{ end }} 条，共 {{ sum }} 条
               </div>
-              <div class="flex space-x-1">
-                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50" disabled>
-                  <i class="fa fa-chevron-left"></i>
-                </button>
-                <button class="px-3 py-1 rounded border border-primary bg-primary text-white">1</button>
-                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">2</button>
-                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">3</button>
-                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">4</button>
-                <button class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50">
-                  <i class="fa fa-chevron-right"></i>
-                </button>
-              </div>
+              <!-- 分页容器 -->
+                <div class="flex space-x-1" id="pagination"
+                     data-current-page="{{ current_page }}"
+                     data-total-pages="{{ total_pages }}">
+                  <!-- 上一页按钮 -->
+                  <button class="prev-btn px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50">
+                    <i class="fa fa-chevron-left"></i>
+                  </button>
+
+                  <!-- 页码按钮容器（JS动态生成） -->
+                  <div class="page-numbers flex space-x-1"></div>
+
+                  <!-- 下一页按钮 -->
+                  <button class="next-btn px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50">
+                    <i class="fa fa-chevron-right"></i>
+                  </button>
+                </div>
             </div>
           </div>
         </div>
@@ -217,10 +225,126 @@
     <i class="fa fa-times-circle mr-2"></i>
     <span>操作失败，请重试！</span>
   </div>
+
 {% endblock main %}
 
 {% block script %}
   <script>
+  // 初始化分页
+  function initPagination() {
+    // 获取容器和参数（从data属性中读取后端传递的值）
+    const pagination = document.getElementById('pagination');
+    const currentPage = parseInt(pagination.dataset.currentPage); // 当前页（如1）
+    const totalPages = parseInt(pagination.dataset.totalPages);   // 总页数（如10）
+    const pageNumbersContainer = document.querySelector('.page-numbers'); // 页码容器
+    const prevBtn = document.querySelector('.prev-btn'); // 上一页按钮
+    const nextBtn = document.querySelector('.next-btn'); // 下一页按钮
+
+    // 最多显示5个页码（可自定义）
+    const maxVisiblePages = 5;
+
+
+    // 1. 计算需要显示的页码范围（startPage ~ endPage）
+    let startPage, endPage;
+    if (totalPages <= maxVisiblePages) {
+      // 总页数 ≤ 最大显示数：全部显示
+      startPage = 1;
+      endPage = totalPages;
+    } else {
+      // 总页数 > 最大显示数：动态计算范围
+      const half = Math.floor(maxVisiblePages / 2);
+      if (currentPage <= half) {
+        // 当前页靠前：显示1 ~ maxVisiblePages
+        startPage = 1;
+        endPage = maxVisiblePages;
+      } else if (currentPage >= totalPages - half) {
+        // 当前页靠后：显示最后maxVisiblePages个
+        startPage = totalPages - maxVisiblePages + 1;
+        endPage = totalPages;
+      } else {
+        // 当前页中间：显示当前页前后各half个
+        startPage = currentPage - half;
+        endPage = currentPage + half;
+      }
+    }
+
+
+    // 2. 生成页码按钮
+    function renderPageNumbers() {
+      pageNumbersContainer.innerHTML = ''; // 清空现有按钮
+      for (let i = startPage; i <= endPage; i++) {
+        const btn = document.createElement('button');
+        btn.className = `px-3 py-1 rounded border ${
+          i === currentPage
+            ? 'border-primary bg-primary text-white'  // 当前页样式
+            : 'border-gray-300 bg-white text-secondary hover:bg-gray-50'  // 其他页样式
+        }`;
+        btn.textContent = i;
+        // 点击页码：跳转到对应页
+        btn.addEventListener('click', () => {
+          navigateToPage(i);
+        });
+        pageNumbersContainer.appendChild(btn);
+      }
+    }
+
+
+    // 3. 上一页/下一页逻辑
+    function updateNavButtons() {
+      // 上一页：第1页禁用
+      prevBtn.disabled = currentPage === 1;
+      prevBtn.addEventListener('click', () => {
+        if (currentPage > 1) {
+          navigateToPage(currentPage - 1);
+        }
+      });
+
+      // 下一页：最后一页禁用
+      nextBtn.disabled = currentPage === totalPages;
+      nextBtn.addEventListener('click', () => {
+        if (currentPage < totalPages) {
+          navigateToPage(currentPage + 1);
+        }
+      });
+    }
+
+
+    // 4. 跳转至指定页（更新URL的page参数）
+    function navigateToPage(page) {
+      // 构造新URL（替换或添加page参数）
+      const url = new URL(window.location.href);
+      url.searchParams.set('page', page); // 更新page参数
+      window.location.href = url.toString(); // 跳转
+    }
+
+
+    // 初始化渲染
+    renderPageNumbers();
+    updateNavButtons();
+  }
+
+  // 页面加载后初始化分页
+  window.addEventListener('DOMContentLoaded', initPagination);
+  // 显示条数
+  const showsum = document.getElementById('showsum');
+
+  // 从模板中获取变量值（假设这些值已通过Jinja2渲染到页面中）
+  // 这里使用data属性存储原始值，便于JavaScript获取
+  const start = parseInt(showsum.dataset.start);
+  const end = parseInt(showsum.dataset.end);
+  const sum = parseInt(showsum.dataset.sum);
+
+  // 根据sum和end的关系生成不同的显示内容
+  let displayText;
+  if (sum > end) {
+      displayText = `显示 ${start} 到 ${end} 条，共 ${sum} 条`;
+  } else {
+      displayText = `显示 ${start} 到 ${sum} 条，共 ${sum} 条`;
+  }
+
+  // 更新显示内容
+  showsum.textContent = displayText;
+
     // 认证方式切换
     const authMethod = document.getElementById('auth-method');
     const passwordField = document.getElementById('password-field');

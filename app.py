@@ -11,6 +11,7 @@ import re
 import paramiko
 from paramiko.client import AutoAddPolicy
 from datetime import datetime
+import math
 
 app = Flask(__name__)
 ssh = paramiko.SSHClient()
@@ -144,6 +145,11 @@ def rules_out():
 # 主机管理页面路由 - 读取数据库并返回数据到前端
 @app.route("/hosts", methods=['GET'])
 def hosts():
+    all_params = dict(request.args)
+    page = all_params['page']
+    page_size = 10
+    start = (int(page) - 1) * page_size
+    end = int(page) * page_size
     try:
         # 获取数据库连接
         db = get_db()
@@ -170,9 +176,10 @@ def hosts():
                 'operating_system': host['operating_system'],
                 'created_at': host['created_at']
             })
-        print(host_list)
+        print(host_list[start:end])
         # 将主机数据传递到模板
-        return render_template('host.html', host_list=host_list)
+        return render_template('host.html', host_list=host_list[start:end], sum=len(host_list), start=(start + 1),
+                               end=end, current_page=page, total_pages=(math.ceil(len(host_list) / 10)))
 
     except Exception as e:
         # 错误处理
