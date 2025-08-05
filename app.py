@@ -120,15 +120,24 @@ def get_rule(iptables_output):
 
 
 # 查看规则
-@app.route("/rules", methods=['GET'])
-def rules():
+@app.route("/rules_in", methods=['GET'])
+def rules_in():
     iptables_output = shell_cmd(cmd='iptables -nL INPUT --line-number -t filter')
     data_list = get_rule(iptables_output)
     return render_template('rule.html', data_list=data_list)
 
 
+@app.route("/rules_out", methods=['GET'])
+def rules_out():
+    iptables_output = shell_cmd(cmd='iptables -nL OUTPUT --line-number -t filter')
+    data_list = get_rule(iptables_output)
+    return render_template('rule.html', data_list=data_list)
+
+
 # 修改规则
+
 # 添加规则
+
 # 删除规则
 
 # 查看主机
@@ -213,30 +222,9 @@ def add_host():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-@app.route('/api/hosts/<int:host_id>', methods=['DELETE'])
-def delete_host(host_id):
-    try:
-        db = get_db()
-        cursor = db.cursor()
-
-        # 删除主机
-        cursor.execute('DELETE FROM hosts WHERE id = ?', (host_id,))
-        db.commit()
-
-        if cursor.rowcount == 0:
-            return jsonify({'success': False, 'message': '主机不存在'}), 404
-
-        return jsonify({'success': True, 'message': '主机删除成功'})
-
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
-
-
-
-
 # 删除主机
+
+
 # 修改主机
 
 # 查看模板
