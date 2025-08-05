@@ -75,7 +75,7 @@
             </a>
           </div>
 
-          <div class="sidebar-item active">
+          <div class="sidebar-item">
             <a href="/templates">
             <i class="fa fa-firewall fa-list-alt w-5 h-5 mr-3"></i>
             <span>模板管理</span>
@@ -108,5 +108,29 @@
 <!-- js -->
 {% block script %}
 {% endblock script %}
+
+<script>
+// 页面加载完成后执行
+document.addEventListener('DOMContentLoaded', function() {
+  // 1. 获取当前页面的URL路径（如 "/hosts"、"/templates"）
+  const currentUrl = window.location.pathname;
+
+  // 2. 获取所有侧边栏按钮（.sidebar-item）
+  const sidebarItems = document.querySelectorAll('.sidebar-item');
+
+  // 3. 遍历每个按钮，判断是否匹配当前URL
+  sidebarItems.forEach(item => {
+    // 获取按钮内的链接（<a>标签）的href属性
+    const linkHref = item.querySelector('a').getAttribute('href');
+
+    // 如果链接的href与当前页面URL一致，则添加active类，否则移除
+    if (currentUrl === linkHref) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  });
+});
+</script>
 </body>
 </html>
