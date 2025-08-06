@@ -16,6 +16,8 @@ import math
 app = Flask(__name__)
 ssh = paramiko.SSHClient()
 DATABASE = 'firewall_management.db'
+# 确保静态文件目录正确配置
+app.static_folder = 'static'
 
 user = 'root'
 port = 22
@@ -230,6 +232,20 @@ def add_host():
 
 
 # 删除主机
+@app.route('/host_del', methods=['DELETE'])
+def del_host():
+    host_id = request.args.get('id')
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        # 删除主机
+        cursor.execute('DELETE FROM hosts WHERE id = ?', (host_id,))
+        db.commit()
+        if cursor.rowcount == 0:
+            return jsonify({'success': False, 'message': '主机不存在'}), 404
+        return jsonify({'success': True, 'message': '主机删除成功'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # 修改主机

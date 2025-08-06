@@ -75,6 +75,7 @@
                     <div class="flex items-center">
                       <i class="fa fa-server text-primary text-lg mr-3"></i>
                       <div>
+                        <div class="host-id text-sm font-medium text-dark" style="display: none;">{{ host.id }}</div>
                         <div class="text-sm font-medium text-dark">{{ host.host_name }}</div>
                         <div class="text-xs text-secondary">{{ host.host_identifier }}</div>
                       </div>
@@ -455,7 +456,8 @@
         if (data.success) {
           // 显示成功提示
           showToast('success-toast');
-
+          // 刷新当前页面，重新从后端获取最新数据
+          window.location.reload();
           // 关闭模态框
           closeModal();
 
@@ -511,25 +513,31 @@
       });
     });
 
+
     // 删除按钮交互
     document.querySelectorAll('button:has(.fa-trash)').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (confirm('确定要删除这台主机吗？相关的防火墙规则也将被删除。')) {
-          // 发送删除请求
-          fetch('/api/hosts/1', { // 假设1是主机ID
+        if (confirm('确定要删除这台主机吗？')) {
+        const row = btn.closest('tr');
+        const idElement = row.querySelector('.host-id'); // 查找当前行内的隐藏id元素
+
+        // 获取host.id的值
+        const hostId = idElement.textContent.trim();
+          // 发送删除请求（通过URL参数传递id）
+          fetch(`/host_del?id=${hostId}`, { // 在URL中携带id参数
             method: 'DELETE'
           })
           .then(response => {
             if (response.ok) {
-              // 从DOM中移除行
-              btn.closest('tr').remove();
+              // 刷新当前页面，重新从后端获取最新数据
+              window.location.reload();
               showToast('success-toast');
             } else {
               showToast('error-toast');
             }
           })
           .catch(error => {
-            console.error('错误:', error);
+            console.error('删除请求失败:', error);
             showToast('error-toast');
           });
         }
