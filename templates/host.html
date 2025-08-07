@@ -1,6 +1,40 @@
 {% extends 'base.html' %}
 {% block main %}
+  <style type="text/tailwindcss">
+    /* 提示消息基础样式 */
+    .toast {
+      position: fixed; /* 固定定位，不随滚动移动 */
+      top: 20px; /* 距离顶部20px */
+      right: 20px; /* 距离右侧20px */
+      padding: 12px 20px; /* 内边距 */
+      border-radius: 6px; /* 圆角 */
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); /* 阴影效果 */
+      z-index: 9999; /* 确保在最上层 */
+      display: flex; /* 图标和文字横向排列 */
+      align-items: center; /* 垂直居中 */
+      transition: all 0.3s ease; /* 过渡动画 */
+    }
 
+    /* 初始隐藏状态：向右移出屏幕且透明 */
+    .toast.translate-x-full {
+      transform: translateX(120%); /* 向右移出屏幕 */
+      opacity: 0; /* 完全透明 */
+    }
+
+    /* 显示状态（通过JS移除translate-x-full和opacity-0实现） */
+    .toast:not(.translate-x-full) {
+      transform: translateX(0); /* 回到正常位置 */
+      opacity: 1; /* 完全显示 */
+    }
+
+    /* 成功/错误状态的背景色（如果已有无需重复） */
+    .bg-success {
+      background-color: #10b981; /* 绿色 */
+    }
+    .bg-danger {
+      background-color: #ef4444; /* 红色 */
+    }
+  </style>
     <!-- 主内容区 -->
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- 顶部导航栏 -->
@@ -70,32 +104,42 @@
               <tbody class="bg-white divide-y divide-gray-200" id="hosts-table-body">
                 <!-- 主机1 -->
                 {% for host in host_list %}
-                <tr class="hover:bg-gray-50 transition-colors">
+                <!-- 修正后的tr结构 -->
+                <tr class="hover:bg-gray-50 transition-colors data-info"
+                    data-id="{{ host.id }}"
+                    data-host-name="{{ host.host_name }}"
+                    data-host-identifier="{{ host.host_identifier }}"
+                    data-ip-address="{{ host.ip_address }}"
+                    data-os="{{ host.operating_system }}"
+                    data-ssh-port="{{ host.ssh_port|default(22) }}"
+                    data-auth-username="{{ host.username|default('') }}"
+                    data-auth-method="{{ host.auth_method|default('password') }}">
+                  <!-- 所有td都在tr内部 -->
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
                       <i class="fa fa-server text-primary text-lg mr-3"></i>
                       <div>
-                        <div class="host-id text-sm font-medium text-dark" style="display: none;">{{ host.id }}</div>
-                        <div class="text-sm font-medium text-dark">{{ host.host_name }}</div>
-                        <div class="text-xs text-secondary">{{ host.host_identifier }}</div>
+                        <div class="host-id text-sm font-medium text-dark" style="display: none;" >{{ host.id }}</div>
+                        <div class="host-name text-sm font-medium text-dark">{{ host.host_name }}</div>
+                        <div class="host-identifier text-xs text-secondary">{{ host.host_identifier }}</div>
                       </div>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.ip_address }}</td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.operating_system }}</td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.created_at }}</td>
+                  <td class="host-ip px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.ip_address }}</td>
+                  <td class="host-operating px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.operating_system }}</td>
+                  <td class="host-created px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.created_at }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button class="text-primary hover:text-primary/80 mr-3 transition-colors">
                       <i class="fa fa-fire"></i> 规则
                     </button>
-                    <button class="text-warning hover:text-warning/80 mr-3 transition-colors">
+                    <button class="text-warning hover:text-warning/80 mr-3 transition-colors edit-btn">
                       <i class="fa fa-pencil"></i> 编辑
                     </button>
                     <button class="text-danger hover:text-red-700 transition-colors">
                       <i class="fa fa-trash"></i> 删除
                     </button>
                   </td>
-                </tr>
+                </tr> <!-- 闭合标签放在最后 -->
               {% endfor %}
               </tbody>
             </table>
@@ -130,7 +174,6 @@
         </div>
       </main>
     </div>
-  </div>
 
   <!-- 添加/编辑主机模态框 -->
   <div id="host-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
@@ -144,6 +187,7 @@
 
       <div class="px-6 py-5">
         <form id="host-form">
+          <input type="hidden" id="edit-id" value="">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label for="host-name" class="block text-sm font-medium text-gray-700 mb-1">主机名称 <span class="text-danger">*</span></label>
@@ -218,11 +262,11 @@
   </div>
 
   <!-- 提示消息 -->
-  <div id="success-toast" class="toast bg-success text-white">
+  <div id="success-toast" class="toast bg-success text-white translate-x-full">
     <i class="fa fa-check-circle mr-2"></i>
     <span>操作成功！</span>
   </div>
-  <div id="error-toast" class="toast bg-danger text-white">
+  <div id="error-toast" class="toast bg-danger text-white translate-x-full">
     <i class="fa fa-times-circle mr-2"></i>
     <span>操作失败，请重试！</span>
   </div>
@@ -230,288 +274,290 @@
 {% endblock main %}
 
 {% block script %}
-  <script>
-  // 初始化分页
-  function initPagination() {
-    // 获取容器和参数（从data属性中读取后端传递的值）
-    const pagination = document.getElementById('pagination');
-    const currentPage = parseInt(pagination.dataset.currentPage); // 当前页（如1）
-    const totalPages = parseInt(pagination.dataset.totalPages);   // 总页数（如10）
-    const pageNumbersContainer = document.querySelector('.page-numbers'); // 页码容器
-    const prevBtn = document.querySelector('.prev-btn'); // 上一页按钮
-    const nextBtn = document.querySelector('.next-btn'); // 下一页按钮
+<script>
+// 初始化分页
+function initPagination() {
+  // 获取容器和参数（从data属性中读取后端传递的值）
+  const pagination = document.getElementById('pagination');
+  const currentPage = parseInt(pagination.dataset.currentPage); // 当前页（如1）
+  const totalPages = parseInt(pagination.dataset.totalPages);   // 总页数（如10）
+  const pageNumbersContainer = document.querySelector('.page-numbers'); // 页码容器
+  const prevBtn = document.querySelector('.prev-btn'); // 上一页按钮
+  const nextBtn = document.querySelector('.next-btn'); // 下一页按钮
 
-    // 最多显示5个页码（可自定义）
-    const maxVisiblePages = 5;
+  // 最多显示5个页码（可自定义）
+  const maxVisiblePages = 5;
 
 
-    // 1. 计算需要显示的页码范围（startPage ~ endPage）
-    let startPage, endPage;
-    if (totalPages <= maxVisiblePages) {
-      // 总页数 ≤ 最大显示数：全部显示
+  // 1. 计算需要显示的页码范围（startPage ~ endPage）
+  let startPage, endPage;
+  if (totalPages <= maxVisiblePages) {
+    // 总页数 ≤ 最大显示数：全部显示
+    startPage = 1;
+    endPage = totalPages;
+  } else {
+    // 总页数 > 最大显示数：动态计算范围
+    const half = Math.floor(maxVisiblePages / 2);
+    if (currentPage <= half) {
+      // 当前页靠前：显示1 ~ maxVisiblePages
       startPage = 1;
+      endPage = maxVisiblePages;
+    } else if (currentPage >= totalPages - half) {
+      // 当前页靠后：显示最后maxVisiblePages个
+      startPage = totalPages - maxVisiblePages + 1;
       endPage = totalPages;
     } else {
-      // 总页数 > 最大显示数：动态计算范围
-      const half = Math.floor(maxVisiblePages / 2);
-      if (currentPage <= half) {
-        // 当前页靠前：显示1 ~ maxVisiblePages
-        startPage = 1;
-        endPage = maxVisiblePages;
-      } else if (currentPage >= totalPages - half) {
-        // 当前页靠后：显示最后maxVisiblePages个
-        startPage = totalPages - maxVisiblePages + 1;
-        endPage = totalPages;
-      } else {
-        // 当前页中间：显示当前页前后各half个
-        startPage = currentPage - half;
-        endPage = currentPage + half;
-      }
+      // 当前页中间：显示当前页前后各half个
+      startPage = currentPage - half;
+      endPage = currentPage + half;
     }
-
-
-    // 2. 生成页码按钮
-    function renderPageNumbers() {
-      pageNumbersContainer.innerHTML = ''; // 清空现有按钮
-      for (let i = startPage; i <= endPage; i++) {
-        const btn = document.createElement('button');
-        btn.className = `px-3 py-1 rounded border ${
-          i === currentPage
-            ? 'border-primary bg-primary text-white'  // 当前页样式
-            : 'border-gray-300 bg-white text-secondary hover:bg-gray-50'  // 其他页样式
-        }`;
-        btn.textContent = i;
-        // 点击页码：跳转到对应页
-        btn.addEventListener('click', () => {
-          navigateToPage(i);
-        });
-        pageNumbersContainer.appendChild(btn);
-      }
-    }
-
-
-    // 3. 上一页/下一页逻辑
-    function updateNavButtons() {
-      // 上一页：第1页禁用
-      prevBtn.disabled = currentPage === 1;
-      prevBtn.addEventListener('click', () => {
-        if (currentPage > 1) {
-          navigateToPage(currentPage - 1);
-        }
-      });
-
-      // 下一页：最后一页禁用
-      nextBtn.disabled = currentPage === totalPages;
-      nextBtn.addEventListener('click', () => {
-        if (currentPage < totalPages) {
-          navigateToPage(currentPage + 1);
-        }
-      });
-    }
-
-
-    // 4. 跳转至指定页（更新URL的page参数）
-    function navigateToPage(page) {
-      // 构造新URL（替换或添加page参数）
-      const url = new URL(window.location.href);
-      url.searchParams.set('page', page); // 更新page参数
-      window.location.href = url.toString(); // 跳转
-    }
-
-
-    // 初始化渲染
-    renderPageNumbers();
-    updateNavButtons();
   }
 
-  // 页面加载后初始化分页
-  window.addEventListener('DOMContentLoaded', initPagination);
-  // 显示条数
-  const showsum = document.getElementById('showsum');
 
-  // 从模板中获取变量值（假设这些值已通过Jinja2渲染到页面中）
-  // 这里使用data属性存储原始值，便于JavaScript获取
-  const start = parseInt(showsum.dataset.start);
-  const end = parseInt(showsum.dataset.end);
-  const sum = parseInt(showsum.dataset.sum);
-
-  // 根据sum和end的关系生成不同的显示内容
-  let displayText;
-  if (sum > end) {
-      displayText = `显示 ${start} 到 ${end} 条，共 ${sum} 条`;
-  } else {
-      displayText = `显示 ${start} 到 ${sum} 条，共 ${sum} 条`;
+  // 2. 生成页码按钮
+  function renderPageNumbers() {
+    pageNumbersContainer.innerHTML = ''; // 清空现有按钮
+    for (let i = startPage; i <= endPage; i++) {
+      const btn = document.createElement('button');
+      btn.className = `px-3 py-1 rounded border ${
+        i === currentPage
+          ? 'border-primary bg-primary text-white'  // 当前页样式
+          : 'border-gray-300 bg-white text-secondary hover:bg-gray-50'  // 其他页样式
+      }`;
+      btn.textContent = i;
+      // 点击页码：跳转到对应页
+      btn.addEventListener('click', () => {
+        navigateToPage(i);
+      });
+      pageNumbersContainer.appendChild(btn);
+    }
   }
 
-  // 更新显示内容
-  showsum.textContent = displayText;
 
-    // 认证方式切换
-    const authMethod = document.getElementById('auth-method');
-    const passwordField = document.getElementById('password-field');
-    const keyField = document.getElementById('key-field');
-
-    authMethod.addEventListener('change', () => {
-      if (authMethod.value === 'password') {
-        passwordField.classList.remove('hidden');
-        keyField.classList.add('hidden');
-      } else {
-        passwordField.classList.add('hidden');
-        keyField.classList.remove('hidden');
+  // 3. 上一页/下一页逻辑
+  function updateNavButtons() {
+    // 上一页：第1页禁用
+    prevBtn.disabled = currentPage === 1;
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 1) {
+        navigateToPage(currentPage - 1);
       }
     });
 
-    // 模态框交互
-    const modal = document.getElementById('host-modal');
-    const addHostBtn = document.getElementById('add-host-btn');
-    const closeModalBtn = document.getElementById('close-modal');
-    const cancelBtn = document.getElementById('cancel-btn');
-    const saveBtn = document.getElementById('save-btn');
-    const modalTitle = document.getElementById('modal-title');
-    const hostsTableBody = document.getElementById('hosts-table-body');
+    // 下一页：最后一页禁用
+    nextBtn.disabled = currentPage === totalPages;
+    nextBtn.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        navigateToPage(currentPage + 1);
+      }
+    });
+  }
 
-    // 打开新增主机模态框
-    addHostBtn.addEventListener('click', () => {
-      modalTitle.textContent = '添加主机';
-      document.getElementById('host-form').reset();
+
+  // 4. 跳转至指定页（更新URL的page参数）
+  function navigateToPage(page) {
+    // 构造新URL（替换或添加page参数）
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', page); // 更新page参数
+    window.location.href = url.toString(); // 跳转
+  }
+
+
+  // 初始化渲染
+  renderPageNumbers();
+  updateNavButtons();
+}
+
+// 页面加载后初始化分页
+window.addEventListener('DOMContentLoaded', initPagination);
+// 显示条数
+const showsum = document.getElementById('showsum');
+
+// 从模板中获取变量值（假设这些值已通过Jinja2渲染到页面中）
+// 这里使用data属性存储原始值，便于JavaScript获取
+const start = parseInt(showsum.dataset.start);
+const end = parseInt(showsum.dataset.end);
+const sum = parseInt(showsum.dataset.sum);
+
+// 根据sum和end的关系生成不同的显示内容
+let displayText;
+if (sum > end) {
+    displayText = `显示 ${start} 到 ${end} 条，共 ${sum} 条`;
+} else {
+    displayText = `显示 ${start} 到 ${sum} 条，共 ${sum} 条`;
+}
+
+// 更新显示内容
+showsum.textContent = displayText;
+
+  // 认证方式切换
+  const authMethod = document.getElementById('auth-method');
+  const passwordField = document.getElementById('password-field');
+  const keyField = document.getElementById('key-field');
+
+  authMethod.addEventListener('change', () => {
+    if (authMethod.value === 'password') {
       passwordField.classList.remove('hidden');
       keyField.classList.add('hidden');
-      modal.classList.remove('hidden');
-      // 显示模态框时添加动画效果
-      setTimeout(() => {
-        modal.querySelector('div').classList.add('scale-100');
-        modal.querySelector('div').classList.remove('scale-95');
-      }, 10);
-    });
+    } else {
+      passwordField.classList.add('hidden');
+      keyField.classList.remove('hidden');
+    }
+  });
 
-    // 关闭模态框的函数
-    const closeModal = () => {
-      modal.querySelector('div').classList.remove('scale-100');
-      modal.querySelector('div').classList.add('scale-95');
-      setTimeout(() => {
-        modal.classList.add('hidden');
-      }, 200);
-    };
+  // 模态框交互
+  const modal = document.getElementById('host-modal');
+  const addHostBtn = document.getElementById('add-host-btn');
+  const closeModalBtn = document.getElementById('close-modal');
+  const cancelBtn = document.getElementById('cancel-btn');
+  const saveBtn = document.getElementById('save-btn');
+  const modalTitle = document.getElementById('modal-title');
+  const hostsTableBody = document.getElementById('hosts-table-body');
 
-    closeModalBtn.addEventListener('click', closeModal);
-    cancelBtn.addEventListener('click', closeModal);
+  // 打开新增主机模态框
+  addHostBtn.addEventListener('click', () => {
+    modalTitle.textContent = '添加主机';
+    document.getElementById('host-form').reset();
+    passwordField.classList.remove('hidden');
+    keyField.classList.add('hidden');
+    modal.classList.remove('hidden');
+    // 显示模态框时添加动画效果
+    setTimeout(() => {
+      modal.querySelector('div').classList.add('scale-100');
+      modal.querySelector('div').classList.remove('scale-95');
+    }, 10);
+  });
 
-    // 点击模态框外部关闭
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        closeModal();
-      }
-    });
+  // 关闭模态框的函数
+  const closeModal = () => {
+    modal.querySelector('div').classList.remove('scale-100');
+    modal.querySelector('div').classList.add('scale-95');
+    setTimeout(() => {
+      modal.classList.add('hidden');
+    }, 200);
+  };
 
-    // 显示提示消息
-    function showToast(elementId) {
-      const toast = document.getElementById(elementId);
-      toast.classList.remove('translate-x-full', 'opacity-0');
-      setTimeout(() => {
-        toast.classList.add('translate-x-full', 'opacity-0');
-      }, 3000);
+  closeModalBtn.addEventListener('click', closeModal);
+  cancelBtn.addEventListener('click', closeModal);
+
+  // 点击模态框外部关闭
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeModal();
+    }
+  });
+
+  // 显示提示消息
+  function showToast(elementId) {
+    const toast = document.getElementById(elementId);
+    toast.classList.remove('translate-x-full'); // 移除隐藏类，显示toast
+    setTimeout(() => {
+      toast.classList.add('translate-x-full'); // 3秒后添加隐藏类，隐藏toast
+    }, 3000);
+  }
+
+// 保存主机 - 发送AJAX请求（同时支持新增和编辑）
+saveBtn.addEventListener('click', () => {
+  // 获取编辑ID（新增时为空，编辑时有值）
+  const editId = document.getElementById('edit-id').value;
+
+  // 获取表单数据
+  const formData = {
+    id: editId, // 编辑时传递主机ID，新增时为空
+    host_name: document.getElementById('host-name').value,
+    host_identifier: document.getElementById('host-id').value,
+    ip_address: document.getElementById('ip-address').value,
+    operating_system: document.getElementById('os-type').value,
+    ssh_port: document.getElementById('ssh-port').value || 26,
+    username: document.getElementById('auth-username').value,
+    auth_method: document.getElementById('auth-method').value,
+    password: document.getElementById('auth-method').value === 'password'
+      ? document.getElementById('auth-password').value
+      : null,
+    private_key: document.getElementById('auth-method').value === 'key'
+      ? document.getElementById('auth-key').value
+      : null
+  };
+
+  // 简单验证
+  if (!formData.host_name || !formData.host_identifier || !formData.ip_address || !formData.operating_system) {
+    alert('请填写必填字段');
+    return;
+  }
+
+  // 根据是否有编辑ID决定请求URL（新增：/host_add，编辑：/host_update）
+  const url = editId ? '/host_update' : '/host_add';
+
+  // 发送POST请求
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // 注意：如果有CSRF保护，需要添加CSRF令牌头部
+      // 'X-CSRFToken': getCSRFToken() // 需实现获取CSRF令牌的函数
+    },
+    body: JSON.stringify(formData)
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('网络响应不正常');
+    }
+    return response.json();
+  })
+  .then(data => {
+    if (data.success) {
+      // 显示成功提示
+      showToast('success-toast');
+      // 刷新页面获取最新数据
+      window.location.reload();
+      // 关闭模态框
+      closeModal();
+    } else {
+      showToast('error-toast');
+    }
+  })
+  .catch(error => {
+    console.error('错误:', error);
+    showToast('error-toast');
+  });
+});
+
+// 编辑按钮交互
+document.querySelectorAll('button:has(.fa-pencil)').forEach(btn => {
+  btn.addEventListener('click', () => {
+    modalTitle.textContent = '编辑主机';
+    // 1. 获取当前点击的主机行数据
+    const tr = btn.closest('tr'); // 找到当前按钮所在的<tr>
+    const hostData = tr.dataset; // 获取<tr>上的所有data-*属性
+    console.log(hostData)
+    // 2. 填充表单数据
+    document.getElementById('edit-id').value = hostData.id; // 存储主机ID（用于更新）
+    document.getElementById('host-name').value = hostData.hostName;
+    document.getElementById('host-id').value = hostData.hostIdentifier;
+    document.getElementById('ip-address').value = hostData.ipAddress;
+    document.getElementById('os-type').value = hostData.os;
+    document.getElementById('ssh-port').value = hostData.sshPort;
+    document.getElementById('auth-username').value = hostData.authUsername;
+    document.getElementById('auth-method').value = hostData.authMethod;
+
+
+    // 3. 根据认证方式切换显示密码/密钥字段
+    if (hostData.authMethod === 'password') {
+      passwordField.classList.remove('hidden');
+      keyField.classList.add('hidden');
+    } else {
+      passwordField.classList.add('hidden');
+      keyField.classList.remove('hidden');
     }
 
-    // 保存主机 - 发送AJAX请求
-    saveBtn.addEventListener('click', () => {
-      // 获取表单数据
-      const formData = {
-        host_name: document.getElementById('host-name').value,
-        host_identifier: document.getElementById('host-id').value,
-        ip_address: document.getElementById('ip-address').value,
-        operating_system: document.getElementById('os-type').value,
-        ssh_port: document.getElementById('ssh-port').value || 22,
-        username: document.getElementById('auth-username').value,
-        auth_method: document.getElementById('auth-method').value,
-        password: document.getElementById('auth-method').value === 'password'
-          ? document.getElementById('auth-password').value
-          : null,
-        private_key: document.getElementById('auth-method').value === 'key'
-          ? document.getElementById('auth-key').value
-          : null
-      };
-
-      // 简单验证
-      if (!formData.host_name || !formData.host_identifier || !formData.ip_address || !formData.operating_system) {
-        alert('请填写必填字段');
-        return;
-      }
-
-      // 发送POST请求
-      fetch('/host_add', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // 可以添加CSRF令牌等其他头部
-        },
-        body: JSON.stringify(formData)
-      })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('网络响应不正常');
-        }
-        return response.json();
-      })
-      .then(data => {
-        if (data.success) {
-          // 显示成功提示
-          showToast('success-toast');
-          // 刷新当前页面，重新从后端获取最新数据
-          window.location.reload();
-          // 关闭模态框
-          closeModal();
-
-          // 添加新主机到表格（模拟）
-          const newRow = document.createElement('tr');
-          newRow.className = 'hover:bg-gray-50 transition-colors';
-          newRow.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap">
-              <div class="flex items-center">
-                <i class="fa fa-server text-primary text-lg mr-3"></i>
-                <div>
-                  <div class="text-sm font-medium text-dark">${formData.host_name}</div>
-                  <div class="text-xs text-secondary">${formData.host_identifier}</div>
-                </div>
-              </div>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${formData.ip_address}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${formData.operating_system}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${new Date().toLocaleString()}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-              <button class="text-primary hover:text-primary/80 mr-3 transition-colors">
-                <i class="fa fa-fire"></i> 规则
-              </button>
-              <button class="text-warning hover:text-warning/80 mr-3 transition-colors">
-                <i class="fa fa-pencil"></i> 编辑
-              </button>
-              <button class="text-danger hover:text-red-700 transition-colors">
-                <i class="fa fa-trash"></i> 删除
-              </button>
-            </td>
-          `;
-          hostsTableBody.appendChild(newRow);
-        } else {
-          showToast('error-toast');
-        }
-      })
-      .catch(error => {
-        console.error('错误:', error);
-        showToast('error-toast');
-      });
-    });
-
-    // 编辑按钮交互
-    document.querySelectorAll('button:has(.fa-pencil)').forEach(btn => {
-      btn.addEventListener('click', () => {
-        modalTitle.textContent = '编辑主机';
-        // 这里应该加载主机数据到表单
-        modal.classList.remove('hidden');
-        setTimeout(() => {
-          modal.querySelector('div').classList.add('scale-100');
-          modal.querySelector('div').classList.remove('scale-95');
-        }, 10);
-      });
-    });
+    // 4. 显示模态框
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      modal.querySelector('div').classList.add('scale-100');
+      modal.querySelector('div').classList.remove('scale-95');
+    }, 10);
+  });
+});
 
 
     // 删除按钮交互
@@ -552,7 +598,8 @@
         window.location.href = `/host-rules?ip=${hostId}`;
       });
     });
-  </script>
+
+</script>
 </body>
 </html>
 {% endblock script %}

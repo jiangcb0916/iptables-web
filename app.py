@@ -158,8 +158,8 @@ def hosts():
         cursor = db.cursor()
         # 查询所有主机数据
         cursor.execute('''
-        SELECT id, host_name, host_identifier, ip_address, 
-               operating_system, created_at 
+        SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
+               operating_system, created_at, ssh_port
         FROM hosts 
         ORDER BY created_at DESC
         ''')
@@ -172,17 +172,18 @@ def hosts():
         for host in hosts:
             host_list.append({
                 'id': host['id'],
+                'ssh_port': host['ssh_port'],
+                'username': host['username'],
+                'auth_method': host['auth_method'],
                 'host_name': host['host_name'],
                 'host_identifier': host['host_identifier'],
                 'ip_address': host['ip_address'],
                 'operating_system': host['operating_system'],
                 'created_at': host['created_at']
             })
-        print(host_list[start:end])
         # 将主机数据传递到模板
         return render_template('host.html', host_list=host_list[start:end], sum=len(host_list), start=(start + 1),
                                end=end, current_page=page, total_pages=(math.ceil(len(host_list) / 10)))
-
     except Exception as e:
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
@@ -249,6 +250,38 @@ def del_host():
 
 
 # 修改主机
+@app.route('/host_update', methods=['POST'])
+def update_host():
+    data = request.get_json()
+    host_id = data['id']
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        # 不修改密码
+        print(data['ssh_port'])
+        if data['password'] is None and data['private_key'] == '':
+            cursor.execute(
+                'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, updated_at = ? WHERE id = ?;',
+                (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
+                 data['ssh_port'], data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+            db.commit()
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': '主机不存在'}), 404
+            return jsonify({'success': True, 'message': '主机编辑成功'})
+        # 修改密码
+        else:
+            cursor.execute(
+                'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, auth_method = ?, password = ?, private_key = ? ,updated_at = ? WHERE id = ?;',
+                (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
+                 data['ssh_port'], data['username'], data['auth_method'], data['password'], data['private_key'],
+                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+            db.commit()
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': '主机不存在'}), 404
+            return jsonify({'success': True, 'message': '主机编辑成功'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 # 查看模板
 @app.route("/templates", methods=['GET'])
