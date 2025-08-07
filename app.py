@@ -12,16 +12,13 @@ import paramiko
 from paramiko.client import AutoAddPolicy
 from datetime import datetime
 import math
+from io import StringIO
 
 app = Flask(__name__)
 ssh = paramiko.SSHClient()
 DATABASE = 'firewall_management.db'
 # 确保静态文件目录正确配置
 app.static_folder = 'static'
-
-user = 'root'
-port = 22
-pwd = 'pwd'
 
 
 def get_db():
@@ -48,10 +45,10 @@ def init_db():
         db.commit()
 
 
-def shell_cmd(cmd):
+def pwd_shell_cmd(hostname, port, user, pwd, cmd):
     try:
         ssh.set_missing_host_key_policy(AutoAddPolicy())
-        ssh.connect(hostname='10.0.0.11', port=port, username=user, password=pwd, timeout=10)
+        ssh.connect(hostname=hostname, port=port, username=user, password=pwd, timeout=5)
         # stdin, stdout, stderr = ssh.exec_command('iptables -nL IN_public_allow --line-number -t filter -v')
         stdin, stdout, stderr = ssh.exec_command(cmd)
         # stdin, stdout, stderr = ssh.exec_command('iptables -nL INPUT --line-number -t filter -v')
@@ -69,6 +66,25 @@ def shell_cmd(cmd):
             stdout.close()
         if stderr:
             stderr.close()
+        # 再关闭 SSH 连接
+        if ssh:
+            ssh.close()
+
+
+def sshkey_shell_cmd(hostname, port, user, private_key_str, cmd):
+    try:
+        ssh.set_missing_host_key_policy(AutoAddPolicy())
+        key_file = StringIO(private_key_str)  # 模拟文件对象
+        pkey = paramiko.RSAKey.from_private_key(key_file)  # 转换为RSA密钥对象
+        ssh.connect(hostname=hostname, port=port, username=user, pkey=pkey, timeout=5,
+                    look_for_keys=False,
+                    allow_agent=False)
+        stdin, stdout, stderr = ssh.exec_command(cmd)
+        output = stdout.read().decode()
+        return output
+    except Exception as e:
+        print(f"SSH 操作失败: {e}")
+    finally:
         # 再关闭 SSH 连接
         if ssh:
             ssh.close()
@@ -125,16 +141,77 @@ def get_rule(iptables_output):
 # 查看规则
 @app.route("/rules_in", methods=['GET'])
 def rules_in():
-    iptables_output = shell_cmd(cmd='iptables -nL INPUT --line-number -t filter')
-    data_list = get_rule(iptables_output)
-    return render_template('rule.html', data_list=data_list)
+    all_params = dict(request.args)
+    host_id = all_params['id']
+    try:
+        # 获取数据库连接
+        db = get_db()
+        cursor = db.cursor()
+        # 查询所有主机数据
+        cursor.execute('''
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        FROM hosts where id = {}
+        '''.format(host_id))
+        # 获取所有记录
+        # 1. 获取所有列名（从 cursor.description 中提取）
+        columns = [column[0] for column in cursor.description]
+        # 2. 将每行数据与列名配对，转换为字典
+        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        hostname = hosts[0]['ip_address']
+        port = hosts[0]['ssh_port']
+        user = hosts[0]['username']
+        pwd = hosts[0]['password']
+        auth_method = hosts[0]['auth_method']
+        private_key = hosts[0]['private_key']
+        if auth_method == 'password':
+            iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                            cmd='iptables -nL INPUT --line-number -t filter')
+        else:
+            iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                               cmd='iptables -nL INPUT --line-number -t filter')
+            print(iptables_output)
+        data_list = get_rule(iptables_output)
+        return render_template('rule.html', data_list=data_list,id=host_id)
+    except Exception as e:
+        # 错误处理
+        return f"获取主机数据失败: {str(e)}", 500
 
 
 @app.route("/rules_out", methods=['GET'])
 def rules_out():
-    iptables_output = shell_cmd(cmd='iptables -nL OUTPUT --line-number -t filter')
-    data_list = get_rule(iptables_output)
-    return render_template('rule.html', data_list=data_list)
+    all_params = dict(request.args)
+    host_id = all_params['id']
+    try:
+        # 获取数据库连接
+        db = get_db()
+        cursor = db.cursor()
+        # 查询所有主机数据
+        cursor.execute('''
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        FROM hosts where id = {}
+        '''.format(host_id))
+        # 获取所有记录
+        # 1. 获取所有列名（从 cursor.description 中提取）
+        columns = [column[0] for column in cursor.description]
+        # 2. 将每行数据与列名配对，转换为字典
+        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        hostname = hosts[0]['ip_address']
+        port = hosts[0]['ssh_port']
+        user = hosts[0]['username']
+        pwd = hosts[0]['password']
+        auth_method = hosts[0]['auth_method']
+        private_key = hosts[0]['private_key']
+        if auth_method == 'password':
+            iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                            cmd='iptables -nL OUTPUT --line-number -t filter')
+        else:
+            iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                               cmd='iptables -nL OUTPUT --line-number -t filter')
+        data_list = get_rule(iptables_output)
+        return render_template('rule.html', data_list=data_list,id=host_id)
+    except Exception as e:
+        # 错误处理
+        return f"获取主机数据失败: {str(e)}", 500
 
 
 # 修改规则
@@ -258,7 +335,6 @@ def update_host():
         db = get_db()
         cursor = db.cursor()
         # 不修改密码
-        print(data['ssh_port'])
         if data['password'] is None and data['private_key'] == '':
             cursor.execute(
                 'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, updated_at = ? WHERE id = ?;',
