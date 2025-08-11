@@ -81,11 +81,12 @@
                   <th scope="col" class="px-6 py-4 text-right text-xs font-semibold text-secondary uppercase tracking-wider">操作</th>
                 </tr>
               </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
+              <tbody class="bg-white divide-y divide-gray-200" >
               {% for data in data_list %}
                 <!-- 规则1 -->
-                <tr class="hover:bg-gray-50 transition-colors">
-                  <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-dark">{{ data.num }}</td>
+                <tr class="hover:bg-gray-50 transition-colors" data-num="{{ data.num }}" data-target="{{ data.target }}"
+                data-prot="{{ data.prot }}" data-port="{{ data.port }}" data-source="{{ data.source }}" data-comment="{{ data.comment }}">
+                  <td class="data-num px-6 py-4 whitespace-nowrap text-sm font-medium text-dark">{{ data.num }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm">
                     <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-success">{{ data.target }}</span>
                   </td>
@@ -169,6 +170,15 @@
       </div>
     </div>
   </div>
+  <!-- 提示消息 -->
+  <div id="success-toast" class="toast bg-success text-white translate-x-full">
+    <i class="fa fa-check-circle mr-2"></i>
+    <span>操作成功！</span>
+  </div>
+  <div id="error-toast" class="toast bg-danger text-white translate-x-full">
+    <i class="fa fa-times-circle mr-2"></i>
+    <span>操作失败，请重试！</span>
+  </div>
 {% endblock main %}
 
 
@@ -223,6 +233,15 @@
       // 这里可以添加切换入方向/出方向规则的逻辑
       console.log('切换到出方向规则');
     });
+
+    // 显示提示消息
+    function showToast(elementId) {
+      const toast = document.getElementById(elementId);
+      toast.classList.remove('translate-x-full'); // 移除隐藏类，显示toast
+      setTimeout(() => {
+        toast.classList.add('translate-x-full'); // 3秒后添加隐藏类，隐藏toast
+      }, 3000);
+    }
 
     // 模态框交互
     const modal = document.getElementById('rule-modal');
@@ -284,13 +303,66 @@
     });
 
     // 删除按钮交互
-    document.querySelectorAll('button:has(.fa-trash)').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('确定要删除这条规则吗？')) {
-          // 这里可以添加删除规则的逻辑
-          alert('规则已删除！');
-        }
+    const currentUrl = window.location.pathname;
+    if (currentUrl.includes('/rules_in')) {
+      document.querySelectorAll('button:has(.fa-trash)').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (confirm('确定要删除这条规则吗？')) {
+            const row = btn.closest('tr');
+            const idElement = row.querySelector('.data-num'); // 查找当前行内的隐藏id元素
+            const hostId = {{ id|tojson }};
+          // 获取data-num的值
+          const dataNum = idElement.textContent.trim();
+            // 发送删除请求（通过URL参数传递id）
+            fetch(`/rule_del?host_id=${hostId}&rule_id=${dataNum}&direction=INPUT`, { // 在URL中携带id参数
+              method: 'DELETE'
+            })
+            .then(response => {
+              if (response.ok) {
+                // 刷新当前页面，重新从后端获取最新数据
+                window.location.reload();
+                showToast('success-toast');
+              } else {
+                showToast('error-toast');
+              }
+            })
+            .catch(error => {
+              console.error('删除请求失败:', error);
+              showToast('error-toast');
+            });
+          }
+        });
       });
-    });
+      };
+    if (currentUrl.includes('/rules_out')) {
+        document.querySelectorAll('button:has(.fa-trash)').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (confirm('确定要删除这条规则吗？')) {
+            const row = btn.closest('tr');
+            const idElement = row.querySelector('.data-num'); // 查找当前行内的隐藏id元素
+            const hostId = {{ id|tojson }};
+          // 获取data-num的值
+          const dataNum = idElement.textContent.trim();
+            // 发送删除请求（通过URL参数传递id）
+            fetch(`/rule_del?host_id=${hostId}&rule_id=${dataNum}&direction=OUTPUT`, { // 在URL中携带id参数
+              method: 'DELETE'
+            })
+            .then(response => {
+              if (response.ok) {
+                // 刷新当前页面，重新从后端获取最新数据
+                window.location.reload();
+                showToast('success-toast');
+              } else {
+                showToast('error-toast');
+              }
+            })
+            .catch(error => {
+              console.error('删除请求失败:', error);
+              showToast('error-toast');
+            });
+          }
+        });
+      });
+    }
   </script>
 {% endblock script %}

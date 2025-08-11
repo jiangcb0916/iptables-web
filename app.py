@@ -262,7 +262,42 @@ def rules_update():
 # 添加规则
 
 # 删除规则
-
+@app.route("/rule_del", methods=['DELETE'])
+def del_rule():
+    all_params = dict(request.args)
+    host_id = all_params['host_id']
+    rule_id = all_params['rule_id']
+    direction = all_params['direction']
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        FROM hosts where id = {}
+        '''.format(host_id))
+        # 获取所有记录
+        # 1. 获取所有列名（从 cursor.description 中提取）
+        columns = [column[0] for column in cursor.description]
+        # 2. 将每行数据与列名配对，转换为字典
+        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        hostname = hosts[0]['ip_address']
+        port = hosts[0]['ssh_port']
+        user = hosts[0]['username']
+        pwd = hosts[0]['password']
+        auth_method = hosts[0]['auth_method']
+        private_key = hosts[0]['private_key']
+        if auth_method == 'password':
+            iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                            cmd='iptables -D {} {}'.format(direction,rule_id))
+        else:
+            iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                               cmd='iptables -D {} {}'.format(direction,rule_id))
+            print(iptables_output)
+        data_list = get_rule(iptables_output)
+        return render_template('rule.html', data_list=data_list, id=host_id)
+    except Exception as e:
+        # 错误处理
+        return f"获取主机数据失败: {str(e)}", 500
 # 查看主机
 # 主机管理页面路由 - 读取数据库并返回数据到前端
 @app.route("/hosts", methods=['GET'])
@@ -400,6 +435,9 @@ def update_host():
             return jsonify({'success': True, 'message': '主机编辑成功'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+
 
 
 # 查看模板
