@@ -217,11 +217,11 @@ def rules_out():
 # 修改规则
 @app.route("/rules_update", methods=['POST'])
 def rules_update():
-    all_params = dict(request.args)
-    # 获取主机ID
+    all_params = request.get_json()
+    print(all_params)
     host_id = all_params['host_id']
-    # 获取规则ID
     rule_id = all_params['rule_id']
+    direction = all_params['direction']
     # 获取规则的具体数据
     try:
         # 获取数据库连接
@@ -244,14 +244,55 @@ def rules_update():
         auth_method = hosts[0]['auth_method']
         private_key = hosts[0]['private_key']
         if auth_method == 'password':
-            # 先删除
-            # 再在原来的位置进行添加
+            # 删除
+            pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                          cmd='iptables -D {} {}'.format(direction, rule_id))
+            if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
+                if '-1/-1' not in all_params['port']:
+                    cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                        all_params['auth_policy'], all_params['description'])
+                else:
+                    cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['description'])
+            else:
+                cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                    direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                    all_params['auth_policy'], all_params['description'])
+
+            # 添加
+            pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                          cmd=cmd)
+
+            # 查看
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
-                                            cmd='iptables -nL INPUT --line-number -t filter')
+                                            cmd='iptables -nL {} --line-number -t filter'.format(direction))
+
         else:
+            sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                             cmd='iptables -D {} {}'.format(direction, rule_id))
+
+            if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
+                if '-1/-1' not in all_params['port']:
+                    cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                        all_params['auth_policy'], all_params['description'])
+                else:
+                    cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['description'])
+            else:
+                cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                    direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                    all_params['auth_policy'], all_params['description'])
+
+            # 添加
+            sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                             cmd=cmd)
+            # 查看
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
-                                               cmd='iptables -nL INPUT --line-number -t filter')
-            print(iptables_output)
+                                               cmd='iptables -nL {} --line-number -t filter'.format(direction))
         data_list = get_rule(iptables_output)
         return render_template('rule.html', data_list=data_list, id=host_id)
     except Exception as e:
@@ -260,6 +301,7 @@ def rules_update():
 
 
 # 添加规则
+
 
 # 删除规则
 @app.route("/rule_del", methods=['DELETE'])
@@ -288,16 +330,17 @@ def del_rule():
         private_key = hosts[0]['private_key']
         if auth_method == 'password':
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
-                                            cmd='iptables -D {} {}'.format(direction,rule_id))
+                                            cmd='iptables -D {} {}'.format(direction, rule_id))
         else:
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
-                                               cmd='iptables -D {} {}'.format(direction,rule_id))
-            print(iptables_output)
+                                               cmd='iptables -D {} {}'.format(direction, rule_id))
         data_list = get_rule(iptables_output)
         return render_template('rule.html', data_list=data_list, id=host_id)
     except Exception as e:
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
+
+
 # 查看主机
 # 主机管理页面路由 - 读取数据库并返回数据到前端
 @app.route("/hosts", methods=['GET'])
@@ -435,9 +478,6 @@ def update_host():
             return jsonify({'success': True, 'message': '主机编辑成功'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
-
-
-
 
 
 # 查看模板
