@@ -178,6 +178,30 @@
     const inboundBtn = document.getElementById('inbound-btn');
     const outboundBtn = document.getElementById('outbound-btn');
 
+    // 根据当前URL设置初始激活状态
+    function setActiveDirection() {
+      const currentUrl = window.location.pathname;
+
+      if (currentUrl.includes('/rules_in')) {
+        // 入方向页面 - 激活入方向按钮
+        inboundBtn.classList.remove('text-secondary', 'hover:bg-gray-100');
+        inboundBtn.classList.add('bg-primary', 'text-white');
+
+        outboundBtn.classList.remove('bg-primary', 'text-white');
+        outboundBtn.classList.add('text-secondary', 'hover:bg-gray-100');
+      } else if (currentUrl.includes('/rules_out')) {
+        // 出方向页面 - 激活出方向按钮
+        outboundBtn.classList.remove('text-secondary', 'hover:bg-gray-100');
+        outboundBtn.classList.add('bg-primary', 'text-white');
+
+        inboundBtn.classList.remove('bg-primary', 'text-white');
+        inboundBtn.classList.add('text-secondary', 'hover:bg-gray-100');
+      }
+    }
+
+    // 页面加载时设置初始状态
+    setActiveDirection();
+
     inboundBtn.addEventListener('click', () => {
       inboundBtn.classList.remove('text-secondary', 'hover:bg-gray-100');
       inboundBtn.classList.add('bg-primary', 'text-white');
