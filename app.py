@@ -142,7 +142,7 @@ def get_rule(iptables_output):
 @app.route("/rules_in", methods=['GET'])
 def rules_in():
     all_params = dict(request.args)
-    host_id = all_params['id']
+    host_id = all_params['host_id']
     try:
         # 获取数据库连接
         db = get_db()
@@ -171,7 +171,7 @@ def rules_in():
                                                cmd='iptables -nL INPUT --line-number -t filter')
             print(iptables_output)
         data_list = get_rule(iptables_output)
-        return render_template('rule.html', data_list=data_list,id=host_id)
+        return render_template('rule.html', data_list=data_list, id=host_id)
     except Exception as e:
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
@@ -180,7 +180,7 @@ def rules_in():
 @app.route("/rules_out", methods=['GET'])
 def rules_out():
     all_params = dict(request.args)
-    host_id = all_params['id']
+    host_id = all_params['host_id']
     try:
         # 获取数据库连接
         db = get_db()
@@ -208,13 +208,56 @@ def rules_out():
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL OUTPUT --line-number -t filter')
         data_list = get_rule(iptables_output)
-        return render_template('rule.html', data_list=data_list,id=host_id)
+        return render_template('rule.html', data_list=data_list, id=host_id)
     except Exception as e:
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
 
 
 # 修改规则
+@app.route("/rules_update", methods=['POST'])
+def rules_update():
+    all_params = dict(request.args)
+    # 获取主机ID
+    host_id = all_params['host_id']
+    # 获取规则ID
+    rule_id = all_params['rule_id']
+    # 获取规则的具体数据
+    try:
+        # 获取数据库连接
+        db = get_db()
+        cursor = db.cursor()
+        # 查询所有主机数据
+        cursor.execute('''
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        FROM hosts where id = {}
+        '''.format(host_id))
+        # 获取所有记录
+        # 1. 获取所有列名（从 cursor.description 中提取）
+        columns = [column[0] for column in cursor.description]
+        # 2. 将每行数据与列名配对，转换为字典
+        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        hostname = hosts[0]['ip_address']
+        port = hosts[0]['ssh_port']
+        user = hosts[0]['username']
+        pwd = hosts[0]['password']
+        auth_method = hosts[0]['auth_method']
+        private_key = hosts[0]['private_key']
+        if auth_method == 'password':
+            # 先删除
+            # 再在原来的位置进行添加
+            iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                            cmd='iptables -nL INPUT --line-number -t filter')
+        else:
+            iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                               cmd='iptables -nL INPUT --line-number -t filter')
+            print(iptables_output)
+        data_list = get_rule(iptables_output)
+        return render_template('rule.html', data_list=data_list, id=host_id)
+    except Exception as e:
+        # 错误处理
+        return f"获取主机数据失败: {str(e)}", 500
+
 
 # 添加规则
 

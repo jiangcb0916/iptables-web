@@ -597,7 +597,7 @@ document.querySelectorAll('button:has(.fa-pencil)').forEach(btn => {
         const row = btn.closest('tr');
         const idElement = row.querySelector('.host-id'); // 查找当前行内的隐藏id元素
         const hostId = idElement.textContent.trim();
-        window.location.href = `/rules_in?id=${hostId}`;
+        window.location.href = `/rules_in?host_id=${hostId}`;
       });
     });
 
