@@ -93,7 +93,11 @@
                     data-comment="{{ data.comment }}">
                   <td class="data-num px-6 py-4 whitespace-nowrap text-sm font-medium text-dark">{{ data.num }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm">
-                    <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-success">{{ data.target }}</span>
+                    {% if data.target == 'ACCEPT' %}
+                      <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-success">{{ data.target }}</span>
+                    {% else %}
+                      <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-danger">{{ data.target }}</span>
+                    {% endif %}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ data.prot }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ data.port }}</td>
