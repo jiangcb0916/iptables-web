@@ -218,7 +218,6 @@ def rules_out():
 @app.route("/rules_update", methods=['POST'])
 def rules_update():
     all_params = request.get_json()
-    print(all_params)
     host_id = all_params['host_id']
     rule_id = all_params['rule_id']
     direction = all_params['direction']
@@ -301,6 +300,82 @@ def rules_update():
 
 
 # 添加规则
+@app.route("/rules_add", methods=['POST'])
+def rules_add():
+    all_params = request.get_json()
+    host_id = all_params['host_id']
+    rule_id = all_params['rule_id']
+    direction = all_params['direction']
+    # 获取规则的具体数据
+    try:
+        # 获取数据库连接
+        db = get_db()
+        cursor = db.cursor()
+        # 查询所有主机数据
+        cursor.execute('''
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        FROM hosts where id = {}
+        '''.format(host_id))
+        # 获取所有记录
+        # 1. 获取所有列名（从 cursor.description 中提取）
+        columns = [column[0] for column in cursor.description]
+        # 2. 将每行数据与列名配对，转换为字典
+        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        hostname = hosts[0]['ip_address']
+        port = hosts[0]['ssh_port']
+        user = hosts[0]['username']
+        pwd = hosts[0]['password']
+        auth_method = hosts[0]['auth_method']
+        private_key = hosts[0]['private_key']
+        if auth_method == 'password':
+            if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
+                if '-1/-1' not in all_params['port']:
+                    cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                        all_params['auth_policy'], all_params['description'])
+                else:
+                    cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['description'])
+            else:
+                cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                    direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                    all_params['auth_policy'], all_params['description'])
+
+            # 添加
+            pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                          cmd=cmd)
+
+            # 查看
+            iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                            cmd='iptables -nL {} --line-number -t filter'.format(direction))
+
+        else:
+            if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
+                if '-1/-1' not in all_params['port']:
+                    cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                        all_params['auth_policy'], all_params['description'])
+                else:
+                    cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['description'])
+            else:
+                cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                    direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                    all_params['auth_policy'], all_params['description'])
+
+            # 添加
+            sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                             cmd=cmd)
+            # 查看
+            iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                               cmd='iptables -nL {} --line-number -t filter'.format(direction))
+        data_list = get_rule(iptables_output)
+        return render_template('rule.html', data_list=data_list, id=host_id)
+    except Exception as e:
+        # 错误处理
+        return f"获取主机数据失败: {str(e)}", 500
 
 
 # 删除规则
