@@ -661,6 +661,7 @@ def templates():
 def temp_to_hosts():
     return render_template('temp_to_host.html')
 
+
 # 系统设置
 @app.route("/systemseting", methods=['GET'])
 def systemseting():

@@ -72,6 +72,7 @@ def create_rule_table(conn):
         CREATE TABLE IF NOT EXISTS rules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             template_id TEXT UNIQUE NOT NULL,   -- 模板ID
+            direction TEXT DEFAULT 'INPUT',   -- 方向
             policy TEXT UNIQUE NOT NULL,   -- 授权策略
             protocol TEXT NOT NULL, -- 协议
             port TEXT DEFAULT '-1/-1',        -- 单端口
