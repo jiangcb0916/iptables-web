@@ -301,8 +301,6 @@ def rules_update():
                     all_params['auth_policy'], all_params['description'])
 
             # 添加
-            print('编辑')
-            print(cmd)
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                           cmd=cmd)
 
