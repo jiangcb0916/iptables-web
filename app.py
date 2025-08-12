@@ -102,8 +102,10 @@ def get_rule(iptables_output):
         r'(--)\s+'  # opt
         r'([\d./*]+)\s+'  # source
         r'([\d./*]+)\s*'  # destination
-        r'(?:\s+(?:tcp|udp)\s+(?:dpt|spt):(\d+))?'  # port
-        # 匹配所有非注释的后续内容（统一作为other）
+        # 扩展端口匹配：支持单端口、端口范围和多端口
+        r'(?:\s+(?:(?:tcp|udp)\s+(?:dpt|spt):(\d+)|'  # 单端口 (如 tcp dpt:80)
+        r'(?:tcp|udp)\s+(?:dpts|spts):(\d+:\d+)|'  # 端口范围 (如 tcp dpts:90:100)
+        r'multiport\s+(?:dports|sports)\s+([\d,]+)))?'  # 多端口 (如 multiport dports 90,91,92)
         r'(?:\s+(?!/\*).*?)?'  # 排除注释的所有内容
         r'(?:\s+/\*\s*(.*?)\s*\*/)?$'  # 注释
     )
@@ -117,21 +119,42 @@ def get_rule(iptables_output):
             source = match.group(5)
             destination = match.group(6)
             port = match.group(7) or '-1/-1'
-            comment = match.group(8) or ''
+            port_range = match.group(8) or ''
+            port_mul = match.group(9) or ''
+            comment = match.group(10) or ''
             # 提取other内容（排除注释部分）
             # 先去掉注释，再取destination之后的内容
             line_without_comment = re.sub(r'/\*.*?\*/', '', line).strip()
             # 分割出前面的固定字段
             parts = re.split(r'\s+', line_without_comment, 9)  # 分割为10个部分
             other = ' '.join(parts[9:]) if len(parts) > 9 else ''
-            data = {'num': num,
-                    "target": target,
-                    "prot": prot,
-                    "source": source,
-                    "destination": destination,
-                    "port": port,
-                    "comment": comment
-                    }
+            if port_range != '':
+                data = {'num': num,
+                        "target": target,
+                        "prot": prot,
+                        "source": source,
+                        "destination": destination,
+                        "port": port_range,
+                        "comment": comment
+                        }
+            elif port_mul != '':
+                data = {'num': num,
+                        "target": target,
+                        "prot": prot,
+                        "source": source,
+                        "destination": destination,
+                        "port": port_mul,
+                        "comment": comment
+                        }
+            else:
+                data = {'num': num,
+                        "target": target,
+                        "prot": prot,
+                        "source": source,
+                        "destination": destination,
+                        "port": port,
+                        "comment": comment
+                        }
             data_list.append(data)
         else:
             print(f"无法匹配的规则: {line}")
@@ -246,21 +269,40 @@ def rules_update():
             # 删除
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                           cmd='iptables -D {} {}'.format(direction, rule_id))
+            # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
+                # 正常的端口
                 if '-1/-1' not in all_params['port']:
-                    cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                        all_params['auth_policy'], all_params['description'])
+                    # 添加规则中的：正常端口中的范围端口
+                    if '-' in all_params['port']:
+                        new_port = all_params['port'].replace("-", ":")
+                        # print(new_port)
+                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                            all_params['auth_policy'], all_params['description'])
+                    # 添加规则中的: 正常端口中的多个端口
+                    elif ',' in all_params['port']:
+                        cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                            all_params['auth_policy'], all_params['description'])
+                    else:
+                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                            all_params['auth_policy'], all_params['description'])
                 else:
+                    # tcp 或udp的所有端口
                     cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
                         direction, rule_id, all_params['auth_object'], all_params['protocol'],
                         all_params['auth_policy'], all_params['description'])
+            # ICMP 或 all 协议的规则
             else:
                 cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
                     direction, rule_id, all_params['auth_object'], all_params['protocol'],
                     all_params['auth_policy'], all_params['description'])
 
             # 添加
+            print('编辑')
+            print(cmd)
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                           cmd=cmd)
 
@@ -272,15 +314,31 @@ def rules_update():
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                              cmd='iptables -D {} {}'.format(direction, rule_id))
 
+            # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
+                # 正常的端口
                 if '-1/-1' not in all_params['port']:
-                    cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                        all_params['auth_policy'], all_params['description'])
+                    # 添加规则中的：正常端口中的范围端口
+                    if '-' in all_params['port']:
+                        new_port = all_params['port'].replace("-", ":")
+                        print(new_port)
+                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                            all_params['auth_policy'], all_params['description'])
+                        print(cmd)
+                    # 添加规则中的: 正常端口中的多个端口
+                    elif ',' in all_params['port']:
+                        cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '
+                    else:
+                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                            all_params['auth_policy'], all_params['description'])
                 else:
+                    # tcp 或udp的所有端口
                     cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
                         direction, rule_id, all_params['auth_object'], all_params['protocol'],
                         all_params['auth_policy'], all_params['description'])
+            # ICMP 或 all 协议的规则
             else:
                 cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
                     direction, rule_id, all_params['auth_object'], all_params['protocol'],
@@ -328,15 +386,34 @@ def rules_add():
         auth_method = hosts[0]['auth_method']
         private_key = hosts[0]['private_key']
         if auth_method == 'password':
+            # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
+                # 正常的端口
                 if '-1/-1' not in all_params['port']:
-                    cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                        all_params['auth_policy'], all_params['description'])
+                    # 添加规则中的：正常端口中的范围端口
+                    if '-' in all_params['port']:
+                        new_port = all_params['port'].replace("-", ":")
+                        print(new_port)
+                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                            all_params['auth_policy'], all_params['description'])
+                        print(cmd)
+                    # 添加规则中的: 正常端口中的多个端口
+                    elif ',' in all_params['port']:
+                        cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                            all_params['auth_policy'], all_params['description'])
+                        print(cmd)
+                    else:
+                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                            all_params['auth_policy'], all_params['description'])
                 else:
+                    # tcp 或udp的所有端口
                     cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
                         direction, rule_id, all_params['auth_object'], all_params['protocol'],
                         all_params['auth_policy'], all_params['description'])
+            # ICMP 或 all 协议的规则
             else:
                 cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
                     direction, rule_id, all_params['auth_object'], all_params['protocol'],
@@ -351,15 +428,32 @@ def rules_add():
                                             cmd='iptables -nL {} --line-number -t filter'.format(direction))
 
         else:
+            # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
+                # 正常的端口
                 if '-1/-1' not in all_params['port']:
-                    cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                        all_params['auth_policy'], all_params['description'])
+                    # 添加规则中的：正常端口中的范围端口
+                    if '-' in all_params['port']:
+                        new_port = all_params['port'].replace("-", ":")
+                        print(new_port)
+                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                            all_params['auth_policy'], all_params['description'])
+                        print(cmd)
+                    # 添加规则中的: 正常端口中的多个端口
+                    elif ',' in all_params['port']:
+                        cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '
+                        print(cmd)
+                    else:
+                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                            all_params['auth_policy'], all_params['description'])
                 else:
+                    # tcp 或udp的所有端口
                     cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
                         direction, rule_id, all_params['auth_object'], all_params['protocol'],
                         all_params['auth_policy'], all_params['description'])
+            # ICMP 或 all 协议的规则
             else:
                 cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
                     direction, rule_id, all_params['auth_object'], all_params['protocol'],

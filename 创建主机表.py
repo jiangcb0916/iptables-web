@@ -46,6 +46,50 @@ def create_hosts_table(conn):
         print(f"创建表时出错: {e}")
 
 
+def create_template_table(conn):
+    """创建模板表"""
+    try:
+        sql_create_hosts_table = """
+        CREATE TABLE IF NOT EXISTS templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_name TEXT UNIQUE NOT NULL,   -- 模板名称
+            template_identifier TEXT NOT NULL, -- 模板简介，唯一
+            host_id TEXT,             -- 主机ID
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        cursor = conn.cursor()
+        cursor.execute(sql_create_hosts_table)
+        print("模板表创建成功")
+    except Error as e:
+        print(f"创建表时出错: {e}")
+
+
+def create_rule_table(conn):
+    """创建规则表"""
+    try:
+        sql_create_hosts_table = """
+        CREATE TABLE IF NOT EXISTS rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            policy TEXT UNIQUE NOT NULL,   -- 模板名称
+            protocol TEXT NOT NULL, -- 协议
+            port TEXT DEFAULT '-1/-1',        -- 单端口
+            port_range TEXT ,        -- 范围端口
+            port_mul TEXT ,        -- 指定的多个端口
+            auth_object TEXT DEFAULT '0.0.0.0/0',        -- 授权对象
+            description TEXT ,        -- 注释
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        cursor = conn.cursor()
+        cursor.execute(sql_create_hosts_table)
+        print("规则表创建成功")
+    except Error as e:
+        print(f"创建表时出错: {e}")
+
+
 def main():
     database = "firewall_management.db"  # 数据库文件名
 
@@ -55,7 +99,12 @@ def main():
     if conn is not None:
         # 创建主机表
         create_hosts_table(conn)
+        # 创建模板表
+        create_template_table(conn)
+        # 创建规则表
+        create_rule_table(conn)
         conn.close()
+
     else:
         print("无法创建数据库连接")
 
