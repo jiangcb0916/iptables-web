@@ -47,37 +47,11 @@
               <p class="text-secondary">管理防火墙规则模板，快速应用到多个主机</p>
             </div>
 
-            <div class="flex flex-wrap gap-3 self-end md:self-auto ml-auto">
-              <div class="relative">
-                <select class="pl-3 pr-10 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none">
-                  <option>所有模板</option>
-                  <option>系统模板</option>
-                  <option>自定义模板</option>
-                </select>
-                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                  <i class="fa fa-chevron-down text-xs"></i>
-                </div>
-              </div>
-
-              <button id="import-template-btn" class="bg-gray-200 text-gray-700 px-5 py-2 rounded-lg font-medium flex items-center btn-hover">
-                <i class="fa fa-upload mr-2"></i> 导入
-              </button>
 
               <button id="add-template-btn" class="bg-primary text-white px-5 py-2 rounded-lg font-medium flex items-center btn-hover">
                 <i class="fa fa-plus mr-2"></i> 新建模板
               </button>
             </div>
-          </div>
-
-          <!-- 模板分类标签 -->
-          <div class="mb-6 flex flex-wrap gap-2">
-            <button class="px-3 py-1 bg-primary text-white rounded-full text-sm">全部模板</button>
-            <button class="px-3 py-1 bg-white text-gray-700 hover:bg-gray-100 rounded-full text-sm transition-colors">Web服务器</button>
-            <button class="px-3 py-1 bg-white text-gray-700 hover:bg-gray-100 rounded-full text-sm transition-colors">数据库服务器</button>
-            <button class="px-3 py-1 bg-white text-gray-700 hover:bg-gray-100 rounded-full text-sm transition-colors">邮件服务器</button>
-            <button class="px-3 py-1 bg-white text-gray-700 hover:bg-gray-100 rounded-full text-sm transition-colors">文件服务器</button>
-            <button class="px-3 py-1 bg-white text-gray-700 hover:bg-gray-100 rounded-full text-sm transition-colors">安全加固</button>
-            <button class="px-3 py-1 bg-white text-gray-700 hover:bg-gray-100 rounded-full text-sm transition-colors">自定义</button>
           </div>
 
           <!-- 模板列表 - 卡片视图 -->
@@ -90,16 +64,9 @@
                     <h3 class="font-semibold text-lg">Web服务器安全模板</h3>
                     <p class="text-sm text-secondary mt-1">适用于Nginx/Apache服务器的标准防护规则</p>
                   </div>
-                  <div class="dropdown relative">
-                    <button class="text-gray-400 hover:text-gray-600">
-                      <i class="fa fa-ellipsis-v"></i>
-                    </button>
-                  </div>
                 </div>
 
                 <div class="flex flex-wrap gap-2 mb-4">
-                  <span class="template-tag bg-blue-100 text-blue-800">Web服务器</span>
-                  <span class="template-tag bg-green-100 text-green-800">系统模板</span>
                   <span class="template-tag bg-purple-100 text-purple-800">12条规则</span>
                 </div>
 
@@ -120,8 +87,8 @@
                   <i class="fa fa-eye mr-1"></i> 查看详情
                 </button>
                 <div class="flex gap-2">
-                  <button class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors">
-                    <i class="fa fa-download mr-1"></i> 导出
+                  <button class="px-3 py-1 bg-red-500 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors">
+                    <i class="fa fa-trash mr-1"></i> 删除
                   </button>
                   <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors">
                     <i class="fa fa-rocket mr-1"></i> 应用
@@ -168,9 +135,6 @@
                   <i class="fa fa-eye mr-1"></i> 查看详情
                 </button>
                 <div class="flex gap-2">
-                  <button class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors">
-                    <i class="fa fa-download mr-1"></i> 导出
-                  </button>
                   <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors">
                     <i class="fa fa-rocket mr-1"></i> 应用
                   </button>
@@ -216,9 +180,6 @@
                   <i class="fa fa-eye mr-1"></i> 查看详情
                 </button>
                 <div class="flex gap-2">
-                  <button class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors">
-                    <i class="fa fa-download mr-1"></i> 导出
-                  </button>
                   <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors">
                     <i class="fa fa-rocket mr-1"></i> 应用
                   </button>
@@ -264,9 +225,6 @@
                   <i class="fa fa-eye mr-1"></i> 查看详情
                 </button>
                 <div class="flex gap-2">
-                  <button class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors">
-                    <i class="fa fa-download mr-1"></i> 导出
-                  </button>
                   <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors">
                     <i class="fa fa-rocket mr-1"></i> 应用
                   </button>
@@ -312,8 +270,8 @@
                   <i class="fa fa-eye mr-1"></i> 查看详情
                 </button>
                 <div class="flex gap-2">
-                  <button class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors">
-                    <i class="fa fa-download mr-1"></i> 导出
+                  <button class="px-3 py-1 bg-red-500 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors">
+                    <i class="fa fa-trash mr-1"></i> 删除
                   </button>
                   <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors">
                     <i class="fa fa-rocket mr-1"></i> 应用
@@ -374,19 +332,6 @@
               <div>
                 <label for="template-name" class="block text-sm font-medium text-gray-700 mb-1">模板名称 <span class="text-danger">*</span></label>
                 <input type="text" id="template-name" name="template-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：Web服务器安全模板">
-              </div>
-
-              <div>
-                <label for="template-tag" class="block text-sm font-medium text-gray-700 mb-1">模板标签 <span class="text-danger">*</span></label>
-                <select id="template-tag" name="template-tag" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                  <option value="">请选择标签</option>
-                  <option value="web">Web服务器</option>
-                  <option value="db">数据库服务器</option>
-                  <option value="mail">邮件服务器</option>
-                  <option value="file">文件服务器</option>
-                  <option value="security">安全加固</option>
-                  <option value="custom">自定义</option>
-                </select>
               </div>
 
               <div class="md:col-span-2">

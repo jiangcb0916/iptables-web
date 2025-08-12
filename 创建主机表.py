@@ -54,7 +54,6 @@ def create_template_table(conn):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             template_name TEXT UNIQUE NOT NULL,   -- 模板名称
             template_identifier TEXT NOT NULL, -- 模板简介，唯一
-            host_id TEXT,             -- 主机ID
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
