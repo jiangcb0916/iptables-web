@@ -654,7 +654,62 @@ def templates():
 
 
 # 添加模板
+@app.route("/temp_add", methods=['POST'])
+def templates_add():
+    try:
+        data = request.get_json()
+        print(data)
+        db = get_db()
+        cursor = db.cursor()
+        # 插入主机数据
+        cursor.execute('''
+        INSERT INTO templates 
+        (template_name, template_identifier, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+        ''', (
+            data['name'],
+            data['description'],
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        ))
+        # 查询templat_id
+        cursor.execute('SELECT id FROM templates ORDER BY id DESC LIMIT 1;')
+        result = cursor.fetchone()
+        if result:
+            # 结果是元组，取第一个元素（即 ID）
+            template_id = result[0]
+        else:
+            # 表中没有数据时返回 None 或提示
+            return None  # 或 raise ValueError("template 表中没有数据")
+
+        for rule in data['rules']:
+            cursor.execute('''
+            INSERT INTO rules 
+            (template_id, direction, policy, protocol, port,auth_object,description,created_at,updated_at)
+            VALUES (?, ?, ?, ?,?, ?, ?,?,?)
+            ''', (
+                template_id,
+                data['direction'],
+                rule['policy'],
+                rule['protocol'],
+                rule['port'],
+                rule['authorization_object'],
+                rule['description'],
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            ))
+
+            db.commit()
+        return jsonify({'success': True, 'message': '模板添加成功'})
+
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'message': '模板名称已存在'}), 409
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 # 删除模板
+
 # 修改模板
 # 应用模板
 @app.route("/temp_to_hosts", methods=['GET'])
