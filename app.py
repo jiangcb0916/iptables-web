@@ -685,7 +685,7 @@ def templates():
                               'updated_at': res['updated_at'],
                               'rules': data_list,
                               })
-            print(temp_info)
+            # print(temp_info)
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'message': '模板名称已存在'}), 409
     except Exception as e:
@@ -698,7 +698,7 @@ def templates():
 def templates_add():
     try:
         data = request.get_json()
-        print(data)
+        # print(data)
         db = get_db()
         cursor = db.cursor()
         # 插入主机数据
@@ -749,8 +749,69 @@ def templates_add():
 
 
 # 删除模板
+@app.route("/temp_del", methods=['DELETE'])
+def templates_del():
+    template_id = request.args.get('temp_id')
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        # 删除主机
+        cursor.execute('DELETE FROM templates WHERE id = ?', (template_id,))
+        cursor.execute('DELETE FROM rules WHERE template_id = ?', (template_id,))
+
+        db.commit()
+        if cursor.rowcount == 0:
+            return jsonify({'success': False, 'message': '模板不存在'}), 404
+        return jsonify({'success': True, 'message': '模板删除成功'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 # 修改模板
+@app.route("/temp_edit", methods=['POST'])
+def templates_edit():
+    try:
+        data = request.get_json()
+        db = get_db()
+        cursor = db.cursor()
+        # 修改模板信息
+        cursor.execute('''
+        UPDATE  templates set template_name = ?, template_identifier = ?, direction = ?, updated_at =? WHERE id = ?;
+        ''', (
+            data['name'],
+            data['description'],
+            data['direction'],
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            data['temp_id']
+        ))
+        # 先删除旧规则
+        cursor.execute('DELETE FROM rules WHERE template_id = ?', (data['temp_id'],))
+        for rule in data['rules']:
+            # 添加新规则
+            cursor.execute('''
+            INSERT INTO rules 
+            (template_id, policy, protocol, port,auth_object,description,created_at,updated_at)
+            VALUES (?, ?, ?, ?,?, ?, ?,?)
+            ''', (
+                data['temp_id'],
+                rule['policy'],
+                rule['protocol'],
+                rule['port'],
+                rule['auth_object'],
+                rule['description'],
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            ))
+
+            db.commit()
+        return jsonify({'success': True, 'message': '模板修改成功'})
+
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'message': '模板名称不存在'}), 409
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 # 应用模板
 @app.route("/temp_to_hosts", methods=['GET'])
 def temp_to_hosts():

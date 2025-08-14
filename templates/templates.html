@@ -58,7 +58,7 @@
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {% for data in data_list %}
             <!-- 模板卡片 -->
-            <div class="bg-white rounded-xl card-shadow overflow-hidden hover:shadow-lg transition-shadow">
+            <div class="bg-white rounded-xl card-shadow overflow-hidden hover:shadow-lg transition-shadow" data-template-id="{{ data.template_id }}">
               <div class="p-5 border-b border-gray-100">
                 <div class="flex justify-between items-start mb-3">
                   <div>
@@ -92,7 +92,7 @@
                   <i class="fa fa-eye mr-1"></i> 查看详情
                 </button>
                 <div class="flex gap-2">
-                  <button class="px-3 py-1 bg-red-500 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors">
+                  <button class="px-3 py-1 bg-red-500 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors delete-template-btn">
                     <i class="fa fa-trash mr-1"></i> 删除
                   </button>
                   <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors">
@@ -130,7 +130,7 @@
                 <input type="text" id="template-name" name="template-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：Web服务器安全模板">
               </div>
 
-              <!-- 方向选择下拉框（新建时显示，查看时隐藏） -->
+              <!-- 方向选择下拉框 -->
               <div id="direction-select-container">
                 <label for="rule-direction" class="block text-sm font-medium text-gray-700 mb-1">规则方向 <span class="text-danger">*</span></label>
                 <select id="rule-direction" name="rule-direction" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
@@ -340,7 +340,6 @@
 
     // 所有模板数据 - 从Flask后端获取
     const allTemplates = {% if data_list %}{{ data_list|tojson }}{% else %}[]{% endif %};
-    console.log('从后端获取的模板数据:', allTemplates);
 
     // 打开新建模板模态框
     function openNewTemplateModal() {
@@ -387,7 +386,7 @@
     saveBtn.addEventListener('click', async () => {
       // 收集表单数据
       const templateData = {
-        id: templateIdInput.value || null, // 有ID则为编辑，无则为新建
+        temp_id: templateIdInput.value || null, // 使用temp_id与后端保持一致
         name: templateNameInput.value,
         direction: ruleDirectionSelect.value,
         description: templateDescriptionInput.value,
@@ -412,28 +411,30 @@
         return;
       }
 
-      ruleRows.forEach((row, index) => {
+      ruleRows.forEach((row) => {
         const cells = row.querySelectorAll('td');
         const policy = cells[1].querySelector('span').textContent;
         const protocol = cells[2].textContent;
         const port = cells[3].textContent;
         const object = cells[4].textContent;
         const desc = cells[5].textContent;
+        // 获取存储的rule_id，如果是新规则则为null
+        const ruleId = row.getAttribute('data-rule-id') || null;
 
         templateData.rules.push({
-          sequence: index + 1,
+          rule_id: ruleId, // 包含rule_id以便后端处理
           policy: policy,
           protocol: protocol,
           port: port,
-          auth_object: object, // 与后端保持一致的字段名
+          auth_object: object,
           description: desc
         });
       });
 
       try {
-        // 确定API端点和请求方法（新建或编辑）
-        const url = templateData.id ? `/temp_edit/${templateData.id}` : '/temp_add';
-        const method = templateData.id ? 'PUT' : 'POST';
+        // 确定API端点和请求方法
+        const url = templateData.temp_id ? '/temp_edit' : '/temp_add';
+        const method = 'POST';
 
         const response = await fetch(url, {
           method: method,
@@ -447,7 +448,7 @@
         const result = await response.json();
 
         if (response.ok && result.success) {
-          alert(templateData.id ? '模板更新成功！' : '模板保存成功！');
+          alert(templateData.temp_id ? '模板更新成功！' : '模板保存成功！');
           closeTemplateModal();
           window.location.reload();
         } else {
@@ -481,7 +482,6 @@
       btn.addEventListener('click', function() {
         // 获取按钮上的模板ID（字符串类型）
         const templateId = this.getAttribute('data-template-id');
-        console.log('查看详情，按钮上的模板ID:', templateId, '类型:', typeof templateId);
 
         // 从所有模板数据中找到当前模板 - 注意转换为相同类型比较
         const templateData = allTemplates.find(tpl => {
@@ -499,17 +499,17 @@
       });
     });
 
-    // 填充模板详情到模态框
+    // 填充模板详情到模态框（支持编辑）
     function fillTemplateDetail(templateData) {
-      // 设置模态框标题和表单字段
+      // 设置模态框标题为模板详情
       modalTitle.textContent = '模板详情';
       templateIdInput.value = templateData.template_id;
       templateNameInput.value = templateData.template_name;
       templateDescriptionInput.value = templateData.template_identifier || '';
-      // 设置方向，后端数据中可能直接有direction字段
+      // 设置方向
       ruleDirectionSelect.value = templateData.direction || 'INPUT';
 
-      // 隐藏方向选择下拉框
+      // 显示方向选择下拉框，允许编辑
       directionSelectContainer.classList.add('hidden');
 
       // 清空现有规则并填充新规则
@@ -521,6 +521,9 @@
           const policyClass = policy === '允许' ? 'bg-green-100 text-success' : 'bg-red-100 text-danger';
 
           const newRow = document.createElement('tr');
+          // 存储rule_id用于更新
+          newRow.setAttribute('data-rule-id', rule.rule_id || '');
+
           newRow.innerHTML = `
             <td class="px-4 py-3 whitespace-nowrap text-sm text-secondary">${index + 1}</td>
             <td class="px-4 py-3 whitespace-nowrap text-sm">
@@ -613,6 +616,9 @@
       // 创建新规则行
       const policyClass = policy === '允许' ? 'bg-green-100 text-success' : 'bg-red-100 text-danger';
       const newRow = document.createElement('tr');
+      // 新规则没有rule_id，留空
+      newRow.setAttribute('data-rule-id', '');
+
       newRow.innerHTML = `
         <td class="px-4 py-3 whitespace-nowrap text-sm text-secondary">${newIndex}</td>
         <td class="px-4 py-3 whitespace-nowrap text-sm">
@@ -704,6 +710,45 @@
     document.getElementById('confirm-apply-btn').addEventListener('click', () => {
       alert('模板已成功应用到所选主机！');
       closeApplyModal();
+    });
+
+    // ========== 删除模板相关逻辑 ==========
+    // 为所有删除按钮绑定事件
+    document.querySelectorAll('.delete-template-btn').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        // 获取当前模板卡片和模板ID
+        const templateCard = this.closest('.bg-white.rounded-xl');
+        const templateId = templateCard.getAttribute('data-template-id');
+        const templateName = templateCard.querySelector('h3').textContent;
+
+        // 确认删除
+        if (!confirm(`确定要删除模板"${templateName}"吗？此操作不可恢复。`)) {
+          return;
+        }
+
+        try {
+          // 发送DELETE请求到后端
+          const response = await fetch(`/temp_del?temp_id=${templateId}`, {
+            method: 'DELETE',
+            headers: {
+              'X-CSRFToken': getCookie('csrf_token')
+            }
+          });
+
+          const result = await response.json();
+
+          if (response.ok && result.success) {
+            alert('模板删除成功！');
+            // 从页面中移除模板卡片
+            templateCard.remove();
+          } else {
+            alert(`删除失败: ${result.message || '服务器处理错误'}`);
+          }
+        } catch (error) {
+          console.error('删除模板时发生错误:', error);
+          alert('删除模板失败，请检查网络连接后重试');
+        }
+      });
     });
 
   </script>
