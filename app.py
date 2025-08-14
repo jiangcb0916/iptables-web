@@ -669,7 +669,6 @@ def templates():
                 data_list.append({
                     # rules表中的数据信息
                     'rule_id': rule['id'],
-                    'direction': rule['direction'],
                     'policy': rule['policy'],
                     'protocol': rule['protocol'],
                     'port': rule['port'],
@@ -681,6 +680,7 @@ def templates():
 
             temp_info.append({'template_id': template_id,
                               'template_name': res['template_name'],
+                              'direction': res['direction'],
                               'template_identifier': res['template_identifier'],
                               'updated_at': res['updated_at'],
                               'rules': data_list,
@@ -704,11 +704,12 @@ def templates_add():
         # 插入主机数据
         cursor.execute('''
         INSERT INTO templates 
-        (template_name, template_identifier, created_at, updated_at)
-        VALUES (?, ?, ?, ?)
+        (template_name, template_identifier, direction,created_at, updated_at)
+        VALUES (?, ?, ?, ?,?)
         ''', (
             data['name'],
             data['description'],
+            data['direction'],
             datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         ))
@@ -720,16 +721,15 @@ def templates_add():
             template_id = result[0]
         else:
             # 表中没有数据时返回 None 或提示
-            return None  # 或 raise ValueError("template 表中没有数据")
+            template_id = 1
 
         for rule in data['rules']:
             cursor.execute('''
             INSERT INTO rules 
-            (template_id, direction, policy, protocol, port,auth_object,description,created_at,updated_at)
-            VALUES (?, ?, ?, ?,?, ?, ?,?,?)
+            (template_id, policy, protocol, port,auth_object,description,created_at,updated_at)
+            VALUES (?, ?, ?, ?,?, ?, ?,?)
             ''', (
                 template_id,
-                data['direction'],
                 rule['policy'],
                 rule['protocol'],
                 rule['port'],
