@@ -650,7 +650,47 @@ def update_host():
 # 查看模板
 @app.route("/templates", methods=['GET'])
 def templates():
-    return render_template('templates.html')
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        # 查看所有的数据
+        cursor.execute('SELECT * FROM templates ;')
+        result = cursor.fetchall()
+        temp_info = []
+        for res in result:
+            template_id = res['id']
+
+            cursor.execute('SELECT * FROM rules where template_id="{}" ;'.format(template_id))
+            rules_data = cursor.fetchall()
+
+            # 这个循环是rule的规则内容了
+            data_list = []
+            for rule in rules_data:
+                data_list.append({
+                    # rules表中的数据信息
+                    'rule_id': rule['id'],
+                    'direction': rule['direction'],
+                    'policy': rule['policy'],
+                    'protocol': rule['protocol'],
+                    'port': rule['port'],
+                    'auth_object': rule['auth_object'],
+                    'description': rule['description'],
+                    'created_at': rule['created_at'],
+                    'updated_at': rule['updated_at']
+                })
+
+            temp_info.append({'template_id': template_id,
+                              'template_name': res['template_name'],
+                              'template_identifier': res['template_identifier'],
+                              'updated_at': res['updated_at'],
+                              'rules': data_list,
+                              })
+            print(temp_info)
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'message': '模板名称已存在'}), 409
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    return render_template('templates.html', data_list=temp_info)
 
 
 # 添加模板
@@ -693,7 +733,7 @@ def templates_add():
                 rule['policy'],
                 rule['protocol'],
                 rule['port'],
-                rule['authorization_object'],
+                rule['auth_object'],
                 rule['description'],
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
