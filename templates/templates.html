@@ -95,7 +95,7 @@
                   <button class="px-3 py-1 bg-red-500 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors delete-template-btn">
                     <i class="fa fa-trash mr-1"></i> 删除
                   </button>
-                  <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors">
+                  <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors apply-template-btn">
                     <i class="fa fa-rocket mr-1"></i> 应用
                   </button>
                 </div>
@@ -261,51 +261,14 @@
         <div class="mb-4">
           <div class="flex justify-between items-center mb-3">
             <h4 class="font-medium">选择目标主机</h4>
-            <button type="button" class="text-sm text-primary hover:text-primary/80">
+            <button type="button" id="select-all-hosts" class="text-sm text-primary hover:text-primary/80">
               <i class="fa fa-check-square-o mr-1"></i> 全选
             </button>
           </div>
 
-          <div class="border border-gray-200 rounded-lg max-h-60 overflow-y-auto">
-            <div class="p-3 border-b border-gray-200 flex items-center">
-              <input type="checkbox" id="host-1" class="mr-3 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
-              <label for="host-1" class="flex-1">
-                <div class="font-medium">Web服务器</div>
-                <div class="text-sm text-secondary">192.168.1.100</div>
-              </label>
-            </div>
-
-            <div class="p-3 border-b border-gray-200 flex items-center">
-              <input type="checkbox" id="host-2" class="mr-3 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
-              <label for="host-2" class="flex-1">
-                <div class="font-medium">Web服务器备份</div>
-                <div class="text-sm text-secondary">192.168.1.102</div>
-              </label>
-            </div>
-
-            <div class="p-3 border-b border-gray-200 flex items-center">
-              <input type="checkbox" id="host-3" class="mr-3 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
-              <label for="host-3" class="flex-1">
-                <div class="font-medium">负载均衡器</div>
-                <div class="text-sm text-secondary">192.168.1.200</div>
-              </label>
-            </div>
-
-            <div class="p-3 border-b border-gray-200 flex items-center">
-              <input type="checkbox" id="host-4" class="mr-3 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
-              <label for="host-4" class="flex-1">
-                <div class="font-medium">前端服务器</div>
-                <div class="text-sm text-secondary">192.168.1.150</div>
-              </label>
-            </div>
+          <div class="border border-gray-200 rounded-lg max-h-60 overflow-y-auto" id="hosts-list-container">
+            <!-- 主机列表将通过JS动态加载 -->
           </div>
-        </div>
-
-        <div class="mb-4">
-          <label class="flex items-center">
-            <input type="checkbox" class="mr-3 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
-            <span>应用前清除目标主机现有规则</span>
-          </label>
         </div>
       </div>
 
@@ -313,6 +276,13 @@
         <button id="cancel-apply-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
         <button id="confirm-apply-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">确认应用</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 加载指示器模板 (不会直接显示，用于动态创建) -->
+  <div id="hosts-loading-template" class="hidden">
+    <div class="p-3 text-center text-gray-500 hosts-loading">
+      加载主机列表中...
     </div>
   </div>
 {% endblock main %}
@@ -331,6 +301,9 @@
     const directionSelectContainer = document.getElementById('direction-select-container');
     const rulesTableBody = document.getElementById('rules-table-body');
     const templateForm = document.getElementById('template-form');
+
+    // 当前应用的模板ID
+    let currentTemplateId = null;
 
     // 模板表单字段
     const templateIdInput = document.getElementById('template-id');
@@ -518,7 +491,7 @@
         templateData.rules.forEach((rule, index) => {
           // 处理可能的字段拼写错误
           const policy = rule.policy || rule.cy; // 处理数据中的"cy"可能是"policy"的笔误
-          const policyClass = policy === '允许' ? 'bg-green-100 text-success' : 'bg-red-100 text-danger';
+          const policyClass = policy === 'ACCEPT' ? 'bg-green-100 text-success' : 'bg-red-100 text-danger';
 
           const newRow = document.createElement('tr');
           // 存储rule_id用于更新
@@ -667,16 +640,20 @@
 
     // ========== 应用模板相关逻辑 ==========
     // 打开应用模板模态框
-    document.querySelectorAll('button:has(.fa-rocket)').forEach(btn => {
-      btn.addEventListener('click', function() {
+    document.querySelectorAll('.apply-template-btn').forEach(btn => {
+      btn.addEventListener('click', async function() {
         // 获取模板信息
         const templateCard = this.closest('.bg-white.rounded-xl');
+        currentTemplateId = templateCard.getAttribute('data-template-id');
         const templateName = templateCard.querySelector('h3').textContent;
         const templateDesc = `${templateCard.querySelector('.template-tag:first-child').textContent}`;
 
         // 更新应用模态框中的模板信息
         document.getElementById('apply-template-name').textContent = templateName;
         document.getElementById('apply-template-desc').textContent = templateDesc;
+
+        // 加载主机列表
+        await loadHostsList();
 
         // 显示模态框
         applyTemplateModal.classList.remove('hidden');
@@ -687,12 +664,83 @@
       });
     });
 
+    // 加载主机列表
+    async function loadHostsList() {
+      const container = document.getElementById('hosts-list-container');
+
+      try {
+        // 清空容器并添加加载指示器
+        container.innerHTML = '';
+        // 克隆加载指示器模板并添加到容器
+        const loadingIndicator = document.getElementById('hosts-loading-template').querySelector('.hosts-loading').cloneNode(true);
+        container.appendChild(loadingIndicator);
+
+        // 请求主机列表
+        const response = await fetch('/temp_host_api');
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+          // 清空容器
+          container.innerHTML = '';
+
+          if (result.data && result.data.length > 0) {
+            // 生成主机列表
+            result.data.forEach(host => {
+              const hostItem = document.createElement('div');
+              hostItem.className = 'p-3 border-b border-gray-200 flex items-center';
+              hostItem.innerHTML = `
+                <input type="checkbox" id="host-${host.id}"
+                       class="host-checkbox mr-3 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                       data-host-id="${host.id}">
+                <label for="host-${host.id}" class="flex-1">
+                  <div class="font-medium">${host.host_name}</div>
+                </label>
+              `;
+              container.appendChild(hostItem);
+            });
+          } else {
+            container.innerHTML = '<div class="p-3 text-center text-gray-500">未找到可用主机</div>';
+          }
+        } else {
+          container.innerHTML = `<div class="p-3 text-center text-red-500">获取主机列表失败: ${result.message || '未知错误'}</div>`;
+        }
+      } catch (error) {
+        console.error('加载主机列表失败:', error);
+        container.innerHTML = '<div class="p-3 text-center text-red-500">加载主机失败，请重试</div>';
+      }
+    }
+
+    // 全选/取消全选功能
+    document.getElementById('select-all-hosts').addEventListener('click', function() {
+      const checkboxes = document.querySelectorAll('.host-checkbox');
+      if (checkboxes.length === 0) return;
+
+      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+
+      // 切换全选状态
+      checkboxes.forEach(cb => {
+        cb.checked = !allChecked;
+      });
+
+      // 更新按钮图标
+      const icon = this.querySelector('i');
+      if (allChecked) {
+        icon.className = 'fa fa-square-o mr-1';
+      } else {
+        icon.className = 'fa fa-check-square-o mr-1';
+      }
+    });
+
     // 关闭应用模板模态框
     function closeApplyModal() {
       applyTemplateModal.querySelector('div').classList.remove('scale-100');
       applyTemplateModal.querySelector('div').classList.add('scale-95');
       setTimeout(() => {
         applyTemplateModal.classList.add('hidden');
+        // 重置状态
+        currentTemplateId = null;
+        // 清空主机列表容器，避免下次打开时显示旧数据
+        document.getElementById('hosts-list-container').innerHTML = '';
       }, 200);
     }
 
@@ -707,9 +755,47 @@
     });
 
     // 确认应用模板
-    document.getElementById('confirm-apply-btn').addEventListener('click', () => {
-      alert('模板已成功应用到所选主机！');
-      closeApplyModal();
+    document.getElementById('confirm-apply-btn').addEventListener('click', async () => {
+      // 收集选中的主机ID
+      const selectedHosts = Array.from(
+        document.querySelectorAll('.host-checkbox:checked')
+      ).map(cb => parseInt(cb.getAttribute('data-host-id')));
+
+      if (selectedHosts.length === 0) {
+        alert('请至少选择一台目标主机');
+        return;
+      }
+
+      if (!currentTemplateId) {
+        alert('未获取到模板信息，请重试');
+        return;
+      }
+
+      try {
+        const response = await fetch('/temp_to_hosts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrf_token')
+          },
+          body: JSON.stringify({
+            template_id: parseInt(currentTemplateId),
+            host_ids: selectedHosts
+          })
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+          alert('模板应用成功！');
+          closeApplyModal();
+        } else {
+          alert(`应用失败: ${result.message || '服务器处理错误'}`);
+        }
+      } catch (error) {
+        console.error('应用模板失败:', error);
+        alert('应用模板失败，请检查网络连接后重试');
+      }
     });
 
     // ========== 删除模板相关逻辑 ==========

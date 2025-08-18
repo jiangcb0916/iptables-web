@@ -5,7 +5,7 @@
 # @FileName: app.py
 # @Software: PyCharm
 # @Function:
-from flask import Flask, render_template, g, jsonify, request
+from flask import Flask, render_template, g, jsonify, request, redirect
 import sqlite3
 import re
 import paramiko
@@ -724,13 +724,17 @@ def templates_add():
             template_id = 1
 
         for rule in data['rules']:
+            if rule['policy'] == '允许':
+                policy = 'ACCEPT'
+            else:
+                policy = 'DROP'
             cursor.execute('''
             INSERT INTO rules 
             (template_id, policy, protocol, port,auth_object,description,created_at,updated_at)
             VALUES (?, ?, ?, ?,?, ?, ?,?)
             ''', (
                 template_id,
-                rule['policy'],
+                policy,
                 rule['protocol'],
                 rule['port'],
                 rule['auth_object'],
@@ -787,6 +791,10 @@ def templates_edit():
         # 先删除旧规则
         cursor.execute('DELETE FROM rules WHERE template_id = ?', (data['temp_id'],))
         for rule in data['rules']:
+            if rule['policy'] == '允许':
+                policy = 'ACCEPT'
+            else:
+                policy = 'DROP'
             # 添加新规则
             cursor.execute('''
             INSERT INTO rules 
@@ -794,7 +802,7 @@ def templates_edit():
             VALUES (?, ?, ?, ?,?, ?, ?,?)
             ''', (
                 data['temp_id'],
-                rule['policy'],
+                policy,
                 rule['protocol'],
                 rule['port'],
                 rule['auth_object'],
@@ -812,10 +820,143 @@ def templates_edit():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+# 应用模板获取主机列表
+@app.route("/temp_host_api", methods=['GET'])
+def temp_host_api():
+    try:
+        # 获取数据库连接
+        db = get_db()
+        cursor = db.cursor()
+        # 查询所有主机数据
+        cursor.execute('''
+        SELECT id, host_identifier
+        FROM hosts 
+        ORDER BY created_at DESC
+        ''')
+        # 获取所有记录
+        hosts = cursor.fetchall()
+
+        # 转换为字典列表，方便前端处理
+        host_list = []
+        for host in hosts:
+            host_list.append({
+                'id': host['id'],
+                'host_name': host['host_identifier']
+            })
+        # 返回JSON格式数据
+        return jsonify({
+            'success': True,
+            'data': host_list
+        })
+    except Exception as e:
+        # 错误处理，同样返回JSON格式
+        return jsonify({
+            'success': False,
+            'message': f"获取主机数据失败: {str(e)}"
+        }), 500
+
+
 # 应用模板
-@app.route("/temp_to_hosts", methods=['GET'])
+@app.route("/temp_to_hosts", methods=['POST'])
 def temp_to_hosts():
-    return render_template('temp_to_host.html')
+    all_params = request.get_json()
+    print(all_params)
+    template_id = all_params['template_id']
+    host_ids_list = all_params['host_ids']
+    # 获取模板的规则
+    try:
+        # 获取数据库连接
+        db = get_db()
+        cursor = db.cursor()
+        # 获取模板的方向
+        cursor.execute(''' select direction from templates  where id = {} ;'''.format(template_id))
+        direction_data = cursor.fetchone()
+        direction = direction_data[0]
+        # 查询所有主机数据
+        cursor.execute('''SELECT * FROM  rules
+        where template_id = {}
+        '''.format(template_id))
+        # 获取所有记录
+        temp_data = cursor.fetchall()
+        cmd_list = []
+        for rule in temp_data:
+            # 正常的tcp或udp规则
+            if 'tcp' in rule['protocol'] or 'udp' in rule['protocol']:
+                # 正常的端口
+                if '-1/-1' not in rule['port']:
+                    # 添加规则中的：正常端口中的范围端口
+                    if '-' in rule['port']:
+                        new_port = rule['port'].replace("-", ":")
+                        # print(new_port)
+                        cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule['auth_object'], rule['protocol'], new_port,
+                            rule['policy'], rule['description'])
+                        cmd_list.append(cmd)
+                    # 添加规则中的: 正常端口中的多个端口
+                    elif ',' in rule['port']:
+                        cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
+                            direction, rule['auth_object'], rule['protocol'],
+                            rule['port'],
+                            rule['policy'], rule['description'])
+                        cmd_list.append(cmd)
+                    else:
+                        cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule['auth_object'], rule['protocol'],
+                            rule['port'],
+                            rule['policy'], rule['description'])
+                        cmd_list.append(cmd)
+                else:
+                    # tcp 或udp的所有端口
+                    cmd = 'iptables -A {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule['auth_object'], rule['protocol'],
+                        rule['policy'], rule['description'])
+                    cmd_list.append(cmd)
+            # ICMP 或 all 协议的规则
+            else:
+                cmd = 'iptables -A {}  -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                    direction, rule['auth_object'], rule['protocol'],
+                    rule['policy'], rule['description'])
+                cmd_list.append(cmd)
+        print(cmd_list)
+        # 获取主机的信息
+        for host_id in host_ids_list:
+            # 查询所有主机数据
+            cursor.execute('''
+            SELECT ssh_port, username, ip_address, auth_method, password, private_key
+            FROM hosts where id = {}
+            '''.format(host_id))
+            # 获取所有记录
+            # 1. 获取所有列名（从 cursor.description 中提取）
+            columns = [column[0] for column in cursor.description]
+            # 2. 将每行数据与列名配对，转换为字典
+            hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            hostname = hosts[0]['ip_address']
+            port = hosts[0]['ssh_port']
+            user = hosts[0]['username']
+            pwd = hosts[0]['password']
+            auth_method = hosts[0]['auth_method']
+            private_key = hosts[0]['private_key']
+            if auth_method == 'password':
+                for cmd in cmd_list:
+                    pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                  cmd=cmd)
+            else:
+                for cmd in cmd_list:
+                    sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                     cmd=cmd)
+        # 将规则添加到主机上
+
+        return jsonify({
+            'success': True,
+            'message': "成功"
+        })
+
+    except Exception as e:
+        # 错误处理，同样返回JSON格式
+        return jsonify({
+            'success': False,
+            'message': f"获取主机数据失败: {str(e)}"
+        }), 500
 
 
 # 系统设置
