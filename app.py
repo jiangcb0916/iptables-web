@@ -13,8 +13,20 @@ from paramiko.client import AutoAddPolicy
 from datetime import datetime
 import math
 from io import StringIO
+from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+import uuid
 
 app = Flask(__name__)
+app.secret_key = 'your-secret-key-here'  # 生产环境中应使用更安全的密钥
+
+# 配置登录管理器
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'  # 指定登录页面的路由
+login_manager.login_message = '请先登录以访问该页面'
+
 ssh = paramiko.SSHClient()
 DATABASE = 'firewall_management.db'
 # 确保静态文件目录正确配置
@@ -163,6 +175,7 @@ def get_rule(iptables_output):
 
 # 查看规则
 @app.route("/rules_in", methods=['GET'])
+@login_required
 def rules_in():
     all_params = dict(request.args)
     host_id = all_params['host_id']
@@ -201,6 +214,7 @@ def rules_in():
 
 
 @app.route("/rules_out", methods=['GET'])
+@login_required
 def rules_out():
     all_params = dict(request.args)
     host_id = all_params['host_id']
@@ -239,6 +253,7 @@ def rules_out():
 
 # 修改规则
 @app.route("/rules_update", methods=['POST'])
+@login_required
 def rules_update():
     all_params = request.get_json()
     host_id = all_params['host_id']
@@ -357,6 +372,7 @@ def rules_update():
 
 # 添加规则
 @app.route("/rules_add", methods=['POST'])
+@login_required
 def rules_add():
     all_params = request.get_json()
     host_id = all_params['host_id']
@@ -472,6 +488,7 @@ def rules_add():
 
 # 删除规则
 @app.route("/rule_del", methods=['DELETE'])
+@login_required
 def del_rule():
     all_params = dict(request.args)
     host_id = all_params['host_id']
@@ -511,6 +528,7 @@ def del_rule():
 # 查看主机
 # 主机管理页面路由 - 读取数据库并返回数据到前端
 @app.route("/hosts", methods=['GET'])
+@login_required
 def hosts():
     all_params = dict(request.args)
     page = all_params['page']
@@ -556,6 +574,7 @@ def hosts():
 
 # 添加主机
 @app.route('/host_add', methods=['POST'])
+@login_required
 def add_host():
     try:
         data = request.get_json()
@@ -599,6 +618,7 @@ def add_host():
 
 # 删除主机
 @app.route('/host_del', methods=['DELETE'])
+@login_required
 def del_host():
     host_id = request.args.get('id')
     try:
@@ -616,6 +636,7 @@ def del_host():
 
 # 修改主机
 @app.route('/host_update', methods=['POST'])
+@login_required
 def update_host():
     data = request.get_json()
     host_id = data['id']
@@ -649,6 +670,7 @@ def update_host():
 
 # 查看模板
 @app.route("/templates", methods=['GET'])
+@login_required
 def templates():
     try:
         db = get_db()
@@ -695,6 +717,7 @@ def templates():
 
 # 添加模板
 @app.route("/temp_add", methods=['POST'])
+@login_required
 def templates_add():
     try:
         data = request.get_json()
@@ -754,6 +777,7 @@ def templates_add():
 
 # 删除模板
 @app.route("/temp_del", methods=['DELETE'])
+@login_required
 def templates_del():
     template_id = request.args.get('temp_id')
     try:
@@ -773,6 +797,7 @@ def templates_del():
 
 # 修改模板
 @app.route("/temp_edit", methods=['POST'])
+@login_required
 def templates_edit():
     try:
         data = request.get_json()
@@ -822,6 +847,7 @@ def templates_edit():
 
 # 应用模板获取主机列表
 @app.route("/temp_host_api", methods=['GET'])
+@login_required
 def temp_host_api():
     try:
         # 获取数据库连接
@@ -858,6 +884,7 @@ def temp_host_api():
 
 # 应用模板
 @app.route("/temp_to_hosts", methods=['POST'])
+@login_required
 def temp_to_hosts():
     all_params = request.get_json()
     print(all_params)
@@ -962,14 +989,117 @@ def temp_to_hosts():
 
 # 系统设置
 @app.route("/systemseting", methods=['GET'])
+@login_required
 def systemseting():
     return render_template('systemseting.html')
 
 
 # 操作日志
 @app.route("/logs", methods=['GET'])
+@login_required
 def logs():
     return render_template('logs.html')
+
+
+# 模拟数据库 - 实际应用中应使用真实数据库
+users = {
+    # 密码是 'admin123' 的哈希值
+    'admin': {
+        'id': '1',
+        'username': 'admin',
+        'password_hash': generate_password_hash('admin123'),
+        'role': 'admin'
+    },
+    # 密码是 'user123' 的哈希值
+    'user': {
+        'id': '2',
+        'username': 'user',
+        'password_hash': generate_password_hash('user123'),
+        'role': 'user'
+    }
+}
+
+
+# 用户类
+class User(UserMixin):
+    def __init__(self, user_id, username, role):
+        self.id = user_id
+        self.username = username
+        self.role = role
+
+
+# 加载用户回调函数
+@login_manager.user_loader
+def load_user(user_id):
+    # 从模拟数据库中查找用户
+    for user_data in users.values():
+        if user_data['id'] == user_id:
+            return User(
+                user_id=user_data['id'],
+                username=user_data['username'],
+                role=user_data['role']
+            )
+    return None
+
+
+# 登录路由
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    # 如果用户已登录，重定向到主页
+    if current_user.is_authenticated:
+        # 对AJAX请求返回JSON，普通请求返回重定向
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify(success=True, redirect_url=url_for('hosts', page=1))
+        return redirect(url_for('hosts', page=1))
+
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        remember = request.form.get('remember') == 'on'
+
+        # 查找用户
+        user_data = users.get(username)
+        if not user_data:
+            # 对AJAX请求返回JSON错误信息
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify(success=False, message='用户名不存在')
+            flash('用户名不存在', 'danger')
+            return render_template('login.html')
+
+        # 验证密码
+        if not check_password_hash(user_data['password_hash'], password):
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify(success=False, message='密码不正确')
+            flash('密码不正确', 'danger')
+            return render_template('login.html')
+
+        # 创建用户对象并登录
+        user = User(
+            user_id=user_data['id'],
+            username=user_data['username'],
+            role=user_data['role']
+        )
+        login_user(user, remember=remember)
+
+        # 登录成功：返回JSON（含重定向地址）
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify(
+                success=True,
+                redirect_url=url_for('hosts', page=1)  # 由后端生成URL，避免前端硬编码
+            )
+        return redirect(url_for('hosts', page=1))
+
+    # GET请求，显示登录页面
+    return render_template('login.html')
+
+
+# 注销路由
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('您已成功注销', 'info')
+    return redirect(url_for('login'))
 
 
 if __name__ == '__main__':

@@ -22,10 +22,11 @@
 
           <!-- 右侧工具栏 -->
           <div class="flex items-center space-x-4">
-            <button class="text-gray-500 hover:text-gray-700 relative">
-              <i class="fa fa-bell text-xl"></i>
-              <span class="absolute top-0 right-0 h-2 w-2 rounded-full bg-red-500"></span>
-            </button>
+          <button class="text-gray-500 hover:text-gray-700 relative" onclick="window.location.href='/logout'">
+            <i class="fa fa-sign-out text-xl"></i>
+            <!-- 移除通知红点，添加 logout 相关语义 -->
+            <span class="sr-only">退出登录</span>
+          </button>
             <button class="text-gray-500 hover:text-gray-700">
               <i class="fa fa-question-circle text-xl"></i>
             </button>
