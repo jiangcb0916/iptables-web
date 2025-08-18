@@ -5,7 +5,7 @@
 # @FileName: app.py
 # @Software: PyCharm
 # @Function:
-from flask import Flask, render_template, g, jsonify, request, redirect
+from flask import Flask, render_template, g, jsonify, request
 import sqlite3
 import re
 import paramiko
@@ -880,8 +880,9 @@ def temp_to_hosts():
         temp_data = cursor.fetchall()
         cmd_list = []
         for rule in temp_data:
+            print(rule['port'])
             # 正常的tcp或udp规则
-            if 'tcp' in rule['protocol'] or 'udp' in rule['protocol']:
+            if 'tcp' in rule['protocol'].lower() or 'udp' in rule['protocol'].lower():
                 # 正常的端口
                 if '-1/-1' not in rule['port']:
                     # 添加规则中的：正常端口中的范围端口
