@@ -89,6 +89,26 @@ def create_rule_table(conn):
         print(f"创建表时出错: {e}")
 
 
+def create_user_table(conn):
+    """创建用户表"""
+    try:
+        sql_create_hosts_table = """
+        CREATE TABLE IF NOT EXISTS user (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT  NOT NULL,   -- 模板ID
+            password TEXT  NOT NULL,   -- 授权策略
+            role TEXT DEFAULT 'test', -- 协议
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        cursor = conn.cursor()
+        cursor.execute(sql_create_hosts_table)
+        print("规则表创建成功")
+    except Error as e:
+        print(f"创建表时出错: {e}")
+
+
 def main():
     database = "firewall_management.db"  # 数据库文件名
 
@@ -102,8 +122,9 @@ def main():
         create_template_table(conn)
         # 创建规则表
         create_rule_table(conn)
+        # 创建用户表
+        create_user_table(conn)
         conn.close()
-
     else:
         print("无法创建数据库连接")
 

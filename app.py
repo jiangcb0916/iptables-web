@@ -1001,7 +1001,14 @@ def logs():
     return render_template('logs.html')
 
 
-# 模拟数据库 - 实际应用中应使用真实数据库
+# 用户类
+class User(UserMixin):
+    def __init__(self, user_id, username, role):
+        self.id = user_id
+        self.username = username
+        self.role = role
+
+
 users = {
     # 密码是 'admin123' 的哈希值
     'admin': {
@@ -1020,18 +1027,11 @@ users = {
 }
 
 
-# 用户类
-class User(UserMixin):
-    def __init__(self, user_id, username, role):
-        self.id = user_id
-        self.username = username
-        self.role = role
-
-
 # 加载用户回调函数
 @login_manager.user_loader
 def load_user(user_id):
     # 从模拟数据库中查找用户
+
     for user_data in users.values():
         if user_data['id'] == user_id:
             return User(
