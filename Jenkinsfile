@@ -33,7 +33,7 @@ pipeline {
                 }
             }
             steps {
-                sh "docker run --rm harbor.ata-t.com:3443/ata/aita-goc:latest python goc.py  --envname ${ENVNAME} --servername ${APP_NAME} --serverimage '${HARBOR_HOST}/${DOCKER_IMAGE}:${GIT_VER}'"
+                sh "docker run --rm harbor.ata-t.com:3443/ata/aita-goc:latest python goc.py  --envname ${ENVNAME} --servername ${APP_NAME} --serverimage '${HARBOR_HOST}/${DOCKER_IMAGE}:latest'"
             }
         }
     }
