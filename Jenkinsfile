@@ -5,6 +5,7 @@ pipeline {
         GIT_VER = sh(returnStdout: true,script: 'git describe --tags --always').trim()
         HARBOR_HOST = 'harbor.ata-t.com:3443';
         APP_NAME = "iptables_web";
+        ENVNAME = sh(returnStdout: true,script: 'cat /etc/envname.txt').trim();
         DOCKER_IMAGE = "ata/${APP_NAME}";
     }
     stages {
