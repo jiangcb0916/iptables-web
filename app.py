@@ -172,6 +172,13 @@ def get_rule(iptables_output):
     return data_list
 
 
+# 根路径路由：重定向到 /hosts?page=1
+@app.route('/')
+def index():
+    # 使用 url_for 生成 hosts 路由的 URL，指定 page=1
+    return redirect(url_for('hosts', page=1))
+
+
 # 查看规则
 @app.route("/rules_in", methods=['GET'])
 @login_required
