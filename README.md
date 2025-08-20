@@ -3,7 +3,19 @@
 
 扩展：https://www.man7.org/linux/man-pages/man8/iptables-extensions.8.html
 
+```shell
+docker build -t iptables_web:v0.4 .
+docker run --net=host -d -it  iptables_web:v0.4  sh
 
+# 持久化
+#centos
+iptables-save > /etc/sysconfig/iptables
+
+# debina and ubuntu
+# 前提条件：apt install iptables-persistent
+
+apt install iptables-persistent
+```
 
 
 主机表

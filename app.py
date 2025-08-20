@@ -279,6 +279,7 @@ def rules_update():
         pwd = hosts[0]['password']
         auth_method = hosts[0]['auth_method']
         private_key = hosts[0]['private_key']
+        operating_system = hosts[0]['operating_system']
         if auth_method == 'password':
             # 删除
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
@@ -317,7 +318,15 @@ def rules_update():
             # 添加
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                           cmd=cmd)
-
+            if operating_system == 'centos':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/sysconfig/iptables')
+            elif operating_system == 'debian':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/iptables/rules.v4')
+            elif operating_system == 'ubuntu':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/iptables/rules.v4')
             # 查看
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                             cmd='iptables -nL {} --line-number -t filter'.format(direction))
@@ -325,7 +334,15 @@ def rules_update():
         else:
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                              cmd='iptables -D {} {}'.format(direction, rule_id))
-
+            if operating_system == 'centos':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/sysconfig/iptables')
+            elif operating_system == 'debian':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/iptables/rules.v4')
+            elif operating_system == 'ubuntu':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/iptables/rules.v4')
             # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
                 # 正常的端口
@@ -359,6 +376,15 @@ def rules_update():
             # 添加
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                              cmd=cmd)
+            if operating_system == 'centos':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/sysconfig/iptables')
+            elif operating_system == 'debian':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/iptables/rules.v4')
+            elif operating_system == 'ubuntu':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/iptables/rules.v4')
             # 查看
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL {} --line-number -t filter'.format(direction))
@@ -398,6 +424,7 @@ def rules_add():
         pwd = hosts[0]['password']
         auth_method = hosts[0]['auth_method']
         private_key = hosts[0]['private_key']
+        operating_system = hosts[0]['operating_system']
         if auth_method == 'password':
             # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
@@ -435,6 +462,15 @@ def rules_add():
             # 添加
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                           cmd=cmd)
+            if operating_system == 'centos':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/sysconfig/iptables')
+            elif operating_system == 'debian':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/iptables/rules.v4')
+            elif operating_system == 'ubuntu':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/iptables/rules.v4')
 
             # 查看
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
@@ -475,6 +511,16 @@ def rules_add():
             # 添加
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                              cmd=cmd)
+            if operating_system == 'centos':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/sysconfig/iptables')
+            elif operating_system == 'debian':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/iptables/rules.v4')
+            elif operating_system == 'ubuntu':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/iptables/rules.v4')
+
             # 查看
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL {} --line-number -t filter'.format(direction))
@@ -511,12 +557,31 @@ def del_rule():
         pwd = hosts[0]['password']
         auth_method = hosts[0]['auth_method']
         private_key = hosts[0]['private_key']
+        operating_system = hosts[0]['operating_system']
         if auth_method == 'password':
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                             cmd='iptables -D {} {}'.format(direction, rule_id))
+            if operating_system == 'centos':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/sysconfig/iptables')
+            elif operating_system == 'debian':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/iptables/rules.v4')
+            elif operating_system == 'ubuntu':
+                pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                              cmd='iptables-save > /etc/iptables/rules.v4')
         else:
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -D {} {}'.format(direction, rule_id))
+            if operating_system == 'centos':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/sysconfig/iptables')
+            elif operating_system == 'debian':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/iptables/rules.v4')
+            elif operating_system == 'ubuntu':
+                sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                 cmd='iptables-save > /etc/iptables/rules.v4')
         data_list = get_rule(iptables_output)
         return render_template('rule.html', data_list=data_list, id=host_id)
     except Exception as e:
@@ -944,12 +1009,11 @@ def temp_to_hosts():
                     direction, rule['auth_object'], rule['protocol'],
                     rule['policy'], rule['description'])
                 cmd_list.append(cmd)
-        print(cmd_list)
         # 获取主机的信息
         for host_id in host_ids_list:
             # 查询所有主机数据
             cursor.execute('''
-            SELECT ssh_port, username, ip_address, auth_method, password, private_key
+            SELECT ssh_port, username, ip_address, auth_method, password, private_key, operating_system
             FROM hosts where id = {}
             '''.format(host_id))
             # 获取所有记录
@@ -963,14 +1027,33 @@ def temp_to_hosts():
             pwd = hosts[0]['password']
             auth_method = hosts[0]['auth_method']
             private_key = hosts[0]['private_key']
+            operating_system = hosts[0]['operating_system']
             if auth_method == 'password':
                 for cmd in cmd_list:
                     pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                   cmd=cmd)
+                    if operating_system == 'centos':
+                        pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                      cmd='iptables-save > /etc/sysconfig/iptables')
+                    elif operating_system == 'debian':
+                        pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                      cmd='iptables-save > /etc/iptables/rules.v4')
+                    elif operating_system == 'ubuntu':
+                        pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
+                                      cmd='iptables-save > /etc/iptables/rules.v4')
             else:
                 for cmd in cmd_list:
                     sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                      cmd=cmd)
+                    if operating_system == 'centos':
+                        sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                         cmd='iptables-save > /etc/sysconfig/iptables')
+                    elif operating_system == 'debian':
+                        sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                         cmd='iptables-save > /etc/iptables/rules.v4')
+                    elif operating_system == 'ubuntu':
+                        sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
+                                         cmd='iptables-save > /etc/iptables/rules.v4')
         # 将规则添加到主机上
 
         return jsonify({
