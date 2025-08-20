@@ -184,7 +184,7 @@ def rules_in():
         cursor = db.cursor()
         # 查询所有主机数据
         cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key,operating_system
         FROM hosts where id = {}
         '''.format(host_id))
         # 获取所有记录
@@ -223,7 +223,7 @@ def rules_out():
         cursor = db.cursor()
         # 查询所有主机数据
         cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key,operating_system
         FROM hosts where id = {}
         '''.format(host_id))
         # 获取所有记录
@@ -265,7 +265,7 @@ def rules_update():
         cursor = db.cursor()
         # 查询所有主机数据
         cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key,operating_system
         FROM hosts where id = {}
         '''.format(host_id))
         # 获取所有记录
@@ -410,7 +410,7 @@ def rules_add():
         cursor = db.cursor()
         # 查询所有主机数据
         cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key, operating_system
         FROM hosts where id = {}
         '''.format(host_id))
         # 获取所有记录
@@ -543,7 +543,7 @@ def del_rule():
         db = get_db()
         cursor = db.cursor()
         cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key
+        SELECT ssh_port, username, ip_address, auth_method, password, private_key,operating_system
         FROM hosts where id = {}
         '''.format(host_id))
         # 获取所有记录
