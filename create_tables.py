@@ -95,10 +95,68 @@ def create_user_table(conn):
         sql_create_hosts_table = """
         CREATE TABLE IF NOT EXISTS user (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT  NOT NULL,   -- 模板ID
-            password TEXT  NOT NULL,   -- 授权策略
-            role TEXT DEFAULT 'test', -- 协议
+            username TEXT  NOT NULL,   -- 用户名
+            password TEXT  NOT NULL,   -- 密码
+            language TEXT  NOT NULL,   -- 语言
+            email TEXT  NOT NULL,   -- 邮箱
+            status TEXT  NOT NULL,   -- 状态
+            role_id TEXT NOT NULL, -- 角色
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        cursor = conn.cursor()
+        cursor.execute(sql_create_hosts_table)
+        print("规则表创建成功")
+    except Error as e:
+        print(f"创建表时出错: {e}")
+
+
+def create_system_config_table(conn):
+    """创建系统设置表"""
+    try:
+        sql_create_hosts_table = """
+        CREATE TABLE IF NOT EXISTS system_config (
+            id TEXT  NOT NULL,   -- id
+            system_name TEXT  NOT NULL,   -- 系统名称
+            time_zone TEXT  NOT NULL,   -- 时区
+            log_retention_time TEXT  NOT NULL,   -- 日志保留时间
+            record_logs TEXT  NOT NULL,   -- 启用审计日志
+            password_strategy TEXT  NOT NULL,   -- 密码策略
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        cursor = conn.cursor()
+        cursor.execute(sql_create_hosts_table)
+        print("规则表创建成功")
+    except Error as e:
+        print(f"创建表时出错: {e}")
+
+
+def create_role_table(conn):
+    """创建角色表"""
+    try:
+        sql_create_hosts_table = """
+        CREATE TABLE IF NOT EXISTS roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role_name TEXT  NOT NULL,   -- 角色名称
+            role_description TEXT  NOT NULL,   -- 角色描述
+            sys_view TEXT  NOT NULL,   -- 查看系统设置
+            sys_edit TEXT  NOT NULL,  -- 编辑系统设置
+            user_view TEXT  NOT NULL,  -- 查看用户列表
+            user_add TEXT  NOT NULL,  -- 添加用户
+            user_edit TEXT  NOT NULL,  -- 编辑用户
+            user_status TEXT  NOT NULL, -- 用户状态：启用或禁用用户
+            iptab_view TEXT  NOT NULL, -- 查看防火墙规则
+            iptab_add TEXT  NOT NULL, -- 添加防火墙规则
+            iptab_edit TEXT  NOT NULL, -- 编辑防火墙规则
+            iptab_del TEXT  NOT NULL, -- 删除防火墙规则
+            log_view TEXT  NOT NULL,  -- 查看操作日志
+            hosts_view TEXT  NOT NULL,  --查看主机
+            hosts_edit TEXT  NOT NULL,  -- 编辑主机
+            hosts_add TEXT  NOT NULL,  -- 新增主机
+            hosts_del  TEXT  NOT NULL,  -- 删除主机
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
@@ -124,6 +182,10 @@ def main():
         create_rule_table(conn)
         # 创建用户表
         create_user_table(conn)
+        # 创建系统设置表
+        create_system_config_table(conn)
+        # 创建角色表
+        create_role_table(conn)
         conn.close()
     else:
         print("无法创建数据库连接")

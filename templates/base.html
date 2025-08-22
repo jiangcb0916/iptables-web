@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="static/盾牌.svg" type="image/svg+xml">
-  <title>防火墙规则管理系统</title>
+  <title>防火墙管理系统</title>
   <!-- 引入Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- 引入Font Awesome -->
@@ -62,7 +62,8 @@
       <div class="p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors"
            onclick="window.location.href='/hosts?page=1'">
         <h2 class="text-xl font-bold text-primary flex items-center">
-          <i class="fa fa-shield mr-2"></i> 防火墙管理系统
+          <i class="fa fa-shield mr-2"></i> <!-- 图标标签不要加ID -->
+          <span id="app-name">防火墙管理系统</span> <!-- 给文字部分加ID -->
         </h2>
       </div>
 
@@ -112,6 +113,50 @@
 {% block script %}
 {% endblock script %}
 <script>
+    // 页面加载时执行
+    document.addEventListener('DOMContentLoaded', function() {
+      fetchSystemConfig();
+    });
+
+function fetchSystemConfig() {
+  // 调用后端API获取系统配置
+  fetch('/api/system-config')
+    .then(response => {
+      if (!response.ok) {
+        // 处理HTTP错误状态
+        return response.json().then(err => {
+          throw new Error(err.error || `HTTP错误: ${response.status}`);
+        });
+      }
+      return response.json();
+    })
+    .then(data => {
+      // 如果返回了系统名称，则更新相关元素
+      if (data.system_name) {
+        // 更新页面标题
+        document.title = data.system_name;
+
+        // 更新左上角显示的系统名称
+        const appNameElement = document.getElementById('app-name');
+        if (appNameElement) {
+          appNameElement.textContent = data.system_name;
+        }
+
+        // 更新设置页面中的输入框值
+        const systemNameInput = document.querySelector('#system-config-form input[type="text"]');
+        if (systemNameInput) {
+          systemNameInput.value = data.system_name;
+        }
+      }
+    })
+    .catch(error => {
+      console.error('获取系统配置失败:', error.message);
+      // 可以在这里添加用户可见的错误提示
+    });
+}
+
+
+
 document.addEventListener('DOMContentLoaded', function() {
   // 1. 获取当前页面的URL路径（仅路径部分，不含查询参数）
   const currentPath = window.location.pathname;

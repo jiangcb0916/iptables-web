@@ -2,7 +2,7 @@
 {% block main %}
     <!-- 主内容区 -->
     <div class="flex-1 flex flex-col overflow-hidden">
-      <!-- 顶部导航栏 -->
+      <!-- 顶部导航栏（共用） -->
       <header class="bg-white border-b border-gray-200 shadow-sm z-10">
         <div class="flex items-center justify-between h-16 px-6">
           <!-- 移动端菜单按钮 -->
@@ -43,306 +43,570 @@
       <!-- 页面内容 -->
       <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
         <div class="container mx-auto max-w-7xl">
-          <!-- 页面标题 -->
+          <!-- 页面标题（随选项卡动态变化） -->
           <div class="mb-8">
-            <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">系统设置</h1>
-            <p class="text-secondary">配置系统参数、用户权限和安全选项</p>
+            <h1 id="page-title" class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">系统设置</h1>
+            <p id="page-desc" class="text-secondary">配置系统参数、用户权限和安全选项</p>
           </div>
 
-          <!-- 设置选项卡 -->
+          <!-- 设置选项卡（共用） -->
           <div class="border-b border-gray-200 mb-6">
             <nav class="-mb-px flex flex-wrap">
-              <button class="border-primary text-primary whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+              <button class="tab-btn border-primary text-primary whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm" data-tab="basic">
                 基本设置
               </button>
-              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+              <button class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm" data-tab="user">
                 用户管理
               </button>
-              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
+              <button class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm" data-tab="role">
                 角色权限
-              </button>
-              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
-                安全设置
-              </button>
-              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
-                通知设置
-              </button>
-              <button class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm">
-                系统备份
               </button>
             </nav>
           </div>
 
-          <!-- 基本设置内容 -->
-          <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
-            <div class="px-6 py-5 border-b border-gray-100">
-              <h2 class="text-lg font-semibold">系统信息</h2>
-            </div>
-
-            <div class="p-6">
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-gray-50 p-4 rounded-lg">
-                  <div class="text-sm text-secondary mb-1">系统版本</div>
-                  <div class="font-medium">v1.2.0</div>
+          <!-- 1. 基本设置内容（默认显示） -->
+          <div class="tab-content" id="basic-content">
+            <!-- 系统信息卡片 -->
+            <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
+              <div class="px-6 py-5 border-b border-gray-100">
+                <h2 class="text-lg font-semibold">系统信息</h2>
+              </div>
+              <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div class="bg-gray-50 p-4 rounded-lg">
+                    <div class="text-sm text-secondary mb-1">系统版本</div>
+                    <div class="font-medium">v1.2.0</div>
+                  </div>
+                  <div class="bg-gray-50 p-4 rounded-lg">
+                    <div class="text-sm text-secondary mb-1">最后更新</div>
+                    <div class="font-medium">2023-06-10</div>
+                  </div>
+                  <div class="bg-gray-50 p-4 rounded-lg">
+                    <div class="text-sm text-secondary mb-1">许可状态</div>
+                    <div class="font-medium text-success">已激活</div>
+                  </div>
                 </div>
-
-                <div class="bg-gray-50 p-4 rounded-lg">
-                  <div class="text-sm text-secondary mb-1">最后更新</div>
-                  <div class="font-medium">2023-06-10</div>
-                </div>
-
-                <div class="bg-gray-50 p-4 rounded-lg">
-                  <div class="text-sm text-secondary mb-1">许可状态</div>
-                  <div class="font-medium text-success">已激活</div>
+                <div class="mt-6">
+                  <a
+                    href="https://gitee.com/shiya_liu/iptables-web/releases"
+                    class="ml-4 text-primary hover:text-primary/80 text-sm font-medium transition-colors inline-flex items-center"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <i class="fa fa-info-circle mr-1"></i> 查看最新版本
+                  </a>
                 </div>
               </div>
+            </div>
 
-              <div class="mt-6">
-                <button class="text-primary hover:text-primary/80 text-sm font-medium transition-colors">
-                  <i class="fa fa-refresh mr-1"></i> 检查更新
-                </button>
-                <button class="ml-4 text-primary hover:text-primary/80 text-sm font-medium transition-colors">
-                  <i class="fa fa-info-circle mr-1"></i> 查看版本信息
-                </button>
+            <!-- 系统配置卡片 -->
+            <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
+              <div class="px-6 py-5 border-b border-gray-100">
+                <h2 class="text-lg font-semibold">系统配置</h2>
               </div>
-            </div>
-          </div>
-
-          <!-- 系统配置 -->
-          <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
-            <div class="px-6 py-5 border-b border-gray-100">
-              <h2 class="text-lg font-semibold">系统配置</h2>
-            </div>
-
-            <div class="p-6">
-              <form id="system-config-form">
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">系统名称</label>
-                      <p class="text-xs text-secondary mt-1">显示在浏览器标题和页面顶部的名称</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <input type="text" value="FireVision 防火墙管理系统" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">默认语言</label>
-                      <p class="text-xs text-secondary mt-1">系统界面默认显示语言</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                        <option value="zh-CN">简体中文</option>
-                        <option value="en">English</option>
-                        <option value="ja">日本語</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">时区设置</label>
-                      <p class="text-xs text-secondary mt-1">系统时间显示的时区</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                        <option value="Asia/Shanghai">Asia/Shanghai (GMT+8)</option>
-                        <option value="UTC">UTC</option>
-                        <option value="Europe/London">Europe/London (GMT)</option>
-                        <option value="America/New_York">America/New_York (GMT-5)</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">自动刷新间隔</label>
-                      <p class="text-xs text-secondary mt-1">主机状态和规则的自动刷新时间</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                        <option value="30">30秒</option>
-                        <option value="60" selected>1分钟</option>
-                        <option value="300">5分钟</option>
-                        <option value="600">10分钟</option>
-                        <option value="0">禁用自动刷新</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">操作日志保留时间</label>
-                      <p class="text-xs text-secondary mt-1">超过此时间的操作日志将被自动清理</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                        <option value="7">7天</option>
-                        <option value="30" selected>30天</option>
-                        <option value="90">90天</option>
-                        <option value="180">180天</option>
-                        <option value="365">1年</option>
-                        <option value="0">永久保留</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">启用审计日志</label>
-                      <p class="text-xs text-secondary mt-1">记录所有防火墙规则的变更历史</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked class="sr-only peer">
-                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">启用批量操作确认</label>
-                      <p class="text-xs text-secondary mt-1">执行批量操作前显示确认提示</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked class="sr-only peer">
-                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-
-          <!-- 安全设置 -->
-          <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
-            <div class="px-6 py-5 border-b border-gray-100">
-              <h2 class="text-lg font-semibold">安全设置</h2>
-            </div>
-
-            <div class="p-6">
-              <form id="security-settings-form">
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">密码策略</label>
-                      <p class="text-xs text-secondary mt-1">设置用户密码的复杂度要求</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                        <option value="low">低 (至少6位字符)</option>
-                        <option value="medium" selected>中 (至少8位，包含数字和字母)</option>
-                        <option value="high">高 (至少10位，包含大小写字母、数字和特殊字符)</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">会话超时时间</label>
-                      <p class="text-xs text-secondary mt-1">用户未活动多久后自动登出</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <select class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
-                        <option value="15">15分钟</option>
-                        <option value="30">30分钟</option>
-                        <option value="60" selected>1小时</option>
-                        <option value="120">2小时</option>
-                        <option value="240">4小时</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">登录失败锁定</label>
-                      <p class="text-xs text-secondary mt-1">连续登录失败次数达到阈值后锁定账户</p>
-                    </div>
-                    <div class="md:w-2/3 flex items-center">
-                      <label class="relative inline-flex items-center cursor-pointer mr-4">
-                        <input type="checkbox" checked class="sr-only peer">
-                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                      </label>
-                      <div class="text-sm">
-                        失败 <input type="number" value="5" min="1" max="20" class="w-16 px-2 py-1 border border-gray-300 rounded text-center"> 次后锁定 <input type="number" value="15" min="1" max="120" class="w-16 px-2 py-1 border border-gray-300 rounded text-center"> 分钟
+              <div class="p-6">
+                <form id="system-config-form">
+                  <div class="setting-item">
+                    <div class="flex flex-col md:flex-row md:items-center">
+                      <div class="md:w-1/3 mb-2 md:mb-0">
+                        <label class="block text-sm font-medium text-gray-700">系统名称</label>
+                        <p class="text-xs text-secondary mt-1">显示在浏览器标题和页面顶部的名称</p>
+                      </div>
+                      <div class="md:w-2/3">
+                        <input type="text" id="system-name" value="防火墙管理系统" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <div class="setting-item">
-                  <div class="flex flex-col md:flex-row md:items-center">
-                    <div class="md:w-1/3 mb-2 md:mb-0">
-                      <label class="block text-sm font-medium text-gray-700">启用HTTPS强制跳转</label>
-                      <p class="text-xs text-secondary mt-1">所有HTTP请求自动跳转到HTTPS</p>
-                    </div>
-                    <div class="md:w-2/3">
-                      <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked class="sr-only peer">
-                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                      </label>
+                  <div class="setting-item">
+                    <div class="flex flex-col md:flex-row md:items-center">
+                      <div class="md:w-1/3 mb-2 md:mb-0">
+                        <label class="block text-sm font-medium text-gray-700">默认语言</label>
+                        <p class="text-xs text-secondary mt-1">系统界面默认显示语言</p>
+                      </div>
+                      <div class="md:w-2/3">
+                        <select id="default-language" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                          <option value="zh-CN">简体中文</option>
+                          <option value="en">English</option>
+                          <option value="ja">日本語</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </form>
+
+                  <div class="setting-item">
+                    <div class="flex flex-col md:flex-row md:items-center">
+                      <div class="md:w-1/3 mb-2 md:mb-0">
+                        <label class="block text-sm font-medium text-gray-700">时区设置</label>
+                        <p class="text-xs text-secondary mt-1">系统时间显示的时区</p>
+                      </div>
+                      <div class="md:w-2/3">
+                        <select id="timezone" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                          <option value="Asia/Shanghai">Asia/Shanghai (GMT+8)</option>
+                          <option value="UTC">UTC</option>
+                          <option value="Europe/London">Europe/London (GMT)</option>
+                          <option value="America/New_York">America/New_York (GMT-5)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="setting-item">
+                    <div class="flex flex-col md:flex-row md:items-center">
+                      <div class="md:w-1/3 mb-2 md:mb-0">
+                        <label class="block text-sm font-medium text-gray-700">操作日志保留时间</label>
+                        <p class="text-xs text-secondary mt-1">超过此时间的操作日志将被自动清理</p>
+                      </div>
+                      <div class="md:w-2/3">
+                        <select id="log-retention" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                          <option value="7">7天</option>
+                          <option value="30" selected>30天</option>
+                          <option value="90">90天</option>
+                          <option value="180">180天</option>
+                          <option value="365">1年</option>
+                          <option value="0">永久保留</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="setting-item">
+                    <div class="flex flex-col md:flex-row md:items-center">
+                      <div class="md:w-1/3 mb-2 md:mb-0">
+                        <label class="block text-sm font-medium text-gray-700">启用审计日志</label>
+                        <p class="text-xs text-secondary mt-1">记录所有防火墙规则的变更历史</p>
+                      </div>
+                      <div class="md:w-2/3">
+                        <label class="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" id="enable-audit-log" checked class="sr-only peer">
+                          <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- 安全设置卡片 -->
+            <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
+              <div class="px-6 py-5 border-b border-gray-100">
+                <h2 class="text-lg font-semibold">安全设置</h2>
+              </div>
+              <div class="p-6">
+                <form id="security-settings-form">
+                  <div class="setting-item">
+                    <div class="flex flex-col md:flex-row md:items-center">
+                      <div class="md:w-1/3 mb-2 md:mb-0">
+                        <label class="block text-sm font-medium text-gray-700">密码策略</label>
+                        <p class="text-xs text-secondary mt-1">设置用户密码的复杂度要求</p>
+                      </div>
+                      <div class="md:w-2/3">
+                        <!-- 安全设置部分 -->
+                        <select id="password-policy" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                          <option value="low">低 (至少6位字符)</option>
+                          <option value="medium" selected>中 (至少8位，包含数字和字母)</option>
+                          <option value="high">高 (至少10位，包含大小写字母、数字和特殊字符)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- 基本设置操作按钮 -->
+            <div class="flex justify-end space-x-3">
+              <button id="reset-btn" class="px-6 py-2.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">
+                重置
+              </button>
+              <button id="save-settings-btn" class="px-6 py-2.5 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors btn-hover">
+                保存设置
+              </button>
             </div>
           </div>
 
-          <!-- 按钮操作区 -->
-          <div class="flex justify-end space-x-3">
-            <button id="reset-btn" class="px-6 py-2.5 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">
-              重置
-            </button>
-            <button id="save-settings-btn" class="px-6 py-2.5 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors btn-hover">
-              保存设置
-            </button>
+          <!-- 2. 用户管理内容（默认隐藏） -->
+          <div class="tab-content hidden" id="user-content">
+            <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
+              <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center">
+                <h2 class="text-lg font-semibold">用户列表</h2>
+                <button id="add-user-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors flex items-center">
+                  <i class="fa fa-plus mr-2"></i> 添加用户
+                </button>
+              </div>
+
+              <div class="p-6">
+                <!-- 搜索与筛选 -->
+                <div class="flex flex-col md:flex-row gap-4 mb-6">
+                  <div class="flex-1">
+                    <div class="relative">
+                      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fa fa-search text-gray-400"></i>
+                      </div>
+                      <input type="text" id="user-search" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" placeholder="搜索用户名/邮箱...">
+                    </div>
+                  </div>
+                  <div class="w-full md:w-40">
+                    <select id="status-filter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                      <option value="all">全部状态</option>
+                      <option value="active">已激活</option>
+                      <option value="inactive">已禁用</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- 用户列表表格 -->
+                <div class="overflow-x-auto">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                      <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户名</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邮箱</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
+                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                      <!-- 用户1 -->
+                      <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">1</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <div class="flex items-center">
+                            <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                              <span class="text-gray-600 font-medium">张</span>
+                            </div>
+                            <div class="text-sm font-medium text-gray-900">admin</div>
+                          </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">admin@example.com</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">超级管理员</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">已激活</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-01-15 09:30</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button class="text-primary hover:text-primary/80 mr-3 edit-user" data-id="1">编辑</button>
+                          <button class="text-gray-500 hover:text-gray-700 disabled:opacity-50" disabled>禁用</button>
+                        </td>
+                      </tr>
+                      <!-- 用户2 -->
+                      <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">2</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <div class="flex items-center">
+                            <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                              <span class="text-gray-600 font-medium">李</span>
+                            </div>
+                            <div class="text-sm font-medium text-gray-900">operator</div>
+                          </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">operator@example.com</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">操作员</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">已激活</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-02-20 14:15</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button class="text-primary hover:text-primary/80 mr-3 edit-user" data-id="2">编辑</button>
+                          <button class="text-danger hover:text-danger/80 toggle-status" data-id="2" data-status="active">禁用</button>
+                        </td>
+                      </tr>
+                      <!-- 用户3 -->
+                      <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">3</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <div class="flex items-center">
+                            <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                              <span class="text-gray-600 font-medium">王</span>
+                            </div>
+                            <div class="text-sm font-medium text-gray-900">viewer</div>
+                          </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">viewer@example.com</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">查看者</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">已禁用</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-03-05 11:45</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button class="text-primary hover:text-primary/80 mr-3 edit-user" data-id="3">编辑</button>
+                          <button class="text-success hover:text-success/80 toggle-status" data-id="3" data-status="inactive">启用</button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- 分页控件 -->
+                <div class="flex items-center justify-between px-4 py-3 sm:px-6 mt-4">
+                  <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                    <div>
+                      <p class="text-sm text-gray-700">
+                        显示第 <span class="font-medium">1</span> 到 <span class="font-medium">3</span> 条，共 <span class="font-medium">12</span> 条记录
+                      </p>
+                    </div>
+                    <div>
+                      <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        <a href="#" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                          <span class="sr-only">上一页</span>
+                          <i class="fa fa-chevron-left text-xs"></i>
+                        </a>
+                        <a href="#" aria-current="page" class="z-10 bg-primary text-white relative inline-flex items-center px-4 py-2 border border-primary text-sm font-medium">
+                          1
+                        </a>
+                        <a href="#" class="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium">
+                          2
+                        </a>
+                        <a href="#" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                          <span class="sr-only">下一页</span>
+                          <i class="fa fa-chevron-right text-xs"></i>
+                        </a>
+                      </nav>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 角色权限内容（默认隐藏） -->
+          <div class="tab-content hidden" id="role-content">
+            <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
+              <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center">
+                <h2 class="text-lg font-semibold">角色列表</h2>
+                <button id="add-role-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors flex items-center">
+                  <i class="fa fa-plus mr-2"></i> 添加角色
+                </button>
+              </div>
+
+              <div class="p-6">
+                <!-- 角色列表表格 -->
+                <div class="overflow-x-auto">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                      <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色名称</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">描述</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">关联用户数</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
+                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                      <!-- 角色1 -->
+                      <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">1</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <div class="text-sm font-medium text-gray-900">超级管理员</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">拥有系统所有操作权限</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">1</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-01-10 10:00</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button class="text-primary hover:text-primary/80 mr-3 edit-role" data-id="1">编辑</button>
+                          <button class="text-primary hover:text-primary/80 mr-3 assign-permission" data-id="1">分配权限</button>
+                          <button class="text-gray-500 hover:text-gray-700 disabled:opacity-50" disabled>删除</button>
+                        </td>
+                      </tr>
+                      <!-- 角色2 -->
+                      <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">2</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <div class="text-sm font-medium text-gray-900">操作员</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">可执行常规操作，无用户管理权限</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">5</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-01-15 14:30</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button class="text-primary hover:text-primary/80 mr-3 edit-role" data-id="2">编辑</button>
+                          <button class="text-primary hover:text-primary/80 mr-3 assign-permission" data-id="2">分配权限</button>
+                          <button class="text-danger hover:text-danger/80 delete-role" data-id="2">删除</button>
+                        </td>
+                      </tr>
+                      <!-- 角色3 -->
+                      <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">3</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <div class="text-sm font-medium text-gray-900">查看者</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">仅查看权限，无修改/执行权限</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">12</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-01-20 09:15</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button class="text-primary hover:text-primary/80 mr-3 edit-role" data-id="3">编辑</button>
+                          <button class="text-primary hover:text-primary/80 mr-3 assign-permission" data-id="3">分配权限</button>
+                          <button class="text-danger hover:text-danger/80 delete-role" data-id="3">删除</button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </main>
     </div>
   </div>
 
-  <!-- 确认保存模态框 -->
+  <!-- 通用模态框（添加/编辑用户/角色） -->
+  <div id="common-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl w-full max-w-md transform transition-all scale-95">
+      <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 id="modal-title" class="text-lg font-semibold">添加用户</h3>
+        <button id="close-modal" class="text-gray-500 hover:text-gray-700">
+          <i class="fa fa-times"></i>
+        </button>
+      </div>
+      <div class="px-6 py-5" id="modal-content">
+        <!-- 内容将通过JS动态填充 -->
+      </div>
+      <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+        <button id="cancel-modal-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
+        <button id="save-modal-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 权限分配模态框（修改后） -->
+  <div id="permission-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl w-full max-w-2xl transform transition-all scale-95 max-h-[80vh] overflow-hidden flex flex-col">
+      <div class="px-6 py-5 border-b border-gray-200 flex justify-between items-center">
+        <h3 id="permission-modal-title" class="text-lg font-semibold">分配权限 - 操作员</h3>
+        <button id="close-permission-modal" class="text-gray-500 hover:text-gray-700">
+          <i class="fa fa-times"></i>
+        </button>
+      </div>
+      <div class="px-6 py-5 flex-1 overflow-y-auto" id="permission-content">
+        <div class="space-y-6">
+          <!-- 系统设置权限组 -->
+          <div class="permission-group">
+            <h4 class="font-medium text-gray-700 mb-3">系统设置</h4>
+            <div class="pl-4 space-y-3">
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-system-view" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
+                <label for="perm-system-view" class="text-sm text-gray-600">查看系统设置</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-system-edit" class="text-primary focus:ring-primary h-4 w-4 mr-2">
+                <label for="perm-system-edit" class="text-sm text-gray-600">编辑系统设置</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 用户管理权限组 -->
+          <div class="permission-group">
+            <h4 class="font-medium text-gray-700 mb-3">用户管理</h4>
+            <div class="pl-4 space-y-3">
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-user-view" class="text-primary focus:ring-primary h-4 w-4 mr-2">
+                <label for="perm-user-view" class="text-sm text-gray-600">查看用户列表</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-user-add" class="text-primary focus:ring-primary h-4 w-4 mr-2">
+                <label for="perm-user-add" class="text-sm text-gray-600">添加用户</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-user-edit" class="text-primary focus:ring-primary h-4 w-4 mr-2">
+                <label for="perm-user-edit" class="text-sm text-gray-600">编辑用户</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-user-status" class="text-primary focus:ring-primary h-4 w-4 mr-2">
+                <label for="perm-user-status" class="text-sm text-gray-600">启用/禁用用户</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 防火墙操作权限组 -->
+          <div class="permission-group">
+            <h4 class="font-medium text-gray-700 mb-3">防火墙操作</h4>
+            <div class="pl-4 space-y-3">
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-firewall-view" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
+                <label for="perm-firewall-view" class="text-sm text-gray-600">查看防火墙规则</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-firewall-add" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
+                <label for="perm-firewall-add" class="text-sm text-gray-600">添加防火墙规则</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-firewall-edit" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
+                <label for="perm-firewall-edit" class="text-sm text-gray-600">编辑防火墙规则</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-firewall-delete" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
+                <label for="perm-firewall-delete" class="text-sm text-gray-600">删除防火墙规则</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 审计日志权限组 -->
+          <div class="permission-group">
+            <h4 class="font-medium text-gray-700 mb-3">审计日志</h4>
+            <div class="pl-4 space-y-3">
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-audit-view" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
+                <label for="perm-audit-view" class="text-sm text-gray-600">查看操作日志</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 主机权限组 -->
+          <div class="permission-group">
+            <h4 class="font-medium text-gray-700 mb-3">主机操作</h4>
+            <div class="pl-4 space-y-3">
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-hosts-view" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
+                <label for="perm-hosts-view" class="text-sm text-gray-600">查看主机</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-hosts-edit" class="text-primary focus:ring-primary h-4 w-4 mr-2">
+                <label for="perm-hosts-edit" class="text-sm text-gray-600">编辑主机</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-hosts-add" class="text-primary focus:ring-primary h-4 w-4 mr-2">
+                <label for="perm-hosts-add" class="text-sm text-gray-600">新增主机</label>
+              </div>
+              <div class="flex items-center">
+                <input type="checkbox" id="perm-hosts-del" class="text-primary focus:ring-primary h-4 w-4 mr-2">
+                <label for="perm-hosts-del" class="text-sm text-gray-600">删除主机</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+        <button id="cancel-permission-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
+        <button id="save-permission-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">保存权限</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 确认操作模态框 -->
   <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
     <div class="bg-white rounded-xl w-full max-w-md transform transition-all scale-95">
       <div class="px-6 py-4 border-b border-gray-200">
-        <h3 class="text-lg font-semibold">保存系统设置</h3>
+        <h3 id="confirm-title" class="text-lg font-semibold">确认删除角色</h3>
       </div>
-
       <div class="px-6 py-5">
-        <p class="text-gray-700 mb-4">
-          部分设置需要重启系统才能生效，是否继续？
+        <p class="text-gray-700 mb-4" id="confirm-message">
+          确定要删除此角色吗？删除后关联的用户将失去该角色权限。
         </p>
-        <div class="flex items-center">
-          <input type="checkbox" id="dont-ask-again" class="mr-2 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded">
-          <label for="dont-ask-again" class="text-sm text-gray-700">不再提示</label>
-        </div>
       </div>
-
       <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
         <button id="cancel-confirm-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
-        <button id="confirm-save-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">确认保存</button>
+        <button id="confirm-action-btn" class="px-4 py-2 bg-danger text-white rounded-md hover:bg-danger/90 transition-colors">确认</button>
       </div>
     </div>
   </div>
@@ -350,97 +614,542 @@
   <!-- 操作成功提示 -->
   <div id="success-toast" class="fixed top-4 right-4 bg-success text-white px-4 py-3 rounded-lg shadow-lg transform transition-all translate-x-full opacity-0 z-50 flex items-center">
     <i class="fa fa-check-circle mr-2"></i>
-    <span>设置已成功保存</span>
+    <span>操作成功</span>
   </div>
 
 {% endblock main %}
 
 {% block script %}
   <script>
-    // 移动端菜单按钮交互
-    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+// 页面加载完成后初始化所有交互
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('页面加载完成，初始化交互...');
+
+  // 选项卡切换核心逻辑
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const tabName = this.getAttribute('data-tab');
+      console.log('切换到选项卡:', tabName);
+
+      // 更新选项卡按钮样式
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.remove('border-primary', 'text-primary');
+        b.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+      });
+      this.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+      this.classList.add('border-primary', 'text-primary');
+
+      // 显示对应内容，隐藏其他内容
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.add('hidden');
+      });
+      document.getElementById(`${tabName}-content`).classList.remove('hidden');
+
+      // 更新页面标题和描述
+      updatePageTitle(tabName);
+    });
+  });
+
+  // 移动端菜单交互
+  const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+  if (mobileMenuBtn) {
     mobileMenuBtn.addEventListener('click', () => {
+      console.log('点击移动端菜单按钮');
       const sidebar = document.querySelector('.w-64');
       sidebar.classList.toggle('hidden');
       sidebar.classList.toggle('fixed');
       sidebar.classList.toggle('z-50');
       sidebar.classList.toggle('h-full');
     });
+  }
 
-    // 模态框元素
-    const confirmModal = document.getElementById('confirm-modal');
-    const successToast = document.getElementById('success-toast');
-    const saveSettingsBtn = document.getElementById('save-settings-btn');
-    const resetBtn = document.getElementById('reset-btn');
-    const cancelConfirmBtn = document.getElementById('cancel-confirm-btn');
-    const confirmSaveBtn = document.getElementById('confirm-save-btn');
+  // 初始化各模块交互
+  initUserManagement();
+  initRolePermission();
+  initBasicSettings();
 
-    // 打开确认保存模态框
-    saveSettingsBtn.addEventListener('click', () => {
-      confirmModal.classList.remove('hidden');
-      setTimeout(() => {
-        confirmModal.querySelector('div').classList.add('scale-100');
-        confirmModal.querySelector('div').classList.remove('scale-95');
-      }, 10);
+  // 绑定确认按钮事件（确保只绑定一次）
+  const confirmBtn = document.getElementById('confirm-action-btn');
+  if (confirmBtn) {
+    // 先移除可能存在的事件监听器，避免重复绑定
+    const newConfirmBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+    newConfirmBtn.addEventListener('click', handleConfirmAction);
+  }
+});
+
+// 更新页面标题和描述
+function updatePageTitle(tabName) {
+  const titles = {
+    'basic': { title: '系统设置', desc: '配置系统参数、用户权限和安全选项' },
+    'user': { title: '用户管理', desc: '管理系统用户账号、角色及状态' },
+    'role': { title: '角色权限', desc: '定义角色并分配相应操作权限' }
+  };
+  document.getElementById('page-title').textContent = titles[tabName].title;
+  document.getElementById('page-desc').textContent = titles[tabName].desc;
+}
+
+// 基本设置页面交互
+function initBasicSettings() {
+  console.log('初始化基本设置页面交互');
+
+  // 保存设置按钮
+  const saveBtn = document.getElementById('save-settings-btn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', function() {
+      console.log('点击保存设置按钮');
+
+      document.getElementById('confirm-title').textContent = '保存系统设置';
+      document.getElementById('confirm-message').textContent = '部分设置需要重启系统才能生效，是否继续？';
+      document.getElementById('confirm-action-btn').classList.remove('bg-danger');
+      document.getElementById('confirm-action-btn').classList.add('bg-primary');
+
+      // 清除之前的动作标识
+      document.getElementById('confirm-action-btn').removeAttribute('data-action');
+
+      // 保存当前配置数据到临时变量，供确认后使用
+      // 修复：使用ID选择器替代位置选择器，更可靠
+      const systemNameInput = document.getElementById('system-name');
+      const defaultLanguageSelect = document.getElementById('default-language');
+      const timezoneSelect = document.getElementById('timezone');
+      const logRetentionSelect = document.getElementById('log-retention');
+      const enableAuditLogCheckbox = document.getElementById('enable-audit-log');
+      const passwordPolicySelect = document.getElementById('password-policy');
+
+      // 新增：添加空值检查，防止获取不到元素
+      if (!systemNameInput || !defaultLanguageSelect || !timezoneSelect ||
+          !logRetentionSelect || !enableAuditLogCheckbox || !passwordPolicySelect) {
+        console.error('无法找到所有配置表单元素');
+        showSuccessToast('保存失败：表单元素未找到');
+        return;
+      }
+
+      // 存储配置数据到确认按钮的自定义属性
+      const configData = {
+        systemName: systemNameInput.value.trim(),
+        defaultLanguage: defaultLanguageSelect.value,
+        timezone: timezoneSelect.value,
+        logRetentionSelect: logRetentionSelect.value,
+        enableAuditLog: enableAuditLogCheckbox.checked,
+        passwordPolicy: passwordPolicySelect.value
+      };
+
+      console.log('准备保存的配置数据:', configData);
+      document.getElementById('confirm-action-btn').setAttribute('data-config', JSON.stringify(configData));
+
+      openConfirmModal();
     });
+  }
 
-    // 关闭确认模态框
-    function closeConfirmModal() {
-      confirmModal.querySelector('div').classList.remove('scale-100');
-      confirmModal.querySelector('div').classList.add('scale-95');
-      setTimeout(() => {
-        confirmModal.classList.add('hidden');
-      }, 200);
+  // 重置按钮
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    console.log('点击重置按钮');
+    if (confirm('确定要重置所有设置为默认值吗？')) {
+      showSuccessToast('所有设置已重置为默认值');
+    }
+  });
+}
+
+
+// 处理确认按钮点击事件
+function handleConfirmAction() {
+  console.log('点击确认按钮');
+  const action = this.getAttribute('data-action');
+  let message = '';
+
+  if (action === 'delete-role') {
+    message = '角色删除成功';
+    closeConfirmModal();
+    showSuccessToast(message);
+  } else if (action === 'toggle-user-status') {
+    const status = this.getAttribute('data-status');
+    message = status === 'active' ? '用户禁用成功' : '用户启用成功';
+    closeConfirmModal();
+    showSuccessToast(message);
+  } else {
+    // 处理保存系统配置的情况
+    try {
+      const configData = JSON.parse(this.getAttribute('data-config'));
+      console.log('确认保存配置数据:', configData);
+
+      // 验证配置数据
+      if (!configData.systemName) {
+        alert('请输入系统名称');
+        return;
+      }
+
+      let logRetentionDays;
+      try {
+        logRetentionDays = configData.logRetentionSelect.trim();
+        if (!logRetentionDays || isNaN(Number(logRetentionDays))) {
+          throw new Error('无效的日志保留时间');
+        }
+      } catch (error) {
+        alert('请选择有效的日志保留时间');
+        return;
+      }
+
+      // 构建完整的配置数据对象并发送请求
+      const sendData = {
+        system_name: configData.systemName,
+        default_language: configData.defaultLanguage,
+        timezone: configData.timezone,
+        log_retention_days: logRetentionDays,
+        enable_audit_log: configData.enableAuditLog,
+        password_strategy: configData.passwordPolicy
+      };
+
+      console.log('发送到服务器的配置数据:', sendData);
+
+      // 发送POST请求到/api/system-config
+      fetch('/api/system-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(sendData)
+      })
+      .then(response => {
+        console.log('服务器响应状态:', response.status);
+        if (!response.ok) {
+          return response.json().then(err => {
+            throw new Error(err.error || '保存系统配置失败');
+          });
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('服务器返回数据:', data);
+        if (data.success) {
+          document.title = configData.systemName;
+          const appNameElement = document.getElementById('app-name');
+          if (appNameElement) {
+            appNameElement.textContent = configData.systemName;
+          }
+          message = '设置已成功保存';
+        }
+      })
+      .catch(error => {
+        console.error('保存系统配置失败:', error);
+        message = `更新系统配置失败: ${error.message}`;
+      })
+      .finally(() => {
+        closeConfirmModal();
+        showSuccessToast(message);
+      });
+    } catch (error) {
+      console.error('处理配置数据时出错:', error);
+      alert('处理配置数据时发生错误，请重试');
+      closeConfirmModal();
     }
 
-    cancelConfirmBtn.addEventListener('click', closeConfirmModal);
+    return;
+  }
+}
 
-    // 点击模态框外部关闭
-    confirmModal.addEventListener('click', (e) => {
-      if (e.target === confirmModal) {
-        closeConfirmModal();
-      }
+// 用户管理页面交互
+function initUserManagement() {
+  console.log('初始化用户管理页面交互');
+
+  // 添加用户按钮
+  document.getElementById('add-user-btn').addEventListener('click', () => {
+    console.log('点击添加用户按钮');
+    document.getElementById('modal-title').textContent = '添加用户';
+    document.getElementById('modal-content').innerHTML = `
+      <form id="user-form">
+        <div class="mb-4">
+          <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名 <span class="text-danger">*</span></label>
+          <input type="text" id="username" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入用户名" required>
+        </div>
+        <div class="mb-4">
+          <label for="email" class="block text-sm font-medium text-gray-700 mb-1">邮箱 <span class="text-danger">*</span></label>
+          <input type="email" id="email" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入邮箱地址" required>
+        </div>
+        <div class="mb-4">
+          <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码 <span class="text-danger">*</span></label>
+          <input type="password" id="password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入密码" required>
+          <p class="text-xs text-gray-500 mt-1">密码需符合系统安全策略要求</p>
+        </div>
+        <div class="mb-4">
+          <label for="role" class="block text-sm font-medium text-gray-700 mb-1">角色 <span class="text-danger">*</span></label>
+          <select id="role" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" required>
+            <option value="">请选择角色</option>
+            <option value="admin">超级管理员</option>
+            <option value="operator">操作员</option>
+            <option value="viewer">查看者</option>
+          </select>
+        </div>
+      </form>
+    `;
+    openCommonModal();
+  });
+
+  // 编辑用户按钮
+  document.querySelectorAll('.edit-user').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const userId = this.getAttribute('data-id');
+      console.log('点击编辑用户按钮，用户ID:', userId);
+      document.getElementById('modal-title').textContent = '编辑用户';
+      document.getElementById('modal-content').innerHTML = `
+        <form id="user-form">
+          <input type="hidden" id="user-id" value="${userId}">
+          <div class="mb-4">
+            <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名 <span class="text-danger">*</span></label>
+            <input type="text" id="username" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" value="${userId == 2 ? 'operator' : 'viewer'}" required>
+          </div>
+          <div class="mb-4">
+            <label for="email" class="block text-sm font-medium text-gray-700 mb-1">邮箱 <span class="text-danger">*</span></label>
+            <input type="email" id="email" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" value="${userId == 2 ? 'operator@example.com' : 'viewer@example.com'}" required>
+          </div>
+          <div class="mb-4">
+            <label for="role" class="block text-sm font-medium text-gray-700 mb-1">角色 <span class="text-danger">*</span></label>
+            <select id="role" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" required>
+              <option value="admin">超级管理员</option>
+              <option value="operator" ${userId == 2 ? 'selected' : ''}>操作员</option>
+              <option value="viewer" ${userId == 3 ? 'selected' : ''}>查看者</option>
+            </select>
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">状态</label>
+            <div class="flex items-center">
+              <label class="inline-flex items-center mr-4">
+                <input type="radio" name="status" value="active" ${userId == 2 ? 'checked' : ''} class="text-primary focus:ring-primary h-4 w-4">
+                <span class="ml-2 text-sm text-gray-700">已激活</span>
+              </label>
+              <label class="inline-flex items-center">
+                <input type="radio" name="status" value="inactive" ${userId == 3 ? 'checked' : ''} class="text-primary focus:ring-primary h-4 w-4">
+                <span class="ml-2 text-sm text-gray-700">已禁用</span>
+              </label>
+            </div>
+          </div>
+        </form>
+      `;
+      openCommonModal();
     });
+  });
 
-    // 确认保存设置
-    confirmSaveBtn.addEventListener('click', () => {
-      closeConfirmModal();
+  // 切换用户状态（启用/禁用）
+  document.querySelectorAll('.toggle-status').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const userId = this.getAttribute('data-id');
+      const status = this.getAttribute('data-status');
+      const action = status === 'active' ? '禁用' : '启用';
+      console.log(`点击${action}用户按钮，用户ID:${userId}，当前状态:${status}`);
 
-      // 显示成功提示
-      successToast.classList.remove('translate-x-full', 'opacity-0');
+      document.getElementById('confirm-title').textContent = `确认${action}用户`;
+      document.getElementById('confirm-message').textContent = `确定要${action}此用户吗？${action}后用户将${status === 'active' ? '无法' : '可以'}登录系统。`;
+      document.getElementById('confirm-action-btn').classList.remove('bg-primary');
+      document.getElementById('confirm-action-btn').classList.add('bg-danger');
 
-      // 3秒后隐藏提示
-      setTimeout(() => {
-        successToast.classList.add('translate-x-full', 'opacity-0');
-      }, 3000);
+      // 存储当前操作信息
+      document.getElementById('confirm-action-btn').setAttribute('data-action', 'toggle-user-status');
+      document.getElementById('confirm-action-btn').setAttribute('data-id', userId);
+      document.getElementById('confirm-action-btn').setAttribute('data-status', status);
+      document.getElementById('confirm-action-btn').removeAttribute('data-config');
+
+      openConfirmModal();
     });
+  });
+}
 
-    // 重置设置
-    resetBtn.addEventListener('click', () => {
-      if (confirm('确定要重置所有设置为默认值吗？')) {
-        // 重置表单的逻辑
-        alert('所有设置已重置为默认值');
-      }
+// 角色权限页面交互
+function initRolePermission() {
+  console.log('初始化角色权限页面交互');
+
+  // 添加角色按钮
+  document.getElementById('add-role-btn').addEventListener('click', () => {
+    console.log('点击添加角色按钮');
+    document.getElementById('modal-title').textContent = '添加角色';
+    document.getElementById('modal-content').innerHTML = `
+      <form id="role-form">
+        <div class="mb-4">
+          <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
+          <input type="text" id="role-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入角色名称" required>
+        </div>
+        <div class="mb-4">
+          <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
+          <textarea id="role-desc" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" rows="3" placeholder="请输入角色描述"></textarea>
+        </div>
+      </form>
+    `;
+    openCommonModal();
+  });
+
+  // 编辑角色按钮
+  document.querySelectorAll('.edit-role').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const roleId = this.getAttribute('data-id');
+      console.log('点击编辑角色按钮，角色ID:', roleId);
+      const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
+      const roleDescs = {
+        '1': '拥有系统所有操作权限',
+        '2': '可执行常规操作，无用户管理权限',
+        '3': '仅查看权限，无修改/执行权限'
+      };
+
+      document.getElementById('modal-title').textContent = '编辑角色';
+      document.getElementById('modal-content').innerHTML = `
+        <form id="role-form">
+          <input type="hidden" id="role-id" value="${roleId}">
+          <div class="mb-4">
+            <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
+            <input type="text" id="role-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" value="${roleNames[roleId]}" required>
+          </div>
+          <div class="mb-4">
+            <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
+            <textarea id="role-desc" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" rows="3">${roleDescs[roleId]}</textarea>
+          </div>
+        </form>
+      `;
+      openCommonModal();
     });
+  });
 
-    // 设置选项卡切换
-    document.querySelectorAll('.border-b button').forEach(tab => {
-      tab.addEventListener('click', () => {
-        // 移除所有选项卡的活跃状态
-        document.querySelectorAll('.border-b button').forEach(t => {
-          t.classList.remove('border-primary', 'text-primary');
-          t.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
-        });
-
-        // 设置当前选项卡为活跃状态
-        tab.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
-        tab.classList.add('border-primary', 'text-primary');
-
-        // 这里可以添加切换不同设置内容的逻辑
-        console.log('切换到:', tab.textContent.trim());
-      });
+  // 分配权限按钮
+  document.querySelectorAll('.assign-permission').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const roleId = this.getAttribute('data-id');
+      console.log('点击分配权限按钮，角色ID:', roleId);
+      const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
+      document.getElementById('permission-modal-title').textContent = `分配权限 - ${roleNames[roleId]}`;
+      openPermissionModal();
     });
+  });
+
+  // 删除角色按钮
+  document.querySelectorAll('.delete-role').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const roleId = this.getAttribute('data-id');
+      console.log('点击删除角色按钮，角色ID:', roleId);
+      document.getElementById('confirm-title').textContent = '确认删除角色';
+      document.getElementById('confirm-message').textContent = '确定要删除此角色吗？删除后关联的用户将失去该角色权限。';
+      document.getElementById('confirm-action-btn').classList.remove('bg-primary');
+      document.getElementById('confirm-action-btn').classList.add('bg-danger');
+
+      // 存储当前操作信息
+      document.getElementById('confirm-action-btn').setAttribute('data-action', 'delete-role');
+      document.getElementById('confirm-action-btn').setAttribute('data-id', roleId);
+      document.getElementById('confirm-action-btn').removeAttribute('data-config');
+
+      openConfirmModal();
+    });
+  });
+}
+
+// 保存用户/角色按钮事件
+document.getElementById('save-modal-btn').addEventListener('click', () => {
+  console.log('点击保存用户/角色按钮');
+  closeCommonModal();
+  const isEditUser = document.getElementById('user-id');
+  const isEditRole = document.getElementById('role-id');
+
+  if (isEditUser) {
+    showSuccessToast('用户编辑成功');
+  } else if (isEditRole) {
+    showSuccessToast('角色编辑成功');
+  } else if (document.getElementById('username')) {
+    showSuccessToast('用户添加成功');
+  } else {
+    showSuccessToast('角色添加成功');
+  }
+});
+
+// 保存权限分配
+document.getElementById('save-permission-btn').addEventListener('click', () => {
+  console.log('点击保存权限按钮');
+  closePermissionModal();
+  showSuccessToast('权限分配成功');
+});
+
+// 模态框操作函数
+function openCommonModal() {
+  console.log('打开通用模态框');
+  const modal = document.getElementById('common-modal');
+  modal.classList.remove('hidden');
+  // 触发重排后再添加动画类
+  setTimeout(() => {
+    modal.querySelector('div').classList.add('scale-100');
+    modal.querySelector('div').classList.remove('scale-95');
+  }, 10);
+}
+
+function closeCommonModal() {
+  console.log('关闭通用模态框');
+  const modal = document.getElementById('common-modal');
+  modal.querySelector('div').classList.remove('scale-100');
+  modal.querySelector('div').classList.add('scale-95');
+  setTimeout(() => {
+    modal.classList.add('hidden');
+  }, 200);
+}
+
+function openPermissionModal() {
+  console.log('打开权限分配模态框');
+  const modal = document.getElementById('permission-modal');
+  modal.classList.remove('hidden');
+  setTimeout(() => {
+    modal.querySelector('div').classList.add('scale-100');
+    modal.querySelector('div').classList.remove('scale-95');
+  }, 10);
+}
+
+function closePermissionModal() {
+  console.log('关闭权限分配模态框');
+  const modal = document.getElementById('permission-modal');
+  modal.querySelector('div').classList.remove('scale-100');
+  modal.querySelector('div').classList.add('scale-95');
+  setTimeout(() => {
+    modal.classList.add('hidden');
+  }, 200);
+}
+
+function openConfirmModal() {
+  console.log('打开确认模态框');
+  const modal = document.getElementById('confirm-modal');
+  modal.classList.remove('hidden');
+  setTimeout(() => {
+    modal.querySelector('div').classList.add('scale-100');
+    modal.querySelector('div').classList.remove('scale-95');
+  }, 10);
+}
+
+function closeConfirmModal() {
+  console.log('关闭确认模态框');
+  const modal = document.getElementById('confirm-modal');
+  modal.querySelector('div').classList.remove('scale-100');
+  modal.querySelector('div').classList.add('scale-95');
+  setTimeout(() => {
+    modal.classList.add('hidden');
+  }, 200);
+}
+
+// 显示成功提示
+function showSuccessToast(message) {
+  console.log('显示成功提示:', message);
+  const toast = document.getElementById('success-toast');
+  toast.querySelector('span').textContent = message;
+  toast.classList.remove('translate-x-full', 'opacity-0');
+  setTimeout(() => {
+    toast.classList.add('translate-x-full', 'opacity-0');
+  }, 3000);
+}
+
+// 关闭模态框按钮事件
+document.getElementById('close-modal').addEventListener('click', closeCommonModal);
+document.getElementById('cancel-modal-btn').addEventListener('click', closeCommonModal);
+document.getElementById('close-permission-modal').addEventListener('click', closePermissionModal);
+document.getElementById('cancel-permission-btn').addEventListener('click', closePermissionModal);
+document.getElementById('cancel-confirm-btn').addEventListener('click', closeConfirmModal);
+
+// 点击模态框外部关闭
+document.getElementById('common-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('common-modal')) closeCommonModal();
+});
+document.getElementById('permission-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('permission-modal')) closePermissionModal();
+});
+document.getElementById('confirm-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('confirm-modal')) closeConfirmModal();
+});
   </script>
-</body>
-</html>
 {% endblock script %}

@@ -1083,6 +1083,50 @@ def systemseting():
     return render_template('systemseting.html')
 
 
+# 系统配置接口
+@app.route('/api/system-config', methods=['GET', 'POST'])
+def get_system_config():
+    print(request.method)
+    if request.method == "GET":
+        try:
+            db = get_db()
+            cursor = db.cursor()
+            # 获取系统名称
+            cursor.execute(''' select system_name from system_config; ''')
+            system_name_data = cursor.fetchone()
+            # 检查查询结果是否存在
+            if not system_name_data:
+                return jsonify({'error': '系统配置不存在'}), 404
+
+            system_name = system_name_data[0]
+            return jsonify({'system_name': system_name})
+        except Exception as e:
+            app.logger.error(f"获取系统配置失败: {str(e)}")
+            return jsonify({'error': '获取系统配置失败'}), 500
+    else:
+        try:
+            data = request.get_json()
+            print(data)
+            db = get_db()
+            cursor = db.cursor()
+            system_name = data['system_name']
+            time_zone = data['timezone']
+            log_retention_time = data['log_retention_days']
+            record_logs = data['enable_audit_log']
+            password_strategy = data['password_strategy']
+            updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            # 更新system_config 表
+            cursor.execute(
+                ''' update system_config  set system_name = ?, time_zone = ?, log_retention_time = ?, record_logs = ?,password_strategy = ?, updated_at = ?  where id=1; ''',(
+                    system_name, time_zone, log_retention_time, record_logs, password_strategy, updated_at
+                ))
+            db.commit()
+            return jsonify({'success': True, 'message': '保存系统配置成功'})
+        except Exception as e:
+            app.logger.error(f"保存系统配置失败: {str(e)}")
+            return jsonify({'error': '保存系统配置失败'}), 500
+
+
 # 操作日志
 @app.route("/logs", methods=['GET'])
 @login_required
@@ -1120,7 +1164,6 @@ users = {
 @login_manager.user_loader
 def load_user(user_id):
     # 从模拟数据库中查找用户
-
     for user_data in users.values():
         if user_data['id'] == user_id:
             return User(
