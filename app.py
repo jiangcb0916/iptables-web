@@ -1106,7 +1106,6 @@ def get_system_config():
     else:
         try:
             data = request.get_json()
-            print(data)
             db = get_db()
             cursor = db.cursor()
             system_name = data['system_name']

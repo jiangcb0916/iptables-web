@@ -623,13 +623,11 @@
   <script>
 // 页面加载完成后初始化所有交互
 document.addEventListener('DOMContentLoaded', function() {
-  console.log('页面加载完成，初始化交互...');
 
   // 选项卡切换核心逻辑
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const tabName = this.getAttribute('data-tab');
-      console.log('切换到选项卡:', tabName);
 
       // 更新选项卡按钮样式
       document.querySelectorAll('.tab-btn').forEach(b => {
@@ -654,7 +652,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const mobileMenuBtn = document.getElementById('mobile-menu-btn');
   if (mobileMenuBtn) {
     mobileMenuBtn.addEventListener('click', () => {
-      console.log('点击移动端菜单按钮');
       const sidebar = document.querySelector('.w-64');
       sidebar.classList.toggle('hidden');
       sidebar.classList.toggle('fixed');
@@ -691,13 +688,11 @@ function updatePageTitle(tabName) {
 
 // 基本设置页面交互
 function initBasicSettings() {
-  console.log('初始化基本设置页面交互');
 
   // 保存设置按钮
   const saveBtn = document.getElementById('save-settings-btn');
   if (saveBtn) {
     saveBtn.addEventListener('click', function() {
-      console.log('点击保存设置按钮');
 
       document.getElementById('confirm-title').textContent = '保存系统设置';
       document.getElementById('confirm-message').textContent = '部分设置需要重启系统才能生效，是否继续？';
@@ -734,7 +729,6 @@ function initBasicSettings() {
         passwordPolicy: passwordPolicySelect.value
       };
 
-      console.log('准备保存的配置数据:', configData);
       document.getElementById('confirm-action-btn').setAttribute('data-config', JSON.stringify(configData));
 
       openConfirmModal();
@@ -743,7 +737,6 @@ function initBasicSettings() {
 
   // 重置按钮
   document.getElementById('reset-btn').addEventListener('click', () => {
-    console.log('点击重置按钮');
     if (confirm('确定要重置所有设置为默认值吗？')) {
       showSuccessToast('所有设置已重置为默认值');
     }
@@ -753,7 +746,6 @@ function initBasicSettings() {
 
 // 处理确认按钮点击事件
 function handleConfirmAction() {
-  console.log('点击确认按钮');
   const action = this.getAttribute('data-action');
   let message = '';
 
@@ -770,7 +762,6 @@ function handleConfirmAction() {
     // 处理保存系统配置的情况
     try {
       const configData = JSON.parse(this.getAttribute('data-config'));
-      console.log('确认保存配置数据:', configData);
 
       // 验证配置数据
       if (!configData.systemName) {
@@ -799,8 +790,6 @@ function handleConfirmAction() {
         password_strategy: configData.passwordPolicy
       };
 
-      console.log('发送到服务器的配置数据:', sendData);
-
       // 发送POST请求到/api/system-config
       fetch('/api/system-config', {
         method: 'POST',
@@ -810,7 +799,6 @@ function handleConfirmAction() {
         body: JSON.stringify(sendData)
       })
       .then(response => {
-        console.log('服务器响应状态:', response.status);
         if (!response.ok) {
           return response.json().then(err => {
             throw new Error(err.error || '保存系统配置失败');
@@ -819,7 +807,6 @@ function handleConfirmAction() {
         return response.json();
       })
       .then(data => {
-        console.log('服务器返回数据:', data);
         if (data.success) {
           document.title = configData.systemName;
           const appNameElement = document.getElementById('app-name');
@@ -849,11 +836,9 @@ function handleConfirmAction() {
 
 // 用户管理页面交互
 function initUserManagement() {
-  console.log('初始化用户管理页面交互');
 
   // 添加用户按钮
   document.getElementById('add-user-btn').addEventListener('click', () => {
-    console.log('点击添加用户按钮');
     document.getElementById('modal-title').textContent = '添加用户';
     document.getElementById('modal-content').innerHTML = `
       <form id="user-form">
@@ -888,7 +873,6 @@ function initUserManagement() {
   document.querySelectorAll('.edit-user').forEach(btn => {
     btn.addEventListener('click', function() {
       const userId = this.getAttribute('data-id');
-      console.log('点击编辑用户按钮，用户ID:', userId);
       document.getElementById('modal-title').textContent = '编辑用户';
       document.getElementById('modal-content').innerHTML = `
         <form id="user-form">
@@ -934,7 +918,6 @@ function initUserManagement() {
       const userId = this.getAttribute('data-id');
       const status = this.getAttribute('data-status');
       const action = status === 'active' ? '禁用' : '启用';
-      console.log(`点击${action}用户按钮，用户ID:${userId}，当前状态:${status}`);
 
       document.getElementById('confirm-title').textContent = `确认${action}用户`;
       document.getElementById('confirm-message').textContent = `确定要${action}此用户吗？${action}后用户将${status === 'active' ? '无法' : '可以'}登录系统。`;
@@ -954,11 +937,9 @@ function initUserManagement() {
 
 // 角色权限页面交互
 function initRolePermission() {
-  console.log('初始化角色权限页面交互');
 
   // 添加角色按钮
   document.getElementById('add-role-btn').addEventListener('click', () => {
-    console.log('点击添加角色按钮');
     document.getElementById('modal-title').textContent = '添加角色';
     document.getElementById('modal-content').innerHTML = `
       <form id="role-form">
@@ -979,7 +960,6 @@ function initRolePermission() {
   document.querySelectorAll('.edit-role').forEach(btn => {
     btn.addEventListener('click', function() {
       const roleId = this.getAttribute('data-id');
-      console.log('点击编辑角色按钮，角色ID:', roleId);
       const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
       const roleDescs = {
         '1': '拥有系统所有操作权限',
@@ -1009,7 +989,6 @@ function initRolePermission() {
   document.querySelectorAll('.assign-permission').forEach(btn => {
     btn.addEventListener('click', function() {
       const roleId = this.getAttribute('data-id');
-      console.log('点击分配权限按钮，角色ID:', roleId);
       const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
       document.getElementById('permission-modal-title').textContent = `分配权限 - ${roleNames[roleId]}`;
       openPermissionModal();
@@ -1020,7 +999,6 @@ function initRolePermission() {
   document.querySelectorAll('.delete-role').forEach(btn => {
     btn.addEventListener('click', function() {
       const roleId = this.getAttribute('data-id');
-      console.log('点击删除角色按钮，角色ID:', roleId);
       document.getElementById('confirm-title').textContent = '确认删除角色';
       document.getElementById('confirm-message').textContent = '确定要删除此角色吗？删除后关联的用户将失去该角色权限。';
       document.getElementById('confirm-action-btn').classList.remove('bg-primary');
@@ -1038,7 +1016,6 @@ function initRolePermission() {
 
 // 保存用户/角色按钮事件
 document.getElementById('save-modal-btn').addEventListener('click', () => {
-  console.log('点击保存用户/角色按钮');
   closeCommonModal();
   const isEditUser = document.getElementById('user-id');
   const isEditRole = document.getElementById('role-id');
@@ -1056,14 +1033,12 @@ document.getElementById('save-modal-btn').addEventListener('click', () => {
 
 // 保存权限分配
 document.getElementById('save-permission-btn').addEventListener('click', () => {
-  console.log('点击保存权限按钮');
   closePermissionModal();
   showSuccessToast('权限分配成功');
 });
 
 // 模态框操作函数
 function openCommonModal() {
-  console.log('打开通用模态框');
   const modal = document.getElementById('common-modal');
   modal.classList.remove('hidden');
   // 触发重排后再添加动画类
@@ -1074,7 +1049,6 @@ function openCommonModal() {
 }
 
 function closeCommonModal() {
-  console.log('关闭通用模态框');
   const modal = document.getElementById('common-modal');
   modal.querySelector('div').classList.remove('scale-100');
   modal.querySelector('div').classList.add('scale-95');
@@ -1084,7 +1058,6 @@ function closeCommonModal() {
 }
 
 function openPermissionModal() {
-  console.log('打开权限分配模态框');
   const modal = document.getElementById('permission-modal');
   modal.classList.remove('hidden');
   setTimeout(() => {
@@ -1094,7 +1067,6 @@ function openPermissionModal() {
 }
 
 function closePermissionModal() {
-  console.log('关闭权限分配模态框');
   const modal = document.getElementById('permission-modal');
   modal.querySelector('div').classList.remove('scale-100');
   modal.querySelector('div').classList.add('scale-95');
@@ -1104,7 +1076,6 @@ function closePermissionModal() {
 }
 
 function openConfirmModal() {
-  console.log('打开确认模态框');
   const modal = document.getElementById('confirm-modal');
   modal.classList.remove('hidden');
   setTimeout(() => {
@@ -1114,7 +1085,6 @@ function openConfirmModal() {
 }
 
 function closeConfirmModal() {
-  console.log('关闭确认模态框');
   const modal = document.getElementById('confirm-modal');
   modal.querySelector('div').classList.remove('scale-100');
   modal.querySelector('div').classList.add('scale-95');
@@ -1125,7 +1095,6 @@ function closeConfirmModal() {
 
 // 显示成功提示
 function showSuccessToast(message) {
-  console.log('显示成功提示:', message);
   const toast = document.getElementById('success-toast');
   toast.querySelector('span').textContent = message;
   toast.classList.remove('translate-x-full', 'opacity-0');
