@@ -97,7 +97,6 @@ def create_user_table(conn):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT  NOT NULL,   -- 用户名
             password TEXT  NOT NULL,   -- 密码
-            language TEXT  NOT NULL,   -- 语言
             email TEXT  NOT NULL,   -- 邮箱
             status TEXT  NOT NULL,   -- 状态
             role_id TEXT NOT NULL, -- 角色

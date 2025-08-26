@@ -49,18 +49,33 @@
             <p id="page-desc" class="text-secondary">配置系统参数、用户权限和安全选项</p>
           </div>
 
-          <!-- 设置选项卡（共用） -->
+          <!-- 设置选项卡（共用）- 关键修改：button → a 链接 -->
           <div class="border-b border-gray-200 mb-6">
             <nav class="-mb-px flex flex-wrap">
-              <button class="tab-btn border-primary text-primary whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm" data-tab="basic">
+              <!-- 基本设置：指向 /systemsetting -->
+              <a
+                href="/systemseting"
+                class="tab-btn border-primary text-primary whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm inline-block"
+                data-tab="basic"
+              >
                 基本设置
-              </button>
-              <button class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm" data-tab="user">
+              </a>
+              <!-- 用户管理：指向 /users（目标URL） -->
+              <a
+                href="/users"
+                class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm inline-block"
+                data-tab="user"
+              >
                 用户管理
-              </button>
-              <button class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm" data-tab="role">
+              </a>
+              <!-- 角色权限：指向 /roles -->
+              <a
+                href="/roles"
+                class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-4 border-b-2 font-medium text-sm inline-block"
+                data-tab="role"
+              >
                 角色权限
-              </button>
+              </a>
             </nav>
           </div>
 
@@ -271,78 +286,61 @@
                       </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                      <!-- 用户1 -->
+                    {% for user in user_list %}
                       <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">1</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ user.id }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <div class="flex items-center">
-                            <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
-                              <span class="text-gray-600 font-medium">张</span>
-                            </div>
-                            <div class="text-sm font-medium text-gray-900">admin</div>
+                            <div class="text-sm font-medium text-gray-900">{{ user.username }}</div>
                           </div>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">admin@example.com</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ user.email }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">超级管理员</span>
+                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">{{ user.role_id }}</span>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">已激活</span>
+                          {# 根据user.status的值判断显示文本和样式 #}
+                          {% if user.status in (0, '0') %}
+                            {# 状态为0（数字0或字符串"0"）→ 激活，绿色标签 #}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                              激活
+                            </span>
+                          {% elif user.status in (1, '1') %}
+                            {# 状态为1（数字1或字符串"1"）→ 禁用，红色标签 #}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                              禁用
+                            </span>
+                          {% endif %}
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-01-15 09:30</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button class="text-primary hover:text-primary/80 mr-3 edit-user" data-id="1">编辑</button>
-                          <button class="text-gray-500 hover:text-gray-700 disabled:opacity-50" disabled>禁用</button>
-                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ user.created_at }}</td>
+                          <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <!-- 编辑按钮：修复data-id固定值问题，动态绑定当前用户ID -->
+                            <button class="text-primary hover:text-primary/80 mr-3 edit-user" data-id="{{ user.id }}">编辑</button>
+
+                            <!-- 状态切换按钮：按角色和状态动态渲染 -->
+                            {% if user.role_id in (1, '1') %}
+                              <!-- 情况1：超级管理员 → 置灰禁用，不可操作 -->
+                              <button class="text-gray-500 hover:text-gray-700 disabled:opacity-50" disabled>禁用</button>
+                            {% else %}
+                              {% if user.status in (0, '0') %}
+                                <!-- 情况2：普通用户+激活状态 → 显示「禁用」按钮（可点击） -->
+                                <button class="text-primary hover:text-primary/80 toggle-status"
+                                        data-id="{{ user.id }}"
+                                        data-status="{{ user.status }}">
+                                  禁用
+                                </button>
+                              {% else %}
+                                <!-- 情况3：普通用户+禁用状态 → 显示「启用」按钮（可点击） -->
+                                <button class="text-primary hover:text-primary/80 toggle-status"
+                                        data-id="{{ user.id }}"
+                                        data-status="{{ user.status }}">
+                                  启用
+                                </button>
+                              {% endif %}
+                            {% endif %}
+                          </td>
                       </tr>
-                      <!-- 用户2 -->
-                      <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">2</td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <div class="flex items-center">
-                            <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
-                              <span class="text-gray-600 font-medium">李</span>
-                            </div>
-                            <div class="text-sm font-medium text-gray-900">operator</div>
-                          </div>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">operator@example.com</td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">操作员</span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">已激活</span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-02-20 14:15</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button class="text-primary hover:text-primary/80 mr-3 edit-user" data-id="2">编辑</button>
-                          <button class="text-danger hover:text-danger/80 toggle-status" data-id="2" data-status="active">禁用</button>
-                        </td>
-                      </tr>
-                      <!-- 用户3 -->
-                      <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">3</td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <div class="flex items-center">
-                            <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
-                              <span class="text-gray-600 font-medium">王</span>
-                            </div>
-                            <div class="text-sm font-medium text-gray-900">viewer</div>
-                          </div>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">viewer@example.com</td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">查看者</span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">已禁用</span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2023-03-05 11:45</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button class="text-primary hover:text-primary/80 mr-3 edit-user" data-id="3">编辑</button>
-                          <button class="text-success hover:text-success/80 toggle-status" data-id="3" data-status="inactive">启用</button>
-                        </td>
-                      </tr>
+                    {% endfor %}
                     </tbody>
                   </table>
                 </div>
@@ -621,32 +619,40 @@
 
 {% block script %}
   <script>
-// 页面加载完成后初始化所有交互
+ // 关键：修复DOMContentLoaded的闭合问题
 document.addEventListener('DOMContentLoaded', function() {
 
-  // 选项卡切换核心逻辑
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const tabName = this.getAttribute('data-tab');
+  // 1. 【新增】配置「URL-选项卡」映射（页面加载时高亮当前选项卡）
+  const TAB_PATH_MAP = {
+    'basic': '/systemsetting',
+    'user': '/users',
+    'role': '/roles'
+  };
+  const PATH_TAB_MAP = Object.fromEntries(
+    Object.entries(TAB_PATH_MAP).map(([tab, path]) => [path, tab])
+  );
 
-      // 更新选项卡按钮样式
+  // 2. 【新增】页面加载时，根据URL激活对应选项卡（用户管理页面默认高亮）
+  function initTabByUrl() {
+    const currentPath = window.location.pathname;
+    const targetTab = PATH_TAB_MAP[currentPath] || 'basic';
+    const targetTabBtn = document.querySelector(`.tab-btn[data-tab="${targetTab}"]`);
+    if (targetTabBtn) {
+      // 激活选项卡样式
       document.querySelectorAll('.tab-btn').forEach(b => {
         b.classList.remove('border-primary', 'text-primary');
-        b.classList.add('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        b.classList.add('border-transparent', 'text-gray-500');
       });
-      this.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
-      this.classList.add('border-primary', 'text-primary');
-
-      // 显示对应内容，隐藏其他内容
+      targetTabBtn.classList.add('border-primary', 'text-primary');
+      // 显示对应内容（隐藏其他）
       document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.add('hidden');
       });
-      document.getElementById(`${tabName}-content`).classList.remove('hidden');
-
-      // 更新页面标题和描述
-      updatePageTitle(tabName);
-    });
-  });
+      document.getElementById(`${targetTab}-content`).classList.remove('hidden');
+      // 更新页面标题
+      updatePageTitle(targetTab);
+    }
+  }
 
   // 移动端菜单交互
   const mobileMenuBtn = document.getElementById('mobile-menu-btn');
@@ -673,6 +679,8 @@ document.addEventListener('DOMContentLoaded', function() {
     confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
     newConfirmBtn.addEventListener('click', handleConfirmAction);
   }
+    // 【新增】执行选项卡激活
+  initTabByUrl();
 });
 
 // 更新页面标题和描述
@@ -755,7 +763,7 @@ function handleConfirmAction() {
     showSuccessToast(message);
   } else if (action === 'toggle-user-status') {
     const status = this.getAttribute('data-status');
-    message = status === 'active' ? '用户禁用成功' : '用户启用成功';
+    message = status === '0' ? '用户禁用成功' : '用户启用成功';
     closeConfirmModal();
     showSuccessToast(message);
   } else {
@@ -836,37 +844,85 @@ function handleConfirmAction() {
 
 // 用户管理页面交互
 function initUserManagement() {
-
-  // 添加用户按钮
+  // 添加用户按钮（保持不变，仅模态框内容添加name属性）
   document.getElementById('add-user-btn').addEventListener('click', () => {
     document.getElementById('modal-title').textContent = '添加用户';
+    // 【关键】给表单元素添加name属性，与后端request.form的key对应
     document.getElementById('modal-content').innerHTML = `
       <form id="user-form">
         <div class="mb-4">
           <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名 <span class="text-danger">*</span></label>
-          <input type="text" id="username" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入用户名" required>
+          <!-- name="username" 必须与后端request.form.get('username')一致 -->
+          <input type="text" id="username" name="username" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入用户名" required>
         </div>
         <div class="mb-4">
           <label for="email" class="block text-sm font-medium text-gray-700 mb-1">邮箱 <span class="text-danger">*</span></label>
-          <input type="email" id="email" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入邮箱地址" required>
+          <input type="email" id="email" name="email" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入邮箱地址" required>
         </div>
         <div class="mb-4">
           <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码 <span class="text-danger">*</span></label>
-          <input type="password" id="password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入密码" required>
+          <input type="password" id="password" name="password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入密码（至少8位）" required>
           <p class="text-xs text-gray-500 mt-1">密码需符合系统安全策略要求</p>
         </div>
         <div class="mb-4">
           <label for="role" class="block text-sm font-medium text-gray-700 mb-1">角色 <span class="text-danger">*</span></label>
-          <select id="role" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" required>
+          <!-- name="role" 与后端request.form.get('role')一致，value是role_id -->
+          <select id="role" name="role" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" required>
             <option value="">请选择角色</option>
-            <option value="admin">超级管理员</option>
-            <option value="operator">操作员</option>
-            <option value="viewer">查看者</option>
+            <option value="1">超级管理员</option>  <!-- value=1对应role表的id -->
+            <option value="2">操作员</option>
+            <option value="3">查看者</option>
           </select>
+        </div>
+        <!-- 【新增】状态选择（后端默认active，前端可选） -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1">用户状态</label>
+          <div class="flex items-center">
+            <label class="inline-flex items-center mr-4">
+              <input type="radio" name="status" value="0" checked class="text-primary focus:ring-primary h-4 w-4">
+              <span class="ml-2 text-sm text-gray-700">已激活</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="status" value="1" class="text-primary focus:ring-primary h-4 w-4">
+              <span class="ml-2 text-sm text-gray-700">已禁用</span>
+            </label>
+          </div>
         </div>
       </form>
     `;
     openCommonModal();
+
+    // 【关键】重写「添加用户」的保存按钮事件（发送POST请求）
+    document.getElementById('save-modal-btn').onclick = function() {
+      // 1. 获取表单数据（通过form元素的name属性）
+      const form = document.getElementById('user-form');
+      const formData = new FormData(form);  // 自动收集所有带name的表单元素
+      console.log(formData)
+
+      // 2. 发送POST请求到 /users
+      fetch('/users', {
+        method: 'POST',
+        body: formData  // 用FormData提交，无需手动设置Content-Type（浏览器自动处理）
+      })
+      .then(response => {
+        // 处理后端返回的JSON响应
+        if (!response.ok) {
+          return response.json().then(err => { throw new Error(err.message); });
+        }
+        return response.json();
+      })
+      .then(data => {
+        // 3. 成功处理（关闭模态框+提示+刷新页面获取最新列表）
+        closeCommonModal();
+        showSuccessToast(data.message || '用户添加成功！');
+        window.location.reload();  // 刷新页面，实时显示新添加的用户
+      })
+      .catch(error => {
+        // 4. 失败处理（提示错误信息）
+        showSuccessToast('添加失败：' + error.message);
+        console.error('添加用户错误：', error);
+      });
+    };
   });
 
   // 编辑用户按钮
@@ -917,7 +973,7 @@ function initUserManagement() {
     btn.addEventListener('click', function() {
       const userId = this.getAttribute('data-id');
       const status = this.getAttribute('data-status');
-      const action = status === 'active' ? '禁用' : '启用';
+      const action = status === '0' ? '禁用' : '启用';
 
       document.getElementById('confirm-title').textContent = `确认${action}用户`;
       document.getElementById('confirm-message').textContent = `确定要${action}此用户吗？${action}后用户将${status === 'active' ? '无法' : '可以'}登录系统。`;

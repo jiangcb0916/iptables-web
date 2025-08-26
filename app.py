@@ -1116,7 +1116,8 @@ def get_system_config():
             updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             # 更新system_config 表
             cursor.execute(
-                ''' update system_config  set system_name = ?, time_zone = ?, log_retention_time = ?, record_logs = ?,password_strategy = ?, updated_at = ?  where id=1; ''',(
+                ''' update system_config  set system_name = ?, time_zone = ?, log_retention_time = ?, record_logs = ?,password_strategy = ?, updated_at = ?  where id=1; ''',
+                (
                     system_name, time_zone, log_retention_time, record_logs, password_strategy, updated_at
                 ))
             db.commit()
@@ -1222,6 +1223,79 @@ def login():
 
     # GET请求，显示登录页面
     return render_template('login.html')
+
+
+@app.route('/users', methods=['GET', 'POST'])
+def users_1():
+    # 如果是查看用户管理页面
+    if request.method == "GET":
+        try:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute(''' select id,username,email,role_id,status,created_at from user; ''')
+            data = cursor.fetchall()
+            user_list = []
+            for i in data:
+                user_dict = {
+                    'id': i['id'],
+                    'username': i['username'],
+                    'email': i['email'],
+                    'role_id': i['role_id'],
+                    'status': i['status'],
+                    'created_at': i['created_at']
+                }
+                user_list.append(user_dict)
+            return render_template('systemseting.html', user_list=user_list)
+        except Exception as e:
+            print(e)
+    # 如果是添加用户
+    elif request.method == 'POST':
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            cursor.execute(''' 
+            INSERT INTO user
+            (username, password, email, status, role_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+             ''', (
+                request.form.get('username'),
+                request.form.get('password'),
+                request.form.get('email'),
+                request.form.get('status'),
+                1,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            ))
+            db.commit()  # 关键：提交事务（否则数据不写入数据库）
+            db.close()
+
+            # 2.6 成功响应（返回JSON给前端）
+            return jsonify({
+                "success": True,
+                "message": "用户添加成功！"
+            }), 200
+
+        except sqlite3.IntegrityError as e:
+            print(e)
+            db.rollback()
+            db.close()
+            return jsonify({
+                "success": False,
+                "message": "用户名或邮箱已存在，请更换！"
+            }), 409
+        except Exception as e:
+            print(e)
+            if 'db' in locals():  # 若数据库已连接，回滚并关闭
+                db.rollback()
+                db.close()
+            return jsonify({
+                "success": False,
+                "message": f"添加失败：{str(e)}"
+            }), 500
+
+
+@app.route('/user_edit', methods=['POST'])
+def user_edit():
+    pass
 
 
 # 注销路由
