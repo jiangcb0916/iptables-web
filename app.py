@@ -1086,7 +1086,6 @@ def systemseting():
 # 系统配置接口
 @app.route('/api/system-config', methods=['GET', 'POST'])
 def get_system_config():
-    print(request.method)
     if request.method == "GET":
         try:
             db = get_db()
@@ -1295,6 +1294,42 @@ def users_1():
 
 @app.route('/user_edit', methods=['POST'])
 def user_edit():
+    pass
+
+
+@app.route('/roles', methods=['GET', 'POST'])
+def roles():
+    if request.method == 'GET':
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            cursor.execute(''' select * from roles''')
+            columns = [column[0] for column in cursor.description]
+            data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            role_list = []
+            for role in data:
+                role_dict = {'id': role['id'], 'role_name': role['role_name'],
+                             'role_description': role['role_description'], 'sys_view': role['sys_view'],
+                             'sys_edit': role['sys_edit'], 'user_view': role['user_view'], 'user_add': role['user_add'],
+                             'user_edit': role['user_edit'], 'user_status': role['user_status'],
+                             'iptab_view': role['iptab_view'], 'iptab_add': role['iptab_add'],
+                             'iptab_edit': role['iptab_edit'], 'iptab_del': role['iptab_del'],
+                             'log_view': role['log_view'], 'hosts_edit': role['hosts_edit'],
+                             'hosts_add': role['hosts_add'], 'hosts_del': role['hosts_del'],
+                             'created_at': role['created_at'], 'updated_at': role['updated_at']}
+                role_list.append(role_dict)
+            print(role_list)
+            return render_template('systemseting.html', role_list=role_list)
+        except Exception as e:
+            print(e)
+
+    elif request.method == 'POST':
+        pass
+
+
+@app.route('/role_edit', methods=['POST'])
+def roles_edit():
+
     pass
 
 
