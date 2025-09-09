@@ -1318,13 +1318,16 @@ def roles():
                              'hosts_add': role['hosts_add'], 'hosts_del': role['hosts_del'],
                              'created_at': role['created_at'], 'updated_at': role['updated_at']}
                 role_list.append(role_dict)
-            print(role_list)
+                print(role_list)
             return render_template('systemseting.html', role_list=role_list)
         except Exception as e:
-            print(e)
+            return jsonify({
+                "success": False,
+                "message": f"获取角色失败：{str(e)}"
+            }), 500
 
     elif request.method == 'POST':
-        pass
+        print(request.args)
 
 
 @app.route('/role_edit', methods=['POST'])
