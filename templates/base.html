@@ -13,7 +13,6 @@
   <!-- 配置Tailwind自定义颜色和字体 -->
   <script>
     tailwind.config = {
-      darkMode: 'class',
       theme: {
         extend: {
           colors: {
@@ -33,17 +32,20 @@
       }
     }
 
-    // 修复主题初始化逻辑
+    // 修改主题应用逻辑，只针对侧边栏
     function applyTheme(theme) {
+      // 获取侧边栏元素
+      const sidebar = document.querySelector('.sidebar-container');
+      if (!sidebar) return;
+
       // 移除所有主题类
-      document.documentElement.classList.remove('light', 'dark');
+      sidebar.classList.remove('light', 'dark');
       // 添加当前主题类
-      document.documentElement.classList.add(theme);
+      sidebar.classList.add(theme);
       localStorage.setItem('color_mode', theme);
 
       // 调试信息
-      console.log('应用主题:', theme);
-      console.log('当前类名:', document.documentElement.className);
+      console.log('应用侧边栏主题:', theme);
     }
 
     function initTheme() {
@@ -94,40 +96,39 @@
       }
     }
 
-    /* 暗色模式样式 - 使用Tailwind的dark:前缀 */
-    .dark {
-      --tw-bg-opacity: 1;
+    /* 侧边栏暗色模式样式 */
+    .sidebar-container.dark {
       background-color: #1a202c;
-      color: #f7fafc;
-    }
-
-    .dark .bg-white {
-      background-color: #2d3748;
-    }
-
-    .dark .border-gray-200 {
       border-color: #4a5568;
     }
 
-    .dark .text-gray-700 {
-      color: #e2e8f0;
+    .sidebar-container.dark .border-b {
+      border-color: #4a5568;
     }
 
-    .dark .hover:bg-gray-50:hover {
+    .sidebar-container.dark .hover:bg-gray-50:hover {
       background-color: #4a5568;
     }
 
-    .dark .text-gray-500 {
+    .sidebar-container.dark .text-gray-500 {
       color: #a0aec0;
+    }
+
+    .sidebar-container.dark .sidebar-item {
+      color: #e2e8f0;
+    }
+
+    .sidebar-container.dark .sidebar-item:hover {
+      color: #fff;
     }
   </style>
 </head>
 
-<body class="bg-gray-50 font-sans text-dark antialiased dark:bg-gray-900 dark:text-gray-100">
+<body class="bg-gray-50 font-sans text-dark antialiased">
   <div class="flex h-screen overflow-hidden">
-    <!-- 侧边栏 -->
-    <div class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-shrink-0 hidden md:block">
-      <div class="p-4 border-b border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+    <!-- 侧边栏 - 添加sidebar-container类用于主题控制 -->
+    <div class="sidebar-container w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:block">
+      <div class="p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors">
         <h2 class="text-xl font-bold text-primary flex items-center">
           <i class="fa fa-shield mr-2"></i>
           <span id="app-name">防火墙管理系统</span>
@@ -147,7 +148,7 @@
 
           <div class="sidebar-item cursor-pointer">
             <a href="/templates" class="block w-full h-full p-3 flex items-center">
-              <i class="fa fa-firewall fa-list-alt w-5 h-5 mr-3"></i>
+              <i class="fa fa-list-alt w-5 h-5 mr-3"></i>
               <span>模板管理</span>
             </a>
           </div>
