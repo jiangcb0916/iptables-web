@@ -13,6 +13,7 @@
   <!-- 配置Tailwind自定义颜色和字体 -->
   <script>
     tailwind.config = {
+      darkMode: 'class',
       theme: {
         extend: {
           colors: {
@@ -31,6 +32,46 @@
         },
       }
     }
+
+    // 修复主题初始化逻辑
+    function applyTheme(theme) {
+      // 移除所有主题类
+      document.documentElement.classList.remove('light', 'dark');
+      // 添加当前主题类
+      document.documentElement.classList.add(theme);
+      localStorage.setItem('color_mode', theme);
+
+      // 调试信息
+      console.log('应用主题:', theme);
+      console.log('当前类名:', document.documentElement.className);
+    }
+
+    function initTheme() {
+      // 先尝试从本地存储获取主题
+      const localTheme = localStorage.getItem('color_mode');
+      if (localTheme) {
+        applyTheme(localTheme);
+      }
+
+      // 再从服务器获取最新配置
+      fetch('/api/system-config')
+        .then(response => {
+          if (!response.ok) throw new Error('网络错误');
+          return response.json();
+        })
+        .then(config => {
+          const savedTheme = config.color_mode || 'light';
+          applyTheme(savedTheme);
+        })
+        .catch(error => {
+          console.error('主题初始化失败:', error);
+          // 错误时使用默认亮色主题
+          applyTheme('light');
+        });
+    }
+
+    // 确保DOM加载完成后初始化
+    document.addEventListener('DOMContentLoaded', initTheme);
   </script>
 
   <!-- 自定义工具类 -->
@@ -52,18 +93,44 @@
         @apply bg-primary/10 text-primary border-l-4 border-primary;
       }
     }
+
+    /* 暗色模式样式 - 使用Tailwind的dark:前缀 */
+    .dark {
+      --tw-bg-opacity: 1;
+      background-color: #1a202c;
+      color: #f7fafc;
+    }
+
+    .dark .bg-white {
+      background-color: #2d3748;
+    }
+
+    .dark .border-gray-200 {
+      border-color: #4a5568;
+    }
+
+    .dark .text-gray-700 {
+      color: #e2e8f0;
+    }
+
+    .dark .hover:bg-gray-50:hover {
+      background-color: #4a5568;
+    }
+
+    .dark .text-gray-500 {
+      color: #a0aec0;
+    }
   </style>
 </head>
 
-<body class="bg-gray-50 font-sans text-dark antialiased">
+<body class="bg-gray-50 font-sans text-dark antialiased dark:bg-gray-900 dark:text-gray-100">
   <div class="flex h-screen overflow-hidden">
     <!-- 侧边栏 -->
-    <div class="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:block">
-      <div class="p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors"
-           onclick="window.location.href='/hosts?page=1'">
+    <div class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-shrink-0 hidden md:block">
+      <div class="p-4 border-b border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
         <h2 class="text-xl font-bold text-primary flex items-center">
-          <i class="fa fa-shield mr-2"></i> <!-- 图标标签不要加ID -->
-          <span id="app-name">防火墙管理系统</span> <!-- 给文字部分加ID -->
+          <i class="fa fa-shield mr-2"></i>
+          <span id="app-name">防火墙管理系统</span>
         </h2>
       </div>
 

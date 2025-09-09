@@ -117,9 +117,9 @@ def create_system_config_table(conn):
         CREATE TABLE IF NOT EXISTS system_config (
             id TEXT  NOT NULL,   -- id
             system_name TEXT  NOT NULL,   -- 系统名称
-            time_zone TEXT  NOT NULL,   -- 时区
+            session_timeout INTEGER NOT NULL DEFAULT 30,   -- 会话超时时间（分钟）
             log_retention_time TEXT  NOT NULL,   -- 日志保留时间
-            record_logs TEXT  NOT NULL,   -- 启用审计日志
+            color_mode TEXT NOT NULL DEFAULT 'light',   -- 色调模式：light或dark
             password_strategy TEXT  NOT NULL,   -- 密码策略
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -127,7 +127,7 @@ def create_system_config_table(conn):
         """
         cursor = conn.cursor()
         cursor.execute(sql_create_hosts_table)
-        print("规则表创建成功")
+        print("系统设置表创建成功")
     except Error as e:
         print(f"创建表时出错: {e}")
 

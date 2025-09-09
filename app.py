@@ -325,7 +325,7 @@ def rules_update():
             # 添加
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                           cmd=cmd)
-            if operating_system == 'centos':
+            if operating_system == 'centos' or operating_system == 'redhat':
                 pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                               cmd='iptables-save > /etc/sysconfig/iptables')
             elif operating_system == 'debian':
@@ -341,7 +341,7 @@ def rules_update():
         else:
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                              cmd='iptables -D {} {}'.format(direction, rule_id))
-            if operating_system == 'centos':
+            if operating_system == 'centos' or operating_system == 'redhat':
                 sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                  cmd='iptables-save > /etc/sysconfig/iptables')
             elif operating_system == 'debian':
@@ -383,7 +383,7 @@ def rules_update():
             # 添加
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                              cmd=cmd)
-            if operating_system == 'centos':
+            if operating_system == 'centos' or operating_system == 'redhat':
                 sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                  cmd='iptables-save > /etc/sysconfig/iptables')
             elif operating_system == 'debian':
@@ -469,7 +469,7 @@ def rules_add():
             # 添加
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                           cmd=cmd)
-            if operating_system == 'centos':
+            if operating_system == 'centos' or operating_system == 'redhat':
                 pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                               cmd='iptables-save > /etc/sysconfig/iptables')
             elif operating_system == 'debian':
@@ -518,7 +518,7 @@ def rules_add():
             # 添加
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                              cmd=cmd)
-            if operating_system == 'centos':
+            if operating_system == 'centos' or operating_system == 'redhat':
                 sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                  cmd='iptables-save > /etc/sysconfig/iptables')
             elif operating_system == 'debian':
@@ -568,7 +568,7 @@ def del_rule():
         if auth_method == 'password':
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                             cmd='iptables -D {} {}'.format(direction, rule_id))
-            if operating_system == 'centos':
+            if operating_system == 'centos' or operating_system == 'redhat':
                 pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                               cmd='iptables-save > /etc/sysconfig/iptables')
             elif operating_system == 'debian':
@@ -580,7 +580,7 @@ def del_rule():
         else:
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -D {} {}'.format(direction, rule_id))
-            if operating_system == 'centos':
+            if operating_system == 'centos' or operating_system == 'redhat':
                 sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                  cmd='iptables-save > /etc/sysconfig/iptables')
             elif operating_system == 'debian':
@@ -1039,7 +1039,7 @@ def temp_to_hosts():
                 for cmd in cmd_list:
                     pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                   cmd=cmd)
-                    if operating_system == 'centos':
+                    if operating_system == 'centos' or operating_system == 'redhat':
                         pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                       cmd='iptables-save > /etc/sysconfig/iptables')
                     elif operating_system == 'debian':
@@ -1052,7 +1052,7 @@ def temp_to_hosts():
                 for cmd in cmd_list:
                     sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                      cmd=cmd)
-                    if operating_system == 'centos':
+                    if operating_system == 'centos' or operating_system == 'redhat':
                         sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                          cmd='iptables-save > /etc/sysconfig/iptables')
                     elif operating_system == 'debian':
@@ -1089,16 +1089,20 @@ def get_system_config():
     if request.method == "GET":
         try:
             db = get_db()
-            cursor = db.cursor()
-            # 获取系统名称
-            cursor.execute(''' select system_name from system_config; ''')
-            system_name_data = cursor.fetchone()
-            # 检查查询结果是否存在
-            if not system_name_data:
-                return jsonify({'error': '系统配置不存在'}), 404
-
-            system_name = system_name_data[0]
-            return jsonify({'system_name': system_name})
+            config = db.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
+            print(dict(config))
+            return jsonify(dict(config)) if config else jsonify({})
+            # db = get_db()
+            # cursor = db.cursor()
+            # # 获取系统名称
+            # cursor.execute(''' select system_name from system_config; ''')
+            # system_name_data = cursor.fetchone()
+            # # 检查查询结果是否存在
+            # if not system_name_data:
+            #     return jsonify({'error': '系统配置不存在'}), 404
+            #
+            # system_name = system_name_data[0]
+            # return jsonify({'system_name': system_name})
         except Exception as e:
             app.logger.error(f"获取系统配置失败: {str(e)}")
             return jsonify({'error': '获取系统配置失败'}), 500
@@ -1108,16 +1112,16 @@ def get_system_config():
             db = get_db()
             cursor = db.cursor()
             system_name = data['system_name']
-            time_zone = data['timezone']
+            default_session_timeout = data['default_session_timeout']
             log_retention_time = data['log_retention_days']
-            record_logs = data['enable_audit_log']
+            color_mode = data['color_mode']
             password_strategy = data['password_strategy']
             updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             # 更新system_config 表
             cursor.execute(
-                ''' update system_config  set system_name = ?, time_zone = ?, log_retention_time = ?, record_logs = ?,password_strategy = ?, updated_at = ?  where id=1; ''',
+                ''' update system_config  set system_name = ?, session_timeout = ?, log_retention_time = ?, color_mode = ?,password_strategy = ?, updated_at = ?  where id=1; ''',
                 (
-                    system_name, time_zone, log_retention_time, record_logs, password_strategy, updated_at
+                    system_name, default_session_timeout, log_retention_time, color_mode, password_strategy, updated_at
                 ))
             db.commit()
             return jsonify({'success': True, 'message': '保存系统配置成功'})
