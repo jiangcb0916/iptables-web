@@ -13,9 +13,10 @@ from paramiko.client import AutoAddPolicy
 from datetime import datetime
 import math
 from io import StringIO
-from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
+from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+import time
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # 生产环境中应使用更安全的密钥
@@ -1130,11 +1131,46 @@ def get_system_config():
             return jsonify({'error': '保存系统配置失败'}), 500
 
 
-# 操作日志
-@app.route("/logs", methods=['GET'])
-@login_required
-def logs():
-    return render_template('logs.html')
+# 获取会话超时时间（从数据库）
+def get_session_timeout():
+    """从数据库获取会话超时时间（分钟），默认30分钟"""
+    try:
+        db = get_db()
+        config = db.execute('SELECT session_timeout FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
+        if config and config['session_timeout'] is not None:
+            return int(config['session_timeout'])
+        return 30  # 默认值
+    except Exception as e:
+        app.logger.error(f"获取会话超时时间失败: {str(e)}")
+        return 30  # 异常时使用默认值
+
+
+# 添加请求前钩子，检查会话超时
+@app.before_request
+def check_session_timeout():
+    """在每个请求前检查会话是否超时"""
+    # 排除登录页面，避免循环重定向
+    if request.path == '/login':
+        return
+
+    # 仅对已登录用户检查超时
+    if current_user.is_authenticated:
+        # 获取会话创建时间（首次访问时初始化）
+        if 'created_at' not in session:
+            session['created_at'] = time.time()  # <-- 添加默认值
+        created_at = session['created_at']
+        timeout_seconds = get_session_timeout() * 60
+        current_time = time.time()
+
+        # 检查是否超时
+        if current_time - created_at > timeout_seconds:
+            logout_user()
+            session.clear()  # 清除会话数据
+            flash('会话已超时，请重新登录', 'info')
+            return redirect(url_for('login'))
+
+        # 更新会话活动时间（实现"空闲超时"机制）
+        session['created_at'] = current_time
 
 
 # 用户类
@@ -1180,9 +1216,7 @@ def load_user(user_id):
 # 登录路由
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # 如果用户已登录，重定向到主页
     if current_user.is_authenticated:
-        # 对AJAX请求返回JSON，普通请求返回重定向
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify(success=True, redirect_url=url_for('hosts', page=1))
         return redirect(url_for('hosts', page=1))
@@ -1192,39 +1226,35 @@ def login():
         password = request.form.get('password')
         remember = request.form.get('remember') == 'on'
 
-        # 查找用户
         user_data = users.get(username)
         if not user_data:
-            # 对AJAX请求返回JSON错误信息
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify(success=False, message='用户名不存在')
             flash('用户名不存在', 'danger')
             return render_template('login.html')
 
-        # 验证密码
         if not check_password_hash(user_data['password_hash'], password):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify(success=False, message='密码不正确')
             flash('密码不正确', 'danger')
             return render_template('login.html')
 
-        # 创建用户对象并登录
+        # 修复：只创建一个用户对象并登录一次
         user = User(
             user_id=user_data['id'],
             username=user_data['username'],
             role=user_data['role']
         )
-        login_user(user, remember=remember)
 
-        # 登录成功：返回JSON（含重定向地址）
+        # 关键修复：先初始化会话创建时间，再登录用户
+        session['created_at'] = time.time()  # <-- 移到login_user之前
+        login_user(user, remember=remember)  # <-- 只调用一次login_user
+
+        # 修复：统一重定向逻辑
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify(
-                success=True,
-                redirect_url=url_for('hosts', page=1)  # 由后端生成URL，避免前端硬编码
-            )
+            return jsonify(success=True, redirect_url=url_for('hosts', page=1))
         return redirect(url_for('hosts', page=1))
 
-    # GET请求，显示登录页面
     return render_template('login.html')
 
 
@@ -1336,8 +1366,13 @@ def roles():
 
 @app.route('/role_edit', methods=['POST'])
 def roles_edit():
-
     pass
+
+# 操作日志
+@app.route("/logs", methods=['GET'])
+@login_required
+def logs():
+    return render_template('logs.html')
 
 
 # 注销路由

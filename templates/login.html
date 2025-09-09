@@ -113,16 +113,24 @@
         </div>
 
         <!-- 右侧登录表单区域 -->
-        <div class="p-8 md:p-12 lg:w-1/2 flex flex-col justify-center">
-            <div class="max-w-md mx-auto w-full">
-                <div class="text-center mb-8">
-                    <h2 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-gray-800 mb-2">账户登录</h2>
-                    <p class="text-gray-500">请输入您的账号信息以登录系统</p>
-                </div>
+<!-- 右侧登录表单区域 -->
+<div class="p-8 md:p-12 lg:w-1/2 flex flex-col justify-center">
+    <div class="max-w-md mx-auto w-full">
+        <div class="text-center mb-8">
+            <h2 class="text-[clamp(1.5rem,3vw,2rem)] font-bold text-gray-800 mb-2">账户登录</h2>
+            <p class="text-gray-500">请输入您的账号信息以登录系统</p>
+        </div>
 
-                <!-- 消息提示区域 -->
-                <div id="message" class="mb-6 hidden"></div>
-
+        <!-- 消息提示区域 - 添加Flash消息支持 -->
+        <div id="message" class="mb-6 hidden"></div>
+        <!-- 添加Flash消息容器 (Jinja2模板语法) -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash-message hidden" data-category="{{ category }}" data-message="{{ message }}"></div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
                 <!-- 登录表单 -->
                 <form id="loginForm" class="space-y-6">
                     <!-- 用户名输入 -->
@@ -183,7 +191,7 @@
 
     <!-- 登录表单交互脚本 -->
     <script>
-        // 密码显示/隐藏切换
+        // 密码显示/隐藏切换 (保持不变)
         const togglePassword = document.getElementById('togglePassword');
         const passwordInput = document.getElementById('password');
 
@@ -203,7 +211,7 @@
             }
         });
 
-        // 显示消息提示
+        // 显示消息提示 (保持不变)
         function showMessage(text, isError = false) {
             const messageDiv = document.getElementById('message');
             messageDiv.textContent = text;
@@ -215,75 +223,98 @@
                 messageDiv.classList.add('hidden');
             }, 3000);
         }
-        // 表单提交处理
-        const loginForm = document.getElementById('loginForm');
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
 
-            // 获取表单数据
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const remember = document.getElementById('remember').checked;
+        // 页面加载时处理Flash消息和URL参数
+        document.addEventListener('DOMContentLoaded', function() {
+            // 1. 处理Flash消息 (来自后端)
+            const flashMessageEl = document.querySelector('.flash-message');
+            if (flashMessageEl) {
+                const message = flashMessageEl.dataset.message;
+                const isError = flashMessageEl.dataset.category === 'danger';
+                showMessage(message, isError);
+            }
 
-            // 登录按钮状态处理
-            const submitButton = loginForm.querySelector('button[type="submit"]');
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i> 登录中...';
+            // 2. 处理URL超时参数 (备选方案)
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('timeout') === 'true' && !flashMessageEl) {
+                showMessage('会话已超时，请重新登录', false);
+            }
 
-            try {
-                // 构建表单数据
-                const formData = new FormData();
-                formData.append('username', username);
-                formData.append('password', password);
-                formData.append('remember', remember ? 'on' : 'off');
+            // 修复1: 确保表单提交事件在DOMContentLoaded内正确绑定
+            const loginForm = document.getElementById('loginForm');
+            if (loginForm) {
+                loginForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
 
-                // 发送POST请求（添加AJAX标识头）
-                const response = await fetch('/login', {
-                    method: 'POST',
-                    body: formData,
-                    credentials: 'include',  // 携带cookie（保持登录状态）
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'  // 告诉后端这是AJAX请求
+                    // 获取表单数据
+                    const username = document.getElementById('username').value;
+                    const password = document.getElementById('password').value;
+                    const remember = document.getElementById('remember').checked;
+
+                    // 登录按钮状态处理
+                    const submitButton = loginForm.querySelector('button[type="submit"]');
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i> 登录中...';
+
+                    try {
+                        // 构建表单数据
+                        const formData = new FormData();
+                        formData.append('username', username);
+                        formData.append('password', password);
+                        formData.append('remember', remember ? 'on' : 'off');
+
+                        // 发送POST请求（添加AJAX标识头）
+                        const response = await fetch('/login', {
+                            method: 'POST',
+                            body: formData,
+                            credentials: 'include',  // 携带cookie（保持登录状态）
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'  // 告诉后端这是AJAX请求
+                            }
+                        });
+
+                        // 解析后端返回的JSON
+                        const data = await response.json();
+
+                        if (data.success) {
+                            // 登录成功：使用后端返回的URL重定向
+                            showMessage('登录成功，正在跳转...', false);
+                            setTimeout(() => {
+                                window.location.href = data.redirect_url;  // 避免硬编码
+                            }, 1000);
+                        } else {
+                            // 登录失败：显示后端返回的错误信息
+                            showMessage(data.message, true);
+                            // 恢复按钮状态
+                            submitButton.disabled = false;
+                            submitButton.innerHTML = '登录系统';
+                        }
+
+                    } catch (error) {
+                        // 网络错误处理
+                        console.error('登录请求失败:', error);
+                        showMessage('网络错误，请稍后重试', true);
+                        // 恢复按钮状态
+                        submitButton.disabled = false;
+                        submitButton.innerHTML = '登录系统';
                     }
                 });
-
-                // 解析后端返回的JSON
-                const data = await response.json();
-
-                if (data.success) {
-                    // 登录成功：使用后端返回的URL重定向
-                    showMessage('登录成功，正在跳转...', false);
-                    setTimeout(() => {
-                        window.location.href = data.redirect_url;  // 避免硬编码
-                    }, 1000);
-                } else {
-                    // 登录失败：显示后端返回的错误信息
-                    showMessage(data.message, true);
-                    // 恢复按钮状态
-                    submitButton.disabled = false;
-                    submitButton.innerHTML = '登录系统';
-                }
-
-            } catch (error) {
-                // 网络错误处理
-                console.error('登录请求失败:', error);
-                showMessage('网络错误，请稍后重试', true);
-                // 恢复按钮状态
-                submitButton.disabled = false;
-                submitButton.innerHTML = '登录系统';
             }
-        });
+        });  // 修复2: 添加缺失的DOMContentLoaded事件结束括号
 
-        // 添加输入框动画效果
-        const inputs = document.querySelectorAll('input');
-        inputs.forEach(input => {
-            input.addEventListener('focus', () => {
-                input.parentElement.classList.add('scale-[1.02]');
-                input.parentElement.style.transition = 'transform 0.2s ease';
-            });
+        // 修复3: 将输入框动画效果移到DOMContentLoaded外部或确保正确作用域
+        document.addEventListener('DOMContentLoaded', function() {
+            // 添加输入框动画效果
+            const inputs = document.querySelectorAll('input');
+            inputs.forEach(input => {
+                input.addEventListener('focus', () => {
+                    input.parentElement.classList.add('scale-[1.02]');
+                    input.parentElement.style.transition = 'transform 0.2s ease';
+                });
 
-            input.addEventListener('blur', () => {
-                input.parentElement.classList.remove('scale-[1.02]');
+                input.addEventListener('blur', () => {
+                    input.parentElement.classList.remove('scale-[1.02]');
+                });
             });
         });
     </script>
