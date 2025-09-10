@@ -5,7 +5,7 @@
 # @FileName: app.py
 # @Software: PyCharm
 # @Function:
-from flask import Flask, render_template, g, jsonify, request
+from functools import wraps
 import sqlite3
 import re
 import paramiko
@@ -13,7 +13,7 @@ from paramiko.client import AutoAddPolicy
 from datetime import datetime
 import math
 from io import StringIO
-from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session
+from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, abort, g
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import time
@@ -31,6 +31,28 @@ ssh = paramiko.SSHClient()
 DATABASE = 'firewall_management.db'
 # 确保静态文件目录正确配置
 app.static_folder = 'static'
+
+
+def permission_required(permission_code):
+    """权限检查装饰器"""
+
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return redirect(url_for('login'))
+
+            # 检查用户是否有指定权限
+            if not current_user.has_permission(permission_code):
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify(success=False, message='没有操作权限')
+                abort(403)  # 拒绝访问
+
+            return f(*args, **kwargs)
+
+        return decorated_function
+
+    return decorator
 
 
 def get_db():
@@ -1175,42 +1197,57 @@ def check_session_timeout():
 
 # 用户类
 class User(UserMixin):
-    def __init__(self, user_id, username, role):
+    def __init__(self, user_id, username, roles=None):
         self.id = user_id
         self.username = username
-        self.role = role
+        self.roles = roles or []  # 存储用户拥有的角色列表
 
-
-users = {
-    # 密码是 'admin123' 的哈希值
-    'admin': {
-        'id': '1',
-        'username': 'admin',
-        'password_hash': generate_password_hash('admin123'),
-        'role': 'admin'
-    },
-    # 密码是 'user123' 的哈希值
-    'user': {
-        'id': '2',
-        'username': 'user',
-        'password_hash': generate_password_hash('user123'),
-        'role': 'user'
-    }
-}
+    def has_permission(self, permission_code):
+        """检查用户是否拥有指定权限"""
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            # 通过三表关联查询用户是否拥有权限
+            cursor.execute('''
+            SELECT 1 FROM permissions p
+            JOIN role_permissions rp ON p.id = rp.permission_id
+            JOIN user_roles ur ON rp.role_id = ur.role_id
+            WHERE ur.user_id = ? AND p.code = ?
+            LIMIT 1
+            ''', (self.id, permission_code))
+            return cursor.fetchone() is not None
+        except Exception as e:
+            app.logger.error(f"权限检查失败: {str(e)}")
+            return False
 
 
 # 加载用户回调函数
 @login_manager.user_loader
 def load_user(user_id):
-    # 从模拟数据库中查找用户
-    for user_data in users.values():
-        if user_data['id'] == user_id:
-            return User(
-                user_id=user_data['id'],
-                username=user_data['username'],
-                role=user_data['role']
-            )
-    return None
+    """从数据库加载用户信息，包括用户角色"""
+    db = get_db()
+    try:
+        # 查询用户基本信息
+        user = db.execute('SELECT id, username, status FROM user WHERE id = ?',
+                          (user_id,)).fetchone()
+        if not user or user['status'] != 'active':
+            return None
+
+        # 查询用户角色
+        roles = db.execute('''
+        SELECT r.id, r.role_name FROM roles r
+        JOIN user_roles ur ON r.id = ur.role_id
+        WHERE ur.user_id = ?
+        ''', (user_id,)).fetchall()
+
+        return User(
+            user_id=user['id'],
+            username=user['username'],
+            roles=[{'id': r['id'], 'name': r['role_name']} for r in roles]
+        )
+    except Exception as e:
+        app.logger.error(f"加载用户失败: {str(e)}")
+        return None
 
 
 # 登录路由
@@ -1226,82 +1263,142 @@ def login():
         password = request.form.get('password')
         remember = request.form.get('remember') == 'on'
 
-        user_data = users.get(username)
+        # 从数据库查询用户
+        db = get_db()
+        user_data = db.execute('SELECT id, username, password, status FROM user WHERE username = ?',
+                               (username,)).fetchone()
+
         if not user_data:
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify(success=False, message='用户名不存在')
-            flash('用户名不存在', 'danger')
-            return render_template('login.html')
+            return jsonify(success=False, message='用户名不存在') if request.headers.get(
+                'X-Requested-With') == 'XMLHttpRequest' else \
+                render_template('login.html', error='用户名不存在')
 
-        if not check_password_hash(user_data['password_hash'], password):
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify(success=False, message='密码不正确')
-            flash('密码不正确', 'danger')
-            return render_template('login.html')
+        if user_data['status'] != 'active':
+            return jsonify(success=False, message='用户已被禁用') if request.headers.get(
+                'X-Requested-With') == 'XMLHttpRequest' else \
+                render_template('login.html', error='用户已被禁用')
 
-        # 修复：只创建一个用户对象并登录一次
-        user = User(
-            user_id=user_data['id'],
-            username=user_data['username'],
-            role=user_data['role']
-        )
+        if not check_password_hash(user_data['password'], password):
+            return jsonify(success=False, message='密码不正确') if request.headers.get(
+                'X-Requested-With') == 'XMLHttpRequest' else \
+                render_template('login.html', error='密码不正确')
 
-        # 关键修复：先初始化会话创建时间，再登录用户
-        session['created_at'] = time.time()  # <-- 移到login_user之前
-        login_user(user, remember=remember)  # <-- 只调用一次login_user
+        # 加载用户角色信息
+        user = load_user(user_data['id'])
+        session['created_at'] = time.time()
+        login_user(user, remember=remember)
 
-        # 修复：统一重定向逻辑
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify(success=True, redirect_url=url_for('hosts', page=1))
-        return redirect(url_for('hosts', page=1))
+        return jsonify(success=True, redirect_url=url_for('hosts', page=1)) if request.headers.get(
+            'X-Requested-With') == 'XMLHttpRequest' else \
+            redirect(url_for('hosts', page=1))
 
     return render_template('login.html')
 
 
 @app.route('/users', methods=['GET', 'POST'])
-def users_1():
+def users():
     # 如果是查看用户管理页面
     if request.method == "GET":
         try:
             db = get_db()
             cursor = db.cursor()
-            cursor.execute(''' select id,username,email,role_id,status,created_at from user; ''')
+            # 查询用户基本信息及关联的角色
+            cursor.execute(''' 
+            SELECT u.id, u.username, u.email, u.status, u.created_at,
+                   GROUP_CONCAT(r.role_name, ', ') as roles
+            FROM user u
+            LEFT JOIN user_roles ur ON u.id = ur.user_id
+            LEFT JOIN roles r ON ur.role_id = r.id
+            GROUP BY u.id
+            ''')
             data = cursor.fetchall()
             user_list = []
             for i in data:
                 user_dict = {
                     'id': i['id'],
+                    'roles': i['roles'] if i['roles'] else 'None',
                     'username': i['username'],
                     'email': i['email'],
-                    'role_id': i['role_id'],
                     'status': i['status'],
                     'created_at': i['created_at']
                 }
                 user_list.append(user_dict)
+            print(user_list)
             return render_template('systemseting.html', user_list=user_list)
         except Exception as e:
             print(e)
+            # 添加异常情况下的响应
+            return jsonify({
+                "success": False,
+                "message": f"获取用户列表失败: {str(e)}"
+            }), 500
     # 如果是添加用户
     elif request.method == 'POST':
         db = get_db()
         try:
+            # 获取JSON数据而非表单数据
+            user_data = request.get_json()
+            print(user_data)
+            if not user_data:
+                return jsonify({
+                    "success": False,
+                    "message": "未收到数据，请检查请求格式"
+                }), 400
+
             cursor = db.cursor()
+            # 从JSON数据中获取字段并验证
+            username = user_data.get('username')
+            password = user_data.get('password')
+            email = user_data.get('email')
+            status = user_data.get('status', 'active')  # 默认状态为active
+            # 【新增】获取角色ID并验证
+            role_id = user_data.get('role')
+            if not role_id:
+                return jsonify({
+                    "success": False,
+                    "message": "角色为必填项"
+                }), 400
+            try:
+                role_id = int(role_id)  # 转换为整数
+            except ValueError:
+                return jsonify({
+                    "success": False,
+                    "message": "无效的角色ID格式"
+                }), 400
+
+            # 验证必填字段
+            if not username or not password or not email:
+                return jsonify({
+                    "success": False,
+                    "message": "用户名、密码和邮箱为必填项"
+                }), 400
+
+            # 密码哈希处理
+            hashed_password = generate_password_hash(password)
             cursor.execute(''' 
             INSERT INTO user
-            (username, password, email, status, role_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (username, password, email, status, created_at)
+            VALUES (?, ?, ?, ?, ?)
              ''', (
-                request.form.get('username'),
-                request.form.get('password'),
-                request.form.get('email'),
-                request.form.get('status'),
-                1,
+                username,
+                hashed_password,  # 使用哈希后的密码
+                email,
+                status,
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             ))
-            db.commit()  # 关键：提交事务（否则数据不写入数据库）
-            db.close()
 
-            # 2.6 成功响应（返回JSON给前端）
+            # 【新增】获取新创建用户的ID
+            user_id = cursor.lastrowid
+
+            # 【新增】插入用户-角色关联记录
+            cursor.execute('''
+            INSERT INTO user_roles (user_id, role_id)
+            VALUES (?, ?)
+            ''', (user_id, role_id))
+
+            # 【修改】统一提交事务（用户表和关联表一起提交）
+            db.commit()
+
             return jsonify({
                 "success": True,
                 "message": "用户添加成功！"
@@ -1310,63 +1407,397 @@ def users_1():
         except sqlite3.IntegrityError as e:
             print(e)
             db.rollback()
-            db.close()
             return jsonify({
                 "success": False,
                 "message": "用户名或邮箱已存在，请更换！"
             }), 409
         except Exception as e:
             print(e)
-            if 'db' in locals():  # 若数据库已连接，回滚并关闭
+            if 'db' in locals():
                 db.rollback()
-                db.close()
             return jsonify({
                 "success": False,
                 "message": f"添加失败：{str(e)}"
             }), 500
 
 
-@app.route('/user_edit', methods=['POST'])
+@app.route('/user_edit', methods=['GET', 'POST'])
+@login_required
+@permission_required('user_edit')
 def user_edit():
-    pass
+    if request.method == 'GET':
+        user_id = request.args.get('id')
+        try:
+            db = get_db()
+            cursor = db.cursor()
+            # 获取用户信息
+            cursor.execute('SELECT id, username, email, status FROM user WHERE id = ?', (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return jsonify({'success': False, 'message': '用户不存在'}), 404
+            # 获取所有角色
+            cursor.execute('SELECT id, role_name FROM roles')
+            roles = cursor.fetchall()
+            # 获取用户已分配的角色
+            cursor.execute('SELECT role_id FROM user_roles WHERE user_id = ?', (user_id,))
+            user_roles = [row['role_id'] for row in cursor.fetchall()]
+            return jsonify({
+                'success': True,
+                'user': dict(user),
+                'roles': [dict(role) for role in roles],
+                'user_roles': user_roles
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'message': f"获取用户信息失败: {str(e)}"}), 500
+    elif request.method == 'POST':
+        # 打印请求数据
+        data = request.get_json()
+        print(data)
+        user_id = data['id']
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            # 获取用户当前信息，用于处理部分更新情况（添加status字段）
+            cursor.execute('SELECT username, email, status FROM user WHERE id = ?', (user_id,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return jsonify({'success': False, 'message': '用户不存在'}), 404
+            # 提取数据，如未提供则使用当前信息
+            username = data.get('username', current_user['username'])
+            email = data.get('email', current_user['email'])
+            status = data.get('status', current_user['status'])  # 默认为当前状态
+            # 更新用户基本信息
+            if 'password' in data and data['password']:
+                # 如果提供了新密码，则更新密码
+                hashed_password = generate_password_hash(data['password'])
+                cursor.execute('''
+                        UPDATE user SET username = ?, email = ?, status = ?, password = ? 
+                        WHERE id = ?
+                        ''', (username, email, status, hashed_password, user_id))
+            else:
+                # 不更新密码
+                cursor.execute('''
+                        UPDATE user SET username = ?, email = ?, status = ? 
+                        WHERE id = ?
+                        ''', (username, email, status, user_id))
+            # 处理角色分配（如果提供了角色数据）
+            if 'roles' in data:
+                # 删除用户现有角色
+                cursor.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
+                # 分配新角色
+                roles = data.get('role', [])
+                if roles:
+                    cursor.executemany('''
+                            INSERT INTO user_roles (user_id, role_id)
+                            VALUES (?, ?)
+                            ''', [(user_id, role_id) for role_id in roles])
+            db.commit()
+            return jsonify({'success': True, 'message': '用户更新成功'})
+        except sqlite3.IntegrityError:
+            db.rollback()
+            return jsonify({'success': False, 'message': '用户名或邮箱已存在'}), 409
+        except Exception as e:
+            db.rollback()
+            return jsonify({'success': False, 'message': f"更新用户失败: {str(e)}"}), 500
+
+
+@app.route('/user_del', methods=['DELETE'])
+@login_required
+@permission_required('user_del')
+def user_del():
+    user_id = request.args.get('id')
+    # 防止删除自己
+    if int(user_id) == current_user.id:
+        return jsonify({'success': False, 'message': '不能删除当前登录用户'}), 400
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        # 删除用户角色关联
+        cursor.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
+        # 删除用户
+        cursor.execute('DELETE FROM user WHERE id = ?', (user_id,))
+        if cursor.rowcount == 0:
+            db.rollback()
+            return jsonify({'success': False, 'message': '用户不存在'}), 404
+        db.commit()
+        return jsonify({'success': True, 'message': '用户删除成功'})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f"删除用户失败: {str(e)}"}), 500
+
+
+@app.route('/user/<int:user_id>/roles', methods=['POST'])
+@login_required
+@permission_required('user_assign')
+def assign_user_roles(user_id):
+    data = request.get_json()
+    roles = data['roles']
+    db = get_db()
+    try:
+
+        cursor = db.cursor()
+
+        # 先删除现有角色
+        cursor.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
+
+        # 分配新角色
+        if roles:
+            cursor.executemany('''
+            INSERT INTO user_roles (user_id, role_id)
+            VALUES (?, ?)
+            ''', [(user_id, role_id) for role_id in roles])
+
+        db.commit()
+        return jsonify({'success': True, 'message': '角色分配成功'})
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f"角色分配失败: {str(e)}"}), 500
 
 
 @app.route('/roles', methods=['GET', 'POST'])
+@login_required
+@permission_required('role_view')  # 角色管理需要role_view权限
 def roles():
     if request.method == 'GET':
         db = get_db()
         try:
+            # 获取所有角色
             cursor = db.cursor()
-            cursor.execute(''' select * from roles''')
-            columns = [column[0] for column in cursor.description]
-            data = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            cursor.execute(''' SELECT id, role_name, role_description, created_at, updated_at FROM roles''')
+            roles = cursor.fetchall()
+
             role_list = []
-            for role in data:
-                role_dict = {'id': role['id'], 'role_name': role['role_name'],
-                             'role_description': role['role_description'], 'sys_view': role['sys_view'],
-                             'sys_edit': role['sys_edit'], 'user_view': role['user_view'], 'user_add': role['user_add'],
-                             'user_edit': role['user_edit'], 'user_status': role['user_status'],
-                             'iptab_view': role['iptab_view'], 'iptab_add': role['iptab_add'],
-                             'iptab_edit': role['iptab_edit'], 'iptab_del': role['iptab_del'],
-                             'log_view': role['log_view'], 'hosts_edit': role['hosts_edit'],
-                             'hosts_add': role['hosts_add'], 'hosts_del': role['hosts_del'],
-                             'created_at': role['created_at'], 'updated_at': role['updated_at']}
-                role_list.append(role_dict)
-                print(role_list)
-            return render_template('systemseting.html', role_list=role_list)
+            for role in roles:
+                # 获取角色拥有的权限
+                cursor.execute('''
+                SELECT p.code FROM permissions p
+                JOIN role_permissions rp ON p.id = rp.permission_id
+                WHERE rp.role_id = ?
+                ''', (role['id'],))
+                permissions = [row['code'] for row in cursor.fetchall()]
+
+                role_list.append({
+                    'id': role['id'],
+                    'role_name': role['role_name'],
+                    'role_description': role['role_description'],
+                    'permissions': permissions,  # 返回角色拥有的权限列表
+                    'created_at': role['created_at'],
+                    'updated_at': role['updated_at']
+                })
+            # 【新增】根据请求头判断返回 JSON 还是渲染页面
+            if request.headers.get('Accept') == 'application/json':
+                return jsonify({
+                    'success': True,
+                    'roles': role_list  # 返回角色列表 JSON 数据
+                })
+            else:
+                # 原逻辑：渲染角色管理页面
+                return render_template('systemseting.html', role_list=role_list)
         except Exception as e:
-            return jsonify({
-                "success": False,
-                "message": f"获取角色失败：{str(e)}"
-            }), 500
+            return jsonify({"success": False, "message": f"获取角色失败：{str(e)}"}), 500
 
     elif request.method == 'POST':
-        print(request.args)
+
+        # 添加新角色 (需要role_add权限)
+        if not current_user.has_permission('role_add'):
+            return jsonify(success=False, message='没有添加角色权限'), 403
+
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            # 创建角色
+            cursor.execute(''' 
+            INSERT INTO roles (role_name, role_description, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+             ''', (
+                request.form.get('role_name'),
+                request.form.get('role_description'),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            ))
+            role_id = cursor.lastrowid
+
+            # 分配权限
+            permissions = request.form.getlist('permissions[]')
+            if permissions:
+                cursor.executemany('''
+                INSERT INTO role_permissions (role_id, permission_id)
+                VALUES (?, ?)
+                ''', [(role_id, p) for p in permissions])
+
+            db.commit()
+            return jsonify({"success": True, "message": "角色添加成功！"}), 200
+        except Exception as e:
+            db.rollback()
+            return jsonify({"success": False, "message": f"添加失败：{str(e)}"}), 500
+
+
+@app.route('/role_edit', methods=['GET', 'POST'])
+@login_required
+@permission_required('role_edit')
+def role_edit():
+    if request.method == 'GET':
+        role_id = request.args.get('id')
+        try:
+            db = get_db()
+            cursor = db.cursor()
+
+            # 获取角色信息
+            cursor.execute('SELECT id, role_name, role_description FROM roles WHERE id = ?', (role_id,))
+            role = cursor.fetchone()
+
+            if not role:
+                return jsonify({'success': False, 'message': '角色不存在'}), 404
+
+            # 获取角色权限
+            cursor.execute('''
+            SELECT p.id FROM permissions p
+            JOIN role_permissions rp ON p.id = rp.permission_id
+            WHERE rp.role_id = ?
+            ''', (role_id,))
+            permissions = [row['id'] for row in cursor.fetchall()]
+
+            return jsonify({
+                'success': True,
+                'role': dict(role),
+                'permissions': permissions
+            })
+        except Exception as e:
+            return jsonify({'success': False, 'message': f"获取角色信息失败: {str(e)}"}), 500
+
+    elif request.method == 'POST':
+        data = request.get_json()
+        role_id = data['id']
+        db = get_db()
+        try:
+            cursor = db.cursor()
+
+            # 更新角色信息
+            cursor.execute('''
+            UPDATE roles SET role_name = ?, role_description = ?, updated_at = ?
+            WHERE id = ?
+            ''', (
+                data['role_name'],
+                data['role_description'],
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                role_id
+            ))
+
+            # 如果有提交权限，则更新权限
+            if 'permissions' in data:
+                # 先删除现有权限
+                cursor.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
+
+                # 添加新权限
+                permissions = data['permissions']
+                if permissions:
+                    cursor.executemany('''
+                    INSERT INTO role_permissions (role_id, permission_id)
+                    VALUES (?, ?)
+                    ''', [(role_id, p) for p in permissions])
+
+            db.commit()
+            return jsonify({'success': True, 'message': '角色更新成功'})
+
+        except sqlite3.IntegrityError:
+            db.rollback()
+            return jsonify({'success': False, 'message': '角色名称已存在'}), 409
+        except Exception as e:
+            db.rollback()
+            return jsonify({'success': False, 'message': f"更新角色失败: {str(e)}"}), 500
+
+
+@app.route('/role_del', methods=['DELETE'])
+@login_required
+@permission_required('role_del')
+def role_del():
+    role_id = request.args.get('id')
+
+    # 防止删除管理员角色
+    if int(role_id) == 1:
+        return jsonify({'success': False, 'message': '不能删除默认管理员角色'}), 400
+    db = get_db()
+    try:
+        cursor = db.cursor()
+
+        # 开始事务
+        db.begin()
+
+        # 检查是否有关联用户
+        cursor.execute('SELECT COUNT(*) as count FROM user_roles WHERE role_id = ?', (role_id,))
+        count = cursor.fetchone()['count']
+
+        if count > 0:
+            db.rollback()
+            return jsonify({'success': False, 'message': f'该角色已分配给{count}个用户，请先移除用户关联'}), 400
+
+        # 删除角色权限关联
+        cursor.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
+
+        # 删除角色
+        cursor.execute('DELETE FROM roles WHERE id = ?', (role_id,))
+
+        if cursor.rowcount == 0:
+            db.rollback()
+            return jsonify({'success': False, 'message': '角色不存在'}), 404
+
+        db.commit()
+        return jsonify({'success': True, 'message': '角色删除成功'})
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'message': f"删除角色失败: {str(e)}"}), 500
+
+
+@app.route('/roles/<int:role_id>/permissions', methods=['GET', 'POST'])
+@login_required
+@permission_required('role_assign')  # 分配权限需要role_assign权限
+def role_permissions(role_id):
+    db = get_db()
+
+    if request.method == 'GET':
+        # 获取角色当前拥有的权限
+        cursor = db.cursor()
+        cursor.execute('''
+        SELECT p.id, p.code, p.name, 
+               (SELECT 1 FROM role_permissions rp WHERE rp.role_id = ? AND rp.permission_id = p.id) as has_perm
+        FROM permissions p
+        ''', (role_id,))
+        permissions = cursor.fetchall()
+
+        return jsonify({
+            "success": True,
+            "permissions": [dict(perm) for perm in permissions]
+        })
+
+    elif request.method == 'POST':
+        # 更新角色权限
+        permissions = request.json.get('permissions', [])
+        cursor = db.cursor()
+
+        try:
+            # 先删除现有权限
+            cursor.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
+
+            # 添加新权限
+            if permissions:
+                cursor.executemany('''
+                INSERT INTO role_permissions (role_id, permission_id)
+                VALUES (?, ?)
+                ''', [(role_id, p) for p in permissions])
+
+            db.commit()
+            return jsonify({"success": True, "message": "权限分配成功！"})
+        except Exception as e:
+            db.rollback()
+            return jsonify({"success": False, "message": f"权限分配失败：{str(e)}"}), 500
 
 
 @app.route('/role_edit', methods=['POST'])
 def roles_edit():
     pass
+
 
 # 操作日志
 @app.route("/logs", methods=['GET'])
