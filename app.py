@@ -1115,17 +1115,6 @@ def get_system_config():
             config = db.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
             print(dict(config))
             return jsonify(dict(config)) if config else jsonify({})
-            # db = get_db()
-            # cursor = db.cursor()
-            # # 获取系统名称
-            # cursor.execute(''' select system_name from system_config; ''')
-            # system_name_data = cursor.fetchone()
-            # # 检查查询结果是否存在
-            # if not system_name_data:
-            #     return jsonify({'error': '系统配置不存在'}), 404
-            #
-            # system_name = system_name_data[0]
-            # return jsonify({'system_name': system_name})
         except Exception as e:
             app.logger.error(f"获取系统配置失败: {str(e)}")
             return jsonify({'error': '获取系统配置失败'}), 500
