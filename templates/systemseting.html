@@ -419,111 +419,19 @@
     </div>
   </div>
 
-  <!-- 权限分配模态框（修改后） -->
+  <!-- 权限分配模态框 -->
   <div id="permission-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-    <div class="bg-white rounded-xl w-full max-w-2xl transform transition-all scale-95 max-h-[80vh] overflow-hidden flex flex-col">
-      <div class="px-6 py-5 border-b border-gray-200 flex justify-between items-center">
-        <h3 id="permission-modal-title" class="text-lg font-semibold">分配权限 - 操作员</h3>
-        <button id="close-permission-modal" class="text-gray-500 hover:text-gray-700">
+    <div class="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col transform transition-all scale-95">
+      <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 id="permission-modal-title" class="text-lg font-semibold">分配权限</h3>
+        <button id="close-permission-modal" class="text-gray-400 hover:text-gray-500">
           <i class="fa fa-times"></i>
         </button>
       </div>
-      <div class="px-6 py-5 flex-1 overflow-y-auto" id="permission-content">
-        <div class="space-y-6">
-          <!-- 系统设置权限组 -->
-          <div class="permission-group">
-            <h4 class="font-medium text-gray-700 mb-3">系统设置</h4>
-            <div class="pl-4 space-y-3">
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-system-view" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
-                <label for="perm-system-view" class="text-sm text-gray-600">查看系统设置</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-system-edit" class="text-primary focus:ring-primary h-4 w-4 mr-2">
-                <label for="perm-system-edit" class="text-sm text-gray-600">编辑系统设置</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- 用户管理权限组 -->
-          <div class="permission-group">
-            <h4 class="font-medium text-gray-700 mb-3">用户管理</h4>
-            <div class="pl-4 space-y-3">
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-user-view" class="text-primary focus:ring-primary h-4 w-4 mr-2">
-                <label for="perm-user-view" class="text-sm text-gray-600">查看用户列表</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-user-add" class="text-primary focus:ring-primary h-4 w-4 mr-2">
-                <label for="perm-user-add" class="text-sm text-gray-600">添加用户</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-user-edit" class="text-primary focus:ring-primary h-4 w-4 mr-2">
-                <label for="perm-user-edit" class="text-sm text-gray-600">编辑用户</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-user-status" class="text-primary focus:ring-primary h-4 w-4 mr-2">
-                <label for="perm-user-status" class="text-sm text-gray-600">启用/禁用用户</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- 防火墙操作权限组 -->
-          <div class="permission-group">
-            <h4 class="font-medium text-gray-700 mb-3">防火墙操作</h4>
-            <div class="pl-4 space-y-3">
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-firewall-view" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
-                <label for="perm-firewall-view" class="text-sm text-gray-600">查看防火墙规则</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-firewall-add" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
-                <label for="perm-firewall-add" class="text-sm text-gray-600">添加防火墙规则</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-firewall-edit" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
-                <label for="perm-firewall-edit" class="text-sm text-gray-600">编辑防火墙规则</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-firewall-delete" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
-                <label for="perm-firewall-delete" class="text-sm text-gray-600">删除防火墙规则</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- 审计日志权限组 -->
-          <div class="permission-group">
-            <h4 class="font-medium text-gray-700 mb-3">审计日志</h4>
-            <div class="pl-4 space-y-3">
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-audit-view" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
-                <label for="perm-audit-view" class="text-sm text-gray-600">查看操作日志</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- 主机权限组 -->
-          <div class="permission-group">
-            <h4 class="font-medium text-gray-700 mb-3">主机操作</h4>
-            <div class="pl-4 space-y-3">
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-hosts-view" class="text-primary focus:ring-primary h-4 w-4 mr-2" checked>
-                <label for="perm-hosts-view" class="text-sm text-gray-600">查看主机</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-hosts-edit" class="text-primary focus:ring-primary h-4 w-4 mr-2">
-                <label for="perm-hosts-edit" class="text-sm text-gray-600">编辑主机</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-hosts-add" class="text-primary focus:ring-primary h-4 w-4 mr-2">
-                <label for="perm-hosts-add" class="text-sm text-gray-600">新增主机</label>
-              </div>
-              <div class="flex items-center">
-                <input type="checkbox" id="perm-hosts-del" class="text-primary focus:ring-primary h-4 w-4 mr-2">
-                <label for="perm-hosts-del" class="text-sm text-gray-600">删除主机</label>
-              </div>
-            </div>
-          </div>
+      <input type="hidden" id="permission-role-id" value="">
+      <div class="px-6 py-4 overflow-y-auto flex-grow">
+        <div id="permission-list" class="space-y-6">
+          <!-- 权限列表将动态渲染 -->
         </div>
       </div>
       <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
@@ -533,6 +441,33 @@
     </div>
   </div>
 
+  <!-- 角色列表表格 -->
+  <div id="role-content" class="tab-content">
+    <div class="flex justify-between items-center mb-6">
+      <h2 class="text-xl font-bold text-gray-900">角色管理</h2>
+      <button id="add-role-btn" class="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary/90 transition-colors">
+        <i class="fa fa-plus mr-1"></i> 添加角色
+      </button>
+    </div>
+
+    <div class="bg-white shadow-md rounded-lg overflow-hidden">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">序号</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">角色名称</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">描述</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">权限数量</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">创建时间</th>
+            <th scope="col" class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
+          </tr>
+        </thead>
+        <tbody id="roles-table-body" class="bg-white divide-y divide-gray-200">
+          <!-- 角色列表将动态渲染 -->
+        </tbody>
+      </table>
+    </div>
+  </div>
   <!-- 确认操作模态框 -->
   <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
     <div class="bg-white rounded-xl w-full max-w-md transform transition-all scale-95">
@@ -614,7 +549,7 @@
     // 初始化各功能模块
     initTabByUrl();          // 选项卡初始化
     initUserManagement();    // 用户管理模块
-    initRolePermission();    // 角色权限模块
+    initRolePermission();    // 角色权限模块（完善版）
     initBasicSettings();     // 基本设置模块
 
     // 绑定确认模态框事件
@@ -1000,11 +935,9 @@
           <label for="email" class="block text-sm font-medium text-gray-700 mb-1">邮箱 <span class="text-danger">*</span></label>
           <input type="email" id="email" name="email" class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${user.email}" required>
         </div>
-        <!-- 【修改】密码输入框添加提示和错误信息元素 -->
         <div class="mb-4">
           <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码 (不修改请留空)</label>
           <input type="password" id="password" name="password" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入新密码">
-          <!-- 添加密码提示和错误信息 -->
           <p id="password-hint" class="text-xs text-gray-500 mt-1">密码需符合系统安全策略要求</p>
           <p id="password-error" class="text-xs text-red-500 mt-1 hidden"></p>
         </div>
@@ -1041,8 +974,7 @@
       </form>
     `;
     openCommonModal();
-    // 【新增】更新密码提示
-    updatePasswordHint();
+    updatePasswordHint(); // 更新密码提示
   }
 
   /**
@@ -1063,7 +995,7 @@
     if (password) {
       // 密码验证
       if (!validatePassword(password)) {
-        return; // 密码验证失败，不提交表单
+        return;
       }
       formData.password = password;
     }
@@ -1136,7 +1068,7 @@
       btn.addEventListener('click', function() {
         const userId = this.getAttribute('data-id');
         const status = this.getAttribute('data-status');
-        const action = status === '0' ? '禁用' : '启用';
+        const action = status === 'active' ? '禁用' : '启用';
 
         document.getElementById('confirm-title').textContent = `确认${action}用户`;
         document.getElementById('confirm-message').textContent =
@@ -1153,80 +1085,424 @@
 
 
   // ================================================
-  // 7. 角色权限相关函数
+  // 7. 角色权限相关函数（完整实现）
   // ================================================
 
   /**
    * 初始化角色权限管理功能
    */
   function initRolePermission() {
-    // 绑定添加角色按钮
-    document.getElementById('add-role-btn').addEventListener('click', () => {
-      document.getElementById('modal-title').textContent = '添加角色';
-      document.getElementById('modal-content').innerHTML = `
-        <form id="role-form">
-          <div class="mb-4">
-            <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
-            <input type="text" id="role-name" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入角色名称" required>
-          </div>
-          <div class="mb-4">
-            <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
-            <textarea id="role-desc" class="w-full px-3 py-2 border border-gray-300 rounded-md" rows="3" placeholder="请输入角色描述"></textarea>
-          </div>
-        </form>
+    // 加载角色列表
+    loadRoles();
+
+    // 绑定添加角色按钮事件
+    document.getElementById('add-role-btn').addEventListener('click', openAddRoleModal);
+
+    // 绑定权限分配模态框保存按钮事件
+    document.getElementById('save-permission-btn').addEventListener('click', saveRolePermissions);
+  }
+
+  /**
+   * 加载所有角色列表
+   */
+  function loadRoles() {
+    fetch('/roles', {
+      headers: { 'Accept': 'application/json' }
+    })
+    .then(response => {
+      if (!response.ok) throw new Error('获取角色列表失败');
+      return response.json();
+    })
+    .then(data => {
+      if (data.success) {
+        renderRoleTable(data.roles);
+      } else {
+        showErrorToast('加载角色失败: ' + data.message);
+      }
+    })
+    .catch(error => {
+      console.error('加载角色列表错误:', error);
+      showErrorToast('加载角色列表失败');
+    });
+  }
+
+  /**
+   * 渲染角色列表表格
+   * @param {Array} roles - 角色数组
+   */
+  function renderRoleTable(roles) {
+    const tableBody = document.querySelector('#role-content tbody');
+    if (!tableBody) return;
+
+    tableBody.innerHTML = '';
+
+    roles.forEach((role, index) => {
+      const row = document.createElement('tr');
+      row.className = 'hover:bg-gray-50 transition-colors';
+      row.innerHTML = `
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${index + 1}</td>
+        <td class="px-6 py-4 whitespace-nowrap">
+          <div class="text-sm font-medium text-gray-900">${role.role_name}</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${role.role_description || '无描述'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${role.user_count || 0}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${role.created_at}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+          <button class="text-indigo-600 hover:text-indigo-900 mr-3 edit-role"
+                  data-id="${role.id}" data-name="${role.role_name}">编辑
+          </button>
+          <button class="text-green-600 hover:text-green-900 mr-3 assign-permission"
+                  data-id="${role.id}" data-name="${role.role_name}">分配权限
+          </button>
+          <button class="${role.id === 1 ? 'text-gray-400 delete-role' : 'text-red-600 hover:text-red-900 delete-role'}"
+                  data-id="${role.id}" data-name="${role.role_name}"
+                  ${role.id === 1 ? 'disabled class="opacity-50 cursor-not-allowed"' : ''}>
+            删除
+          </button>
+        </td>
       `;
-      openCommonModal();
+      tableBody.appendChild(row);
     });
 
-    // 绑定编辑角色按钮
+    // 绑定行内按钮事件
+    bindRoleActionButtons();
+  }
+
+  /**
+   * 绑定角色操作按钮事件
+   */
+  function bindRoleActionButtons() {
+    // 编辑角色按钮
     document.querySelectorAll('.edit-role').forEach(btn => {
       btn.addEventListener('click', function() {
         const roleId = this.getAttribute('data-id');
-        const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
-        const roleDescs = {
-          '1': '拥有系统所有操作权限',
-          '2': '可执行常规操作，无用户管理权限',
-          '3': '仅查看权限，无修改/执行权限'
-        };
-
-        document.getElementById('modal-title').textContent = '编辑角色';
-        document.getElementById('modal-content').innerHTML = `
-          <form id="role-form">
-            <input type="hidden" id="role-id" value="${roleId}">
-            <div class="mb-4">
-              <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
-              <input type="text" id="role-name" class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${roleNames[roleId]}" required>
-            </div>
-            <div class="mb-4">
-              <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
-              <textarea id="role-desc" class="w-full px-3 py-2 border border-gray-300 rounded-md" rows="3">${roleDescs[roleId]}</textarea>
-            </div>
-          </form>
-        `;
-        openCommonModal();
+        openEditRoleModal(roleId);
       });
     });
 
-    // 绑定分配权限按钮
+    // 分配权限按钮
     document.querySelectorAll('.assign-permission').forEach(btn => {
       btn.addEventListener('click', function() {
         const roleId = this.getAttribute('data-id');
-        const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
-        document.getElementById('permission-modal-title').textContent = `分配权限 - ${roleNames[roleId]}`;
-        openPermissionModal();
+        const roleName = this.getAttribute('data-name');
+        openPermissionModal(roleId, roleName);
       });
     });
 
-    // 绑定删除角色按钮
+    // 删除角色按钮
     document.querySelectorAll('.delete-role').forEach(btn => {
       btn.addEventListener('click', function() {
         const roleId = this.getAttribute('data-id');
-        document.getElementById('confirm-title').textContent = '确认删除角色';
-        document.getElementById('confirm-message').textContent = '确定要删除此角色吗？删除后关联的用户将失去该角色权限。';
-        document.getElementById('confirm-action-btn').setAttribute('data-action', 'delete-role');
-        document.getElementById('confirm-action-btn').setAttribute('data-id', roleId);
-        openConfirmModal();
+        const roleName = this.getAttribute('data-name');
+        confirmDeleteRole(roleId, roleName);
       });
+    });
+  }
+
+  /**
+   * 打开添加角色模态框
+   */
+  function openAddRoleModal() {
+    document.getElementById('modal-title').textContent = '添加新角色';
+    document.getElementById('modal-content').innerHTML = `
+      <form id="role-form">
+        <div class="mb-4">
+          <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
+          <input type="text" id="role-name" name="role_name" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入角色名称" required>
+        </div>
+        <div class="mb-4">
+          <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
+          <textarea id="role-desc" name="role_description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入角色描述"></textarea>
+        </div>
+      </form>
+    `;
+    openCommonModal();
+
+    // 绑定保存按钮事件
+    document.getElementById('save-modal-btn').onclick = saveNewRole;
+  }
+
+  /**
+   * 保存新角色
+   */
+  function saveNewRole() {
+    const roleName = document.getElementById('role-name').value.trim();
+    const roleDesc = document.getElementById('role-desc').value.trim();
+
+    if (!roleName) {
+      showErrorToast('角色名称不能为空');
+      return;
+    }
+
+    fetch('/roles', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrf_token')
+      },
+      body: JSON.stringify({
+        role_name: roleName,
+        role_description: roleDesc
+      })
+    })
+    .then(response => {
+      if (!response.ok) return response.json().then(err => { throw new Error(err.message); });
+      return response.json();
+    })
+    .then(data => {
+      closeCommonModal();
+      showSuccessToast('角色添加成功');
+      loadRoles(); // 重新加载角色列表
+    })
+    .catch(error => {
+      showErrorToast('添加失败: ' + error.message);
+      console.error('添加角色错误:', error);
+    });
+  }
+
+  /**
+   * 打开编辑角色模态框
+   * @param {number} roleId - 角色ID
+   */
+  function openEditRoleModal(roleId) {
+    fetch(`/role_edit?id=${roleId}`)
+      .then(response => {
+        if (!response.ok) throw new Error('获取角色信息失败');
+        return response.json();
+      })
+      .then(data => {
+        if (data.success) {
+          const role = data.role;
+          document.getElementById('modal-title').textContent = '编辑角色';
+          document.getElementById('modal-content').innerHTML = `
+            <form id="role-form">
+              <input type="hidden" id="role-id" value="${role.id}">
+              <div class="mb-4">
+                <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
+                <input type="text" id="role-name" name="role_name" class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${role.role_name}" required>
+              </div>
+              <div class="mb-4">
+                <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
+                <textarea id="role-desc" name="role_description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md">${role.role_description || ''}</textarea>
+              </div>
+            </form>
+          `;
+          openCommonModal();
+
+          // 绑定保存按钮事件
+          document.getElementById('save-modal-btn').onclick = updateRole;
+        } else {
+          showErrorToast('加载角色失败: ' + data.message);
+        }
+      })
+      .catch(error => {
+        console.error('获取角色信息错误:', error);
+        showErrorToast('加载角色信息失败');
+      });
+  }
+
+  /**
+   * 更新角色信息
+   */
+  function updateRole() {
+    const roleId = document.getElementById('role-id').value;
+    const roleName = document.getElementById('role-name').value.trim();
+    const roleDesc = document.getElementById('role-desc').value.trim();
+
+    if (!roleName) {
+      showErrorToast('角色名称不能为空');
+      return;
+    }
+
+    fetch('/role_edit', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrf_token')
+      },
+      body: JSON.stringify({
+        id: roleId,
+        role_name: roleName,
+        role_description: roleDesc
+      })
+    })
+    .then(response => {
+      if (!response.ok) return response.json().then(err => { throw new Error(err.message); });
+      return response.json();
+    })
+    .then(data => {
+      closeCommonModal();
+      showSuccessToast('角色更新成功');
+      loadRoles(); // 重新加载角色列表
+    })
+    .catch(error => {
+      showErrorToast('更新失败: ' + error.message);
+      console.error('更新角色错误:', error);
+    });
+  }
+
+  /**
+   * 打开权限分配模态框
+   * @param {number} roleId - 角色ID
+   * @param {string} roleName - 角色名称
+   */
+  function openPermissionModal(roleId, roleName) {
+    document.getElementById('permission-modal-title').textContent = `分配权限 - ${roleName}`;
+    document.getElementById('permission-role-id').value = roleId;
+
+    // 加载权限列表
+    fetch(`/roles/${roleId}/permissions`)
+      .then(response => {
+        if (!response.ok) throw new Error('获取权限列表失败');
+        return response.json();
+      })
+      .then(data => {
+        if (data.success) {
+          renderPermissionCheckboxes(data.permissions);
+          openPermissionModalUI();
+        } else {
+          showErrorToast('加载权限失败: ' + data.message);
+        }
+      })
+      .catch(error => {
+        console.error('获取权限列表错误:', error);
+        showErrorToast('加载权限列表失败');
+      });
+  }
+
+    /**
+     * 渲染权限复选框列表
+     * @param {Array} permissions - 权限数组
+     */
+    function renderPermissionCheckboxes(permissions) {
+        // 修复：选择器从 #permission-content .space-y-6 改为 #permission-list
+        const permissionContainer = document.getElementById('permission-list');
+        if (!permissionContainer) return;
+
+        // 清空现有内容
+        permissionContainer.innerHTML = '';
+
+        // 按权限组分类
+        const permissionGroups = {
+            '系统设置': [],
+            '用户管理': [],
+            '防火墙操作': [],
+            '审计日志': [],
+            '主机操作': []
+        };
+
+        // 将权限分配到对应组
+        permissions.forEach(perm => {
+            let groupName = '其他权限';
+
+            if (perm.code.startsWith('system_')) groupName = '系统设置';
+            else if (perm.code.startsWith('user_')) groupName = '用户管理';
+            else if (perm.code.startsWith('firewall_')) groupName = '防火墙操作';
+            else if (perm.code.startsWith('audit_')) groupName = '审计日志';
+            else if (perm.code.startsWith('host_')) groupName = '主机操作';
+
+            if (!permissionGroups[groupName]) permissionGroups[groupName] = [];
+            permissionGroups[groupName].push(perm);
+        });
+
+        // 渲染权限组
+        Object.keys(permissionGroups).forEach(groupName => {
+            const groupPermissions = permissionGroups[groupName];
+            if (groupPermissions.length === 0) return;
+
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'permission-group';
+            groupDiv.innerHTML = `
+                <h4 class="font-medium text-gray-700 mb-3">${groupName}</h4>
+                <div class="pl-4 space-y-3">
+                    ${groupPermissions.map(perm => `
+                        <div class="flex items-center">
+                            <input type="checkbox" id="perm-${perm.id}" class="text-primary focus:ring-primary h-4 w-4 mr-2"
+                                  ${perm.has_perm ? 'checked' : ''} data-id="${perm.id}" data-code="${perm.code}">
+                            <label for="perm-${perm.id}" class="text-sm text-gray-600">${perm.name}</label>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            permissionContainer.appendChild(groupDiv);
+        });
+    }
+
+    /**
+     * 保存角色权限
+     */
+    function saveRolePermissions() {
+      const roleId = document.getElementById('permission-role-id').value;
+      const selectedPermissions = [];
+
+      // 收集选中的权限 - 修复选择器
+      document.querySelectorAll('#permission-list input[type="checkbox"]:checked').forEach(checkbox => {
+        selectedPermissions.push(parseInt(checkbox.getAttribute('data-id')));
+      });
+
+      fetch(`/roles/${roleId}/permissions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrf_token')
+        },
+        body: JSON.stringify({ permissions: selectedPermissions })
+      })
+      .then(response => {
+        if (!response.ok) return response.json().then(err => { throw new Error(err.message); });
+        return response.json();
+      })
+      .then(data => {
+        closePermissionModal();
+        showSuccessToast('权限分配成功');
+      })
+      .catch(error => {
+        showErrorToast('保存权限失败: ' + error.message);
+        console.error('保存权限错误:', error);
+      });
+    }
+
+  /**
+   * 确认删除角色
+   * @param {number} roleId - 角色ID
+   * @param {string} roleName - 角色名称
+   */
+  function confirmDeleteRole(roleId, roleName) {
+    document.getElementById('confirm-title').textContent = '确认删除角色';
+    document.getElementById('confirm-message').textContent = `确定要删除角色"${roleName}"吗？删除后关联的用户将失去该角色权限。`;
+
+    // 绑定确认按钮事件
+    const confirmBtn = document.getElementById('confirm-action-btn');
+    confirmBtn.onclick = function() {
+      deleteRole(roleId);
+      closeConfirmModal();
+    };
+
+    openConfirmModal();
+  }
+
+  /**
+   * 删除角色
+   * @param {number} roleId - 角色ID
+   */
+  function deleteRole(roleId) {
+    fetch(`/role_del?id=${roleId}`, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': getCookie('csrf_token')
+      }
+    })
+    .then(response => {
+      if (!response.ok) return response.json().then(err => { throw new Error(err.message); });
+      return response.json();
+    })
+    .then(data => {
+      showSuccessToast('角色删除成功');
+      loadRoles(); // 重新加载角色列表
+    })
+    .catch(error => {
+      showErrorToast('删除失败: ' + error.message);
+      console.error('删除角色错误:', error);
     });
   }
 
@@ -1280,9 +1556,7 @@
         // 保存系统配置
         saveSystemConfig(JSON.parse(configData));
       } else if (action === 'delete-role') {
-        // 删除角色
-        closeConfirmModal();
-        showSuccessToast('角色删除成功');
+        // 删除角色（已迁移到confirmDeleteRole函数）
       } else if (action === 'toggle-user-status') {
         // 切换用户状态
         const userId = this.getAttribute('data-id');
@@ -1370,9 +1644,9 @@
   }
 
   /**
-   * 打开权限分配模态框
+   * 打开权限分配模态框UI
    */
-  function openPermissionModal() {
+  function openPermissionModalUI() {
     const modal = document.getElementById('permission-modal');
     modal.classList.remove('hidden');
     setTimeout(() => {

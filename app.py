@@ -1142,9 +1142,6 @@ def get_system_config():
             return jsonify({'error': '保存系统配置失败'}), 500
 
 
-
-
-
 # 获取会话超时时间（从数据库）
 def get_session_timeout():
     """从数据库获取会话超时时间（分钟），默认30分钟"""
@@ -1590,39 +1587,42 @@ def roles():
             return jsonify({"success": False, "message": f"获取角色失败：{str(e)}"}), 500
 
     elif request.method == 'POST':
-
         # 添加新角色 (需要role_add权限)
         if not current_user.has_permission('role_add'):
             return jsonify(success=False, message='没有添加角色权限'), 403
-
         db = get_db()
         try:
+            # 获取JSON数据（而非表单数据）
+            role_data = request.get_json()
+            if not role_data:
+                return jsonify({"success": False, "message": "请求数据格式错误，应为JSON"}), 400
             cursor = db.cursor()
-            # 创建角色
+
+            # 创建角色 - 使用role_data而非request.form
+
             cursor.execute(''' 
-            INSERT INTO roles (role_name, role_description, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
-             ''', (
-                request.form.get('role_name'),
-                request.form.get('role_description'),
+                INSERT INTO roles (role_name, role_description, created_at, updated_at)
+                VALUES (?, ?, ?, ?)
+                 ''', (
+                role_data.get('role_name'),  # <-- 修复：从JSON数据获取
+                role_data.get('role_description', ''),  # <-- 修复：从JSON数据获取，提供默认值
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             ))
             role_id = cursor.lastrowid
+            # 分配权限 - 同样从JSON数据获取
+            permissions = role_data.get('permissions', [])  # <-- 修复：从JSON数据获取
 
-            # 分配权限
-            permissions = request.form.getlist('permissions[]')
             if permissions:
                 cursor.executemany('''
-                INSERT INTO role_permissions (role_id, permission_id)
-                VALUES (?, ?)
-                ''', [(role_id, p) for p in permissions])
-
+                    INSERT INTO role_permissions (role_id, permission_id)
+                    VALUES (?, ?)
+                    ''', [(role_id, p) for p in permissions])
             db.commit()
             return jsonify({"success": True, "message": "角色添加成功！"}), 200
         except Exception as e:
             db.rollback()
-            return jsonify({"success": False, "message": f"添加失败：{str(e)}"}), 500
+            return jsonify({"success": False, "message": f"错误：{str(e)}"}), 500
 
 
 @app.route('/role_edit', methods=['GET', 'POST'])
@@ -1705,21 +1705,16 @@ def role_edit():
 @permission_required('role_del')
 def role_del():
     role_id = request.args.get('id')
-
+    print(role_id)
     # 防止删除管理员角色
     if int(role_id) == 1:
         return jsonify({'success': False, 'message': '不能删除默认管理员角色'}), 400
     db = get_db()
     try:
         cursor = db.cursor()
-
-        # 开始事务
-        db.begin()
-
         # 检查是否有关联用户
         cursor.execute('SELECT COUNT(*) as count FROM user_roles WHERE role_id = ?', (role_id,))
         count = cursor.fetchone()['count']
-
         if count > 0:
             db.rollback()
             return jsonify({'success': False, 'message': f'该角色已分配给{count}个用户，请先移除用户关联'}), 400
@@ -1747,7 +1742,6 @@ def role_del():
 @permission_required('role_assign')  # 分配权限需要role_assign权限
 def role_permissions(role_id):
     db = get_db()
-
     if request.method == 'GET':
         # 获取角色当前拥有的权限
         cursor = db.cursor()
@@ -1757,7 +1751,6 @@ def role_permissions(role_id):
         FROM permissions p
         ''', (role_id,))
         permissions = cursor.fetchall()
-
         return jsonify({
             "success": True,
             "permissions": [dict(perm) for perm in permissions]
@@ -1766,6 +1759,7 @@ def role_permissions(role_id):
     elif request.method == 'POST':
         # 更新角色权限
         permissions = request.json.get('permissions', [])
+        print(permissions)
         cursor = db.cursor()
 
         try:
@@ -1786,11 +1780,6 @@ def role_permissions(role_id):
             return jsonify({"success": False, "message": f"权限分配失败：{str(e)}"}), 500
 
 
-@app.route('/role_edit', methods=['POST'])
-def roles_edit():
-    pass
-
-
 # 操作日志
 @app.route("/logs", methods=['GET'])
 @login_required
@@ -1809,13 +1798,3 @@ def logout():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=2025)
-"""
-当系统设置中设置的密码策略有变化时，新建用户或者编辑用户时的密码策略也要有相应的变化，并且需要对密码在前端做检验，密码策略是：
-低（至少6位字符）
-中（至少8位包含字母和数字）
-高（至少10位包含大小写字母、数字和特殊符号）
-后端接口：/api/system-config 已经将当前的密码策略返回给了前端
-所以 请你在前端实现：新增用户时、编辑用户时 应用该密码策略，并在前端对用户新设置的密码做校验。
-没有问题时再允许提交到user 进行新增用户的操作。
-"""
-
