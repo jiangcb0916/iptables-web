@@ -566,8 +566,16 @@
 {% endblock main %}
 
 {% block script %}
-  <script>
-  // 【辅助函数】获取CSRF令牌（如果你的Flask应用启用了CSRF保护）
+<script>
+  // ================================================
+  // 1. 工具函数
+  // ================================================
+
+  /**
+   * 获取CSRF令牌（用于表单提交安全验证）
+   * @param {string} name - Cookie名称
+   * @returns {string|null} - 返回CSRF令牌值或null
+   */
   function getCookie(name) {
     let cookieValue = null;
     if (document.cookie && document.cookie !== '') {
@@ -583,797 +591,879 @@
     return cookieValue;
   }
 
-// 【新增】删除用户按钮事件
-  document.querySelectorAll('.delete-user').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const userId = this.getAttribute('data-id');
-      const userName = this.closest('tr').querySelector('td:nth-child(2)').textContent;
 
-      // 1. 确认删除操作
-      if (!confirm(`确定要删除用户"${userName}"吗？此操作不可恢复！`)) {
-        return;
-      }
+  // ================================================
+  // 2. 全局变量
+  // ================================================
 
-      // 2. 发送DELETE请求到/user_del
-      fetch(`/user_del?id=${userId}`, {
-        method: 'DELETE',
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-          // 包含CSRF令牌（如果你的应用使用了CSRF保护）
-          'X-CSRFToken': getCookie('csrf_token')
-        }
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          showSuccessToast('用户删除成功！');
-          // 3. 重新加载页面获取最新数据
-          window.location.reload();
-        } else {
-          showSuccessToast('删除失败: ' + data.message);
-        }
-      })
-      .catch(error => {
-        console.error('删除用户请求失败:', error);
-        showSuccessToast('删除用户失败，请重试');
-      });
-    });
+  // 密码策略全局变量（默认中等策略）
+  let passwordStrategy = "medium";
+
+
+  // ================================================
+  // 3. 页面初始化与核心逻辑
+  // ================================================
+
+  /**
+   * 页面DOM加载完成后初始化所有功能
+   */
+  document.addEventListener('DOMContentLoaded', function() {
+    // 获取系统配置并填充表单
+    fetchSystemConfigAndPopulateForm();
+
+    // 初始化各功能模块
+    initTabByUrl();          // 选项卡初始化
+    initUserManagement();    // 用户管理模块
+    initRolePermission();    // 角色权限模块
+    initBasicSettings();     // 基本设置模块
+
+    // 绑定确认模态框事件
+    bindConfirmModalEvents();
   });
 
 
+  // ================================================
+  // 4. 系统配置相关函数
+  // ================================================
+
+  /**
+   * 从后端获取系统配置并填充到表单
+   */
+  function fetchSystemConfigAndPopulateForm() {
+    fetch('/api/system-config')
+      .then(response => {
+        if (!response.ok) throw new Error('获取系统配置失败');
+        return response.json();
+      })
+      .then(config => {
+        // 填充系统名称
+        const systemNameInput = document.getElementById('system-name');
+        if (systemNameInput && config.system_name) {
+          systemNameInput.value = config.system_name;
+        }
+
+        // 填充会话超时时间
+        const sessionTimeoutSelect = document.getElementById('session-timeout');
+        if (sessionTimeoutSelect && config.session_timeout) {
+          sessionTimeoutSelect.value = config.session_timeout;
+        }
+
+        // 填充日志保留时间
+        const logRetentionSelect = document.getElementById('log-retention');
+        if (logRetentionSelect && config.log_retention_time) {
+          logRetentionSelect.value = config.log_retention_time;
+        }
+
+        // 填充主题模式
+        const themeModeSelect = document.getElementById('theme-mode');
+        if (themeModeSelect && config.color_mode) {
+          themeModeSelect.value = config.color_mode;
+        }
+
+        // 填充密码策略并更新全局变量
+        const passwordPolicySelect = document.getElementById('password-policy');
+        if (passwordPolicySelect && config.password_strategy) {
+          passwordPolicySelect.value = config.password_strategy;
+          passwordStrategy = config.password_strategy;
+          updatePasswordHint(); // 更新密码提示
+        }
+      })
+      .catch(error => {
+        console.error('获取系统配置失败:', error);
+      });
+  }
+
+  /**
+   * 根据当前密码策略更新密码提示文本
+   */
+  function updatePasswordHint() {
+    const hintElement = document.getElementById('password-hint');
+    if (!hintElement) return;
+
+    switch(passwordStrategy) {
+      case 'low':
+        hintElement.textContent = '密码需至少6位字符';
+        break;
+      case 'medium':
+        hintElement.textContent = '密码需至少8位，包含字母和数字';
+        break;
+      case 'high':
+        hintElement.textContent = '密码需至少10位，包含大小写字母、数字和特殊符号';
+        break;
+      default:
+        hintElement.textContent = '密码需符合系统安全策略要求';
+    }
+  }
+
+  /**
+   * 根据当前密码策略验证密码复杂度
+   * @param {string} password - 待验证的密码
+   * @returns {boolean} - 验证是否通过
+   */
+  function validatePassword(password) {
+    const errorElement = document.getElementById('password-error');
+    if (!errorElement) return true;
+
+    errorElement.classList.add('hidden');
+
+    if (passwordStrategy === 'low') {
+      if (password.length < 6) {
+        errorElement.textContent = '密码需至少6位字符';
+        errorElement.classList.remove('hidden');
+        return false;
+      }
+    } else if (passwordStrategy === 'medium') {
+      if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+        errorElement.textContent = '密码需至少8位，包含字母和数字';
+        errorElement.classList.remove('hidden');
+        return false;
+      }
+    } else if (passwordStrategy === 'high') {
+      if (password.length < 10 ||
+          !/[A-Z]/.test(password) ||
+          !/[a-z]/.test(password) ||
+          !/\d/.test(password) ||
+          !/[^A-Za-z0-9]/.test(password)) {
+        errorElement.textContent = '密码需至少10位，包含大小写字母、数字和特殊符号';
+        errorElement.classList.remove('hidden');
+        return false;
+      }
+    }
+
+    return true;
+  }
 
 
- // 关键：修复DOMContentLoaded的闭合问题
-document.addEventListener('DOMContentLoaded', function() {
-  // 获取系统配置并填充表单
-  fetchSystemConfigAndPopulateForm();
+  // ================================================
+  // 5. 选项卡与页面导航
+  // ================================================
 
-
-
-  // 1. 【新增】配置「URL-选项卡」映射（页面加载时高亮当前选项卡）
-  const TAB_PATH_MAP = {
-    'basic': '/systemsetting',
-    'user': '/users',
-    'role': '/roles'
-  };
-  const PATH_TAB_MAP = Object.fromEntries(
-    Object.entries(TAB_PATH_MAP).map(([tab, path]) => [path, tab])
-  );
-
-  // 2. 【新增】页面加载时，根据URL激活对应选项卡（用户管理页面默认高亮）
+  /**
+   * 根据URL路径初始化选项卡激活状态
+   */
   function initTabByUrl() {
+    const TAB_PATH_MAP = {
+      'basic': '/systemsetting',
+      'user': '/users',
+      'role': '/roles'
+    };
+    const PATH_TAB_MAP = Object.fromEntries(
+      Object.entries(TAB_PATH_MAP).map(([tab, path]) => [path, tab])
+    );
+
     const currentPath = window.location.pathname;
     const targetTab = PATH_TAB_MAP[currentPath] || 'basic';
     const targetTabBtn = document.querySelector(`.tab-btn[data-tab="${targetTab}"]`);
+
     if (targetTabBtn) {
-      // 激活选项卡样式
-      document.querySelectorAll('.tab-btn').forEach(b => {
-        b.classList.remove('border-primary', 'text-primary');
-        b.classList.add('border-transparent', 'text-gray-500');
+      // 更新选项卡样式
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('border-primary', 'text-primary');
+        btn.classList.add('border-transparent', 'text-gray-500');
       });
       targetTabBtn.classList.add('border-primary', 'text-primary');
-      // 显示对应内容（隐藏其他）
+
+      // 更新内容区域显示
       document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.add('hidden');
       });
       document.getElementById(`${targetTab}-content`).classList.remove('hidden');
+
       // 更新页面标题
       updatePageTitle(targetTab);
     }
   }
 
-  // 移动端菜单交互
-  const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-  if (mobileMenuBtn) {
-    mobileMenuBtn.addEventListener('click', () => {
-      const sidebar = document.querySelector('.w-64');
-      sidebar.classList.toggle('hidden');
-      sidebar.classList.toggle('fixed');
-      sidebar.classList.toggle('z-50');
-      sidebar.classList.toggle('h-full');
+  /**
+   * 更新页面标题和描述
+   * @param {string} tabName - 选项卡名称
+   */
+  function updatePageTitle(tabName) {
+    const titles = {
+      'basic': { title: '系统设置', desc: '配置系统参数、用户权限和安全选项' },
+      'user': { title: '用户管理', desc: '管理系统用户账号、角色及状态' },
+      'role': { title: '角色权限', desc: '定义角色并分配相应操作权限' }
+    };
+
+    const titleElement = document.getElementById('page-title');
+    const descElement = document.getElementById('page-desc');
+
+    if (titleElement && titles[tabName]) {
+      titleElement.textContent = titles[tabName].title;
+    }
+    if (descElement && titles[tabName]) {
+      descElement.textContent = titles[tabName].desc;
+    }
+  }
+
+
+  // ================================================
+  // 6. 用户管理相关函数
+  // ================================================
+
+  /**
+   * 初始化用户管理功能
+   */
+  function initUserManagement() {
+    // 绑定添加用户按钮事件
+    bindAddUserButton();
+
+    // 绑定编辑用户按钮事件
+    bindEditUserButtons();
+
+    // 绑定删除用户按钮事件
+    bindDeleteUserButtons();
+
+    // 绑定用户状态切换按钮事件
+    bindToggleUserStatusButtons();
+  }
+
+  /**
+   * 绑定添加用户按钮事件
+   */
+  function bindAddUserButton() {
+    const addBtn = document.getElementById('add-user-btn');
+    if (!addBtn) return;
+
+    addBtn.addEventListener('click', () => {
+      document.getElementById('modal-title').textContent = '添加用户';
+      document.getElementById('modal-content').innerHTML = `
+        <form id="user-form">
+          <div class="mb-4">
+            <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名 <span class="text-danger">*</span></label>
+            <input type="text" id="username" name="username" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入用户名" required>
+          </div>
+          <div class="mb-4">
+            <label for="email" class="block text-sm font-medium text-gray-700 mb-1">邮箱 <span class="text-danger">*</span></label>
+            <input type="email" id="email" name="email" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入邮箱地址" required>
+          </div>
+          <div class="mb-4">
+            <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码 <span class="text-danger">*</span></label>
+            <input type="password" id="password" name="password" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入密码" required>
+            <p id="password-hint" class="text-xs text-gray-500 mt-1">密码需符合系统安全策略要求</p>
+            <p id="password-error" class="text-xs text-red-500 mt-1 hidden"></p>
+          </div>
+          <div class="mb-4">
+            <label for="role" class="block text-sm font-medium text-gray-700 mb-1">角色 <span class="text-danger">*</span></label>
+            <select id="role" name="role" class="w-full px-3 py-2 border border-gray-300 rounded-md" required>
+              <option value="">请选择角色</option>
+            </select>
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">用户状态</label>
+            <div class="flex items-center">
+              <label class="inline-flex items-center mr-4">
+                <input type="radio" name="status" value="active" checked class="text-primary h-4 w-4">
+                <span class="ml-2 text-sm text-gray-700">已激活</span>
+              </label>
+              <label class="inline-flex items-center">
+                <input type="radio" name="status" value="inactive" class="text-primary h-4 w-4">
+                <span class="ml-2 text-sm text-gray-700">已禁用</span>
+              </label>
+            </div>
+          </div>
+        </form>
+      `;
+
+      openCommonModal();
+      loadRolesIntoSelect();
+
+      // 绑定保存按钮事件
+      document.getElementById('save-modal-btn').onclick = handleAddUserSave;
     });
   }
 
+  /**
+   * 加载角色列表到下拉选择框
+   */
+  function loadRolesIntoSelect() {
+    const roleSelect = document.getElementById('role');
+    if (!roleSelect) return;
 
-
-    // 获取系统配置并填充表单
-    function fetchSystemConfigAndPopulateForm() {
-      fetch('/api/system-config')
-        .then(response => {
-          if (!response.ok) {
-            throw new Error('获取系统配置失败');
-          }
-          return response.json();
-        })
-        .then(config => {
-          // 填充系统名称
-          const systemNameInput = document.getElementById('system-name');
-          if (systemNameInput && config.system_name) {
-            systemNameInput.value = config.system_name;
-          }
-
-          // 填充会话超时时间
-          const sessionTimeoutSelect = document.getElementById('session-timeout');
-          if (sessionTimeoutSelect && config.session_timeout) {
-            sessionTimeoutSelect.value = config.session_timeout;
-          }
-
-          // 填充日志保留时间
-          const logRetentionSelect = document.getElementById('log-retention');
-          if (logRetentionSelect && config.log_retention_time) {
-            logRetentionSelect.value = config.log_retention_time;
-          }
-
-          // 填充主题模式（侧边栏颜色）
-          const themeModeSelect = document.getElementById('theme-mode');
-          if (themeModeSelect && config.color_mode) {
-            themeModeSelect.value = config.color_mode;
-          }
-
-          // 填充密码策略
-          const passwordPolicySelect = document.getElementById('password-policy');
-          if (passwordPolicySelect && config.password_strategy) {
-            passwordPolicySelect.value = config.password_strategy;
-          }
-        })
-        .catch(error => {
-          console.error('获取系统配置失败:', error);
-          // 可以添加错误提示
-        });
-    }
-
-
-
-
-
-
-  // 初始化各模块交互
-  initUserManagement();
-  initRolePermission();
-  initBasicSettings();
-
-  // 绑定确认按钮事件（确保只绑定一次）
-  const confirmBtn = document.getElementById('confirm-action-btn');
-  if (confirmBtn) {
-    // 先移除可能存在的事件监听器，避免重复绑定
-    const newConfirmBtn = confirmBtn.cloneNode(true);
-    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
-    newConfirmBtn.addEventListener('click', handleConfirmAction);
-  }
-    // 【新增】执行选项卡激活
-  initTabByUrl();
-});
-
-// 更新页面标题和描述
-function updatePageTitle(tabName) {
-  const titles = {
-    'basic': { title: '系统设置', desc: '配置系统参数、用户权限和安全选项' },
-    'user': { title: '用户管理', desc: '管理系统用户账号、角色及状态' },
-    'role': { title: '角色权限', desc: '定义角色并分配相应操作权限' }
-  };
-  document.getElementById('page-title').textContent = titles[tabName].title;
-  document.getElementById('page-desc').textContent = titles[tabName].desc;
-}
-
-// 基本设置页面交互
-function initBasicSettings() {
-
-  // 保存设置按钮
-  const saveBtn = document.getElementById('save-settings-btn');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', function() {
-
-      document.getElementById('confirm-title').textContent = '保存系统设置';
-      document.getElementById('confirm-message').textContent = '部分设置需要重启系统才能生效，是否继续？';
-      document.getElementById('confirm-action-btn').classList.remove('bg-danger');
-      document.getElementById('confirm-action-btn').classList.add('bg-primary');
-
-      // 清除之前的动作标识
-      document.getElementById('confirm-action-btn').removeAttribute('data-action');
-
-      // 保存当前配置数据到临时变量，供确认后使用
-      // 修复：使用ID选择器替代位置选择器，更可靠
-      const systemNameInput = document.getElementById('system-name');
-      const defaultSessionTimeout = document.getElementById('session-timeout');
-      const logRetentionSelect = document.getElementById('log-retention');
-      const enableThemeModeSelect = document.getElementById('theme-mode');
-      const passwordPolicySelect = document.getElementById('password-policy');
-
-      // 新增：添加空值检查，防止获取不到元素
-      if (!systemNameInput || !defaultSessionTimeout ||
-          !logRetentionSelect || !enableThemeModeSelect || !passwordPolicySelect) {
-        console.error('无法找到所有配置表单元素');
-        showSuccessToast('保存失败：表单元素未找到');
-        return;
-      }
-
-      // 存储配置数据到确认按钮的自定义属性
-      const configData = {
-        systemName: systemNameInput.value.trim(),
-        defaultSession: defaultSessionTimeout.value,
-        logRetentionSelect: logRetentionSelect.value,
-        enableThemeMode: enableThemeModeSelect.value,
-        passwordPolicy: passwordPolicySelect.value
-      };
-
-      document.getElementById('confirm-action-btn').setAttribute('data-config', JSON.stringify(configData));
-
-      openConfirmModal();
-    });
-  }
-
-  // 重置按钮
-  document.getElementById('reset-btn').addEventListener('click', () => {
-    if (confirm('确定要重置所有设置为默认值吗？')) {
-      showSuccessToast('所有设置已重置为默认值');
-    }
-  });
-}
-
-
-// 处理确认按钮点击事件
-function handleConfirmAction() {
-  const action = this.getAttribute('data-action');
-  let message = '';
-
-  if (action === 'delete-role') {
-    message = '角色删除成功';
-    closeConfirmModal();
-    showSuccessToast(message);
-  } else if (action === 'toggle-user-status') {
-    const status = this.getAttribute('data-status');
-    message = status === '0' ? '用户禁用成功' : '用户启用成功';
-    closeConfirmModal();
-    showSuccessToast(message);
-  } else {
-    // 处理保存系统配置的情况
-    try {
-      const configData = JSON.parse(this.getAttribute('data-config'));
-
-      // 验证配置数据
-      if (!configData.systemName) {
-        alert('请输入系统名称');
-        return;
-      }
-
-      let logRetentionDays;
-      try {
-        logRetentionDays = configData.logRetentionSelect.trim();
-        if (!logRetentionDays || isNaN(Number(logRetentionDays))) {
-          throw new Error('无效的日志保留时间');
-        }
-      } catch (error) {
-        alert('请选择有效的日志保留时间');
-        return;
-      }
-
-      // 构建完整的配置数据对象并发送请求
-      const sendData = {
-        system_name: configData.systemName,
-        default_session_timeout: configData.defaultSession,
-        log_retention_days: logRetentionDays,
-        color_mode: configData.enableThemeMode,
-        password_strategy: configData.passwordPolicy
-      };
-
-      // 发送POST请求到/api/system-config
-      fetch('/api/system-config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(sendData)
-      })
+    fetch('/roles', { headers: { 'Accept': 'application/json' } })
       .then(response => {
-        if (!response.ok) {
-          return response.json().then(err => {
-            throw new Error(err.error || '保存系统配置失败');
-          });
-        }
+        if (!response.ok) throw new Error('获取角色列表失败');
         return response.json();
       })
       .then(data => {
-        if (data.success) {
-          document.title = configData.systemName;
-          const appNameElement = document.getElementById('app-name');
-          if (appNameElement) {
-            appNameElement.textContent = configData.systemName;
-          }
-          message = '设置已成功保存';
-          setTimeout(() => {
-            window.location.reload();
-          }, 500); // 0.5秒后刷新，可根据需要调整延迟时间
+        if (data.success && data.roles) {
+          data.roles.forEach(role => {
+            const option = document.createElement('option');
+            option.value = role.id;
+            option.textContent = role.role_name;
+            roleSelect.appendChild(option);
+          });
         }
       })
       .catch(error => {
-        console.error('保存系统配置失败:', error);
-        message = `更新系统配置失败: ${error.message}`;
-      })
-      .finally(() => {
-        closeConfirmModal();
-        showSuccessToast(message);
+        console.error('获取角色列表失败:', error);
+        showErrorToast('获取角色列表失败，请重试');
       });
-    } catch (error) {
-      console.error('处理配置数据时出错:', error);
-      alert('处理配置数据时发生错误，请重试');
-      closeConfirmModal();
+  }
+
+  /**
+   * 处理添加用户保存事件
+   */
+  function handleAddUserSave() {
+    // 获取表单数据
+    const username = document.querySelector('input[name="username"]').value;
+    const email = document.querySelector('input[name="email"]').value;
+    const password = document.querySelector('input[name="password"]').value;
+    const role = document.querySelector('select[name="role"]').value;
+    const status = document.querySelector('input[name="status"]:checked').value;
+
+    // 前端验证
+    if (!username || !email || !password || !role) {
+      showErrorToast('请填写所有必填字段');
+      return;
     }
 
-    return;
-  }
-}
+    // 密码策略验证
+    if (!validatePassword(password)) {
+      return;
+    }
 
-// 用户管理页面交互
-function initUserManagement() {
-  // 添加用户按钮（保持不变，仅模态框内容添加name属性）
-  document.getElementById('add-user-btn').addEventListener('click', () => {
-    document.getElementById('modal-title').textContent = '添加用户';
-    // 【关键】给表单元素添加name属性，与后端request.form的key对应
-    document.getElementById('modal-content').innerHTML = `
-      <form id="user-form">
-        <div class="mb-4">
-          <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名 <span class="text-danger">*</span></label>
-          <!-- name="username" 必须与后端request.form.get('username')一致 -->
-          <input type="text" id="username" name="username" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入用户名" required>
-        </div>
-        <div class="mb-4">
-          <label for="email" class="block text-sm font-medium text-gray-700 mb-1">邮箱 <span class="text-danger">*</span></label>
-          <input type="email" id="email" name="email" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入邮箱地址" required>
-        </div>
-        <div class="mb-4">
-          <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码 <span class="text-danger">*</span></label>
-          <input type="password" id="password" name="password" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入密码（至少8位）" required>
-          <p class="text-xs text-gray-500 mt-1">密码需符合系统安全策略要求</p>
-        </div>
-        <div class="mb-4">
-          <label for="role" class="block text-sm font-medium text-gray-700 mb-1">角色 <span class="text-danger">*</span></label>
-          <!-- name="role" 与后端request.form.get('role')一致，value是role_id -->
-          <select id="role" name="role" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" required>
-            <option value="">请选择角色</option>
-            <!-- 角色选项将通过JavaScript动态加载 -->
-          </select>
-        </div>
-        <!-- 【新增】状态选择（后端默认active，前端可选） -->
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-1">用户状态</label>
-          <div class="flex items-center">
-            <label class="inline-flex items-center mr-4">
-              <input type="radio" name="status" value="active" checked class="text-primary focus:ring-primary h-4 w-4">
-              <span class="ml-2 text-sm text-gray-700">已激活</span>
-            </label>
-            <label class="inline-flex items-center">
-              <input type="radio" name="status" value="inactive" class="text-primary focus:ring-primary h-4 w-4">
-              <span class="ml-2 text-sm text-gray-700">已禁用</span>
-            </label>
-          </div>
-        </div>
-      </form>
-    `;
-    openCommonModal();
+    // 构建请求数据
+    const userData = { username, email, password, role, status };
 
-    // 【新增】加载角色列表
-    fetch('/roles', {
+    // 发送请求
+    fetch('/users', {
+      method: 'POST',
       headers: {
-        'Accept': 'application/json'  // 添加这个请求头告诉后端需要JSON格式
-      }
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrf_token')
+      },
+      body: JSON.stringify(userData)
     })
     .then(response => {
-      if (!response.ok) {
-        // 改进错误处理，先尝试获取错误信息
-        return response.text().then(text => {
-          throw new Error(`获取角色列表失败: ${text.substring(0, 100)}`);
-        });
-      }
+      if (!response.ok) return response.json().then(err => { throw new Error(err.message); });
       return response.json();
     })
     .then(data => {
-      const roleSelect = document.getElementById('role');
-      if (data.success && data.roles) {
-        data.roles.forEach(role => {
-          const option = document.createElement('option');
-          option.value = role.id;
-          option.textContent = role.role_name;
-          roleSelect.appendChild(option);
-        });
-      }
+      closeCommonModal();
+      showSuccessToast('用户添加成功');
+      window.location.reload();
     })
     .catch(error => {
-      console.error('获取角色列表失败:', error);
-      showSuccessToast('获取角色列表失败，请刷新页面重试');
+      showErrorToast('添加失败: ' + error.message);
+      console.error('添加用户错误:', error);
     });
+  }
 
-    // 【关键】重写「添加用户」的保存按钮事件（发送POST请求）
-    document.getElementById('save-modal-btn').onclick = function() {
-      // 1. 获取表单数据（通过form元素的name属性）
-      const form = document.getElementById('user-form');
-      const formData = new FormData(form);  // 自动收集所有带name的表单元素
-      console.log(formData)
-
-      // 【新增】前端表单验证（角色必选）
-      const roleSelect = document.querySelector('select[name="role"]');
-      if (!roleSelect.value) {
-        showErrorToast('角色是必选项，请选择角色');
-        return;
-      }
-
-      // 2. 发送POST请求到 /users（使用JSON格式提交）
-      // 构建用户数据对象
-      const userData = {
-        username: document.querySelector('input[name="username"]').value,
-        email: document.querySelector('input[name="email"]').value,
-        password: document.querySelector('input[name="password"]').value,
-        role: roleSelect.value,
-        status: document.querySelector('input[name="status"]:checked').value
-      };
-
-      fetch('/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',  // 添加JSON请求头
-          'X-Requested-With': 'XMLHttpRequest'  // 可选：标识AJAX请求
-        },
-        body: JSON.stringify(userData)  // 将数据转换为JSON字符串
-      })
-      .then(response => {
-        // 处理后端返回的JSON响应
-        if (!response.ok) {
-          return response.json().then(err => { throw new Error(err.message); });
-        }
-        return response.json();
-      })
-      .then(data => {
-        // 3. 成功处理（关闭模态框+提示+刷新页面获取最新列表）
-        closeCommonModal();
-        showSuccessToast(data.message || '用户添加成功！');
-        window.location.reload();  // 刷新页面，实时显示新添加的用户
-      })
-      .catch(error => {
-        // 4. 失败处理（提示错误信息）
-        showErrorToast('添加失败：' + error.message);  // 改为错误提示
-        console.error('添加用户错误：', error);
-      });
-    };
-  });
-
-
-  // 编辑用户按钮
-  document.querySelectorAll('.edit-user').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const userId = this.getAttribute('data-id');
-      document.getElementById('modal-title').textContent = '编辑用户'; // 修正标题
-
-      // 加载用户真实数据
-      fetch(`/user_edit?id=${userId}`)
-        .then(response => {
-          // 首先检查HTTP响应状态
-          if (!response.ok) {
-            throw new Error(`HTTP错误: ${response.status}`);
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data.success) {
-            const user = data.user;
-            const roles = data.roles;
-            const userRoles = data.user_roles;
-            const isAdmin = userRoles.includes(1); // 假设1是管理员角色ID
-
-            document.getElementById('modal-content').innerHTML = `
-              <form id="user-form">
-                <input type="hidden" id="user-id" value="${userId}">
-                <div class="mb-4">
-                  <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名 <span class="text-danger">*</span></label>
-                  <input type="text" id="username" name="username" class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${user.username}" required>
-                </div>
-                <div class="mb-4">
-                  <label for="email" class="block text-sm font-medium text-gray-700 mb-1">邮箱 <span class="text-danger">*</span></label>
-                  <input type="email" id="email" name="email" class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${user.email}" required>
-                </div>
-                <div class="mb-4">
-                  <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码 (不修改请留空)</label>
-                  <input type="password" id="password" name="password" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入新密码">
-                </div>
-                <div class="mb-4">
-                  <label for="role" class="block text-sm font-medium text-gray-700 mb-1">角色 <span class="text-danger">*</span></label>
-                  <select id="role" name="role" class="w-full px-3 py-2 border border-gray-300 rounded-md" required>
-                    ${roles.map(role => `
-                      <option value="${role.id}" ${userRoles.includes(role.id) ? 'selected' : ''}>
-                        ${role.role_name}
-                      </option>
-                    `).join('')}
-                  </select>
-                </div>
-                <div class="mb-4">
-                  <label class="block text-sm font-medium text-gray-700 mb-1">状态</label>
-                  <div class="flex items-center">
-                    <label class="inline-flex items-center mr-4">
-                      <input type="radio" name="status" value="active"
-                        ${user.status === 'active' ? 'checked' : ''}
-                        class="text-primary h-4 w-4"
-                        ${isAdmin && user.status === 'active' ? 'disabled' : ''}>
-                      <span class="ml-2 text-sm text-gray-700">已激活</span>
-                    </label>
-                    <label class="inline-flex items-center">
-                      <input type="radio" name="status" value="inactive"
-                        ${user.status === 'inactive' ? 'checked' : ''}
-                        class="text-primary h-4 w-4"
-                        ${isAdmin ? 'disabled' : ''}>
-                      <span class="ml-2 text-sm text-gray-700"
-                        ${isAdmin ? 'text-gray-400' : ''}>已禁用</span>
-                    </label>
-                  </div>
-                </div>
-              </form>
-            `;
-            openCommonModal();
-
-            // 保存按钮事件
-            document.getElementById('save-modal-btn').onclick = function() {
-              const formData = {
-                id: userId,
-                username: document.getElementById('username').value,
-                email: document.getElementById('email').value,
-                status: document.querySelector('input[name="status"]:checked').value,
-                role: document.getElementById('role').value
+  /**
+   * 绑定编辑用户按钮事件
+   */
+  function bindEditUserButtons() {
+    document.querySelectorAll('.edit-user').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const userId = this.getAttribute('data-id');
+        fetch(`/user_edit?id=${userId}`)
+          .then(response => {
+            if (!response.ok) throw new Error('获取用户数据失败');
+            return response.json();
+          })
+          .then(data => {
+            if (data.success) {
+              renderEditUserForm(data.user, data.roles, data.user_roles);
+              document.getElementById('save-modal-btn').onclick = () => {
+                handleEditUserSave(userId);
               };
-
-              // 仅当密码不为空时添加password字段
-              const password = document.getElementById('password').value;
-              if (password) {
-                formData.password = password;
-              }
-
-              fetch('/user_edit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
-              })
-              .then(response => response.json())
-              .then(data => {
-                if (data.success) {
-                  closeCommonModal();
-                  showSuccessToast('用户更新成功');
-                  window.location.reload();
-                } else {
-                  showSuccessToast('更新失败: ' + data.message);
-                }
-              })
-              .catch(error => {
-                console.error('保存用户失败:', error);
-                showSuccessToast('保存用户失败，请重试');
-              });
-            };
-          } else {
-            // 处理后端返回的失败情况
-            showSuccessToast('加载用户失败: ' + (data.message || '未知错误'));
-            console.error('加载用户数据失败:', data.message);
-          }
-        })
-        .catch(error => {
-          // 捕获所有网络错误和JSON解析错误
-          showSuccessToast('加载用户信息失败，请重试');
-          console.error('编辑用户请求失败:', error);
-        });
+            } else {
+              showErrorToast('加载用户失败: ' + data.message);
+            }
+          })
+          .catch(error => {
+            console.error('编辑用户请求失败:', error);
+            showErrorToast('加载用户信息失败');
+          });
+      });
     });
-  });
+  }
 
-  // 切换用户状态（启用/禁用）
-  document.querySelectorAll('.toggle-status').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const userId = this.getAttribute('data-id');
-      const status = this.getAttribute('data-status');
-      const action = status === '0' ? '禁用' : '启用';
-
-      document.getElementById('confirm-title').textContent = `确认${action}用户`;
-      document.getElementById('confirm-message').textContent = `确定要${action}此用户吗？${action}后用户将${status === 'active' ? '无法' : '可以'}登录系统。`;
-      document.getElementById('confirm-action-btn').classList.remove('bg-primary');
-      document.getElementById('confirm-action-btn').classList.add('bg-danger');
-
-      // 存储当前操作信息
-      document.getElementById('confirm-action-btn').setAttribute('data-action', 'toggle-user-status');
-      document.getElementById('confirm-action-btn').setAttribute('data-id', userId);
-      document.getElementById('confirm-action-btn').setAttribute('data-status', status);
-      document.getElementById('confirm-action-btn').removeAttribute('data-config');
-
-      openConfirmModal();
-    });
-  });
-}
-
-// 角色权限页面交互
-function initRolePermission() {
-
-  // 添加角色按钮
-  document.getElementById('add-role-btn').addEventListener('click', () => {
-    document.getElementById('modal-title').textContent = '添加角色';
+  /**
+   * 渲染编辑用户表单
+   * @param {Object} user - 用户数据
+   * @param {Array} roles - 角色列表
+   * @param {Array} userRoles - 用户拥有的角色ID
+   */
+  function renderEditUserForm(user, roles, userRoles) {
+    const isAdmin = userRoles.includes(1);
+    document.getElementById('modal-title').textContent = '编辑用户';
     document.getElementById('modal-content').innerHTML = `
-      <form id="role-form">
+      <form id="user-form">
+        <input type="hidden" id="user-id" value="${user.id}">
         <div class="mb-4">
-          <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
-          <input type="text" id="role-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="请输入角色名称" required>
+          <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名 <span class="text-danger">*</span></label>
+          <input type="text" id="username" name="username" class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${user.username}" required>
         </div>
         <div class="mb-4">
-          <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
-          <textarea id="role-desc" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" rows="3" placeholder="请输入角色描述"></textarea>
+          <label for="email" class="block text-sm font-medium text-gray-700 mb-1">邮箱 <span class="text-danger">*</span></label>
+          <input type="email" id="email" name="email" class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${user.email}" required>
+        </div>
+        <!-- 【修改】密码输入框添加提示和错误信息元素 -->
+        <div class="mb-4">
+          <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码 (不修改请留空)</label>
+          <input type="password" id="password" name="password" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入新密码">
+          <!-- 添加密码提示和错误信息 -->
+          <p id="password-hint" class="text-xs text-gray-500 mt-1">密码需符合系统安全策略要求</p>
+          <p id="password-error" class="text-xs text-red-500 mt-1 hidden"></p>
+        </div>
+        <div class="mb-4">
+          <label for="role" class="block text-sm font-medium text-gray-700 mb-1">角色 <span class="text-danger">*</span></label>
+          <select id="role" name="role" class="w-full px-3 py-2 border border-gray-300 rounded-md" required>
+            ${roles.map(role => `
+              <option value="${role.id}" ${userRoles.includes(role.id) ? 'selected' : ''}>
+                ${role.role_name}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1">状态</label>
+          <div class="flex items-center">
+            <label class="inline-flex items-center mr-4">
+              <input type="radio" name="status" value="active"
+                ${user.status === 'active' ? 'checked' : ''}
+                class="text-primary h-4 w-4"
+                ${isAdmin && user.status === 'active' ? 'disabled' : ''}>
+              <span class="ml-2 text-sm text-gray-700">已激活</span>
+            </label>
+            <label class="inline-flex items-center">
+              <input type="radio" name="status" value="inactive"
+                ${user.status === 'inactive' ? 'checked' : ''}
+                class="text-primary h-4 w-4"
+                ${isAdmin ? 'disabled' : ''}>
+              <span class="ml-2 text-sm text-gray-700"
+                ${isAdmin ? 'text-gray-400' : ''}>已禁用</span>
+            </label>
+          </div>
         </div>
       </form>
     `;
     openCommonModal();
-  });
+    // 【新增】更新密码提示
+    updatePasswordHint();
+  }
 
-  // 编辑角色按钮
-  document.querySelectorAll('.edit-role').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const roleId = this.getAttribute('data-id');
-      const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
-      const roleDescs = {
-        '1': '拥有系统所有操作权限',
-        '2': '可执行常规操作，无用户管理权限',
-        '3': '仅查看权限，无修改/执行权限'
-      };
+  /**
+   * 处理编辑用户保存事件
+   * @param {number} userId - 用户ID
+   */
+  function handleEditUserSave(userId) {
+    const formData = {
+      id: userId,
+      username: document.getElementById('username').value,
+      email: document.getElementById('email').value,
+      role: document.getElementById('role').value,
+      status: document.querySelector('input[name="status"]:checked').value
+    };
 
-      document.getElementById('modal-title').textContent = '编辑角色';
+    // 仅当密码不为空时添加password字段并验证
+    const password = document.getElementById('password').value;
+    if (password) {
+      // 密码验证
+      if (!validatePassword(password)) {
+        return; // 密码验证失败，不提交表单
+      }
+      formData.password = password;
+    }
+
+    fetch('/user_edit', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrf_token')
+      },
+      body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        closeCommonModal();
+        showSuccessToast('用户更新成功');
+        window.location.reload();
+      } else {
+        showErrorToast('更新失败: ' + data.message);
+      }
+    })
+    .catch(error => {
+      console.error('保存用户失败:', error);
+      showErrorToast('保存用户失败，请重试');
+    });
+  }
+
+  /**
+   * 绑定删除用户按钮事件
+   */
+  function bindDeleteUserButtons() {
+    document.querySelectorAll('.delete-user').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const userId = this.getAttribute('data-id');
+        const userName = this.closest('tr').querySelector('td:nth-child(2)').textContent;
+
+        if (!confirm(`确定要删除用户"${userName}"吗？此操作不可恢复！`)) {
+          return;
+        }
+
+        fetch(`/user_del?id=${userId}`, {
+          method: 'DELETE',
+          headers: {
+            'X-CSRFToken': getCookie('csrf_token')
+          }
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            showSuccessToast('用户删除成功');
+            window.location.reload();
+          } else {
+            showErrorToast('删除失败: ' + data.message);
+          }
+        })
+        .catch(error => {
+          console.error('删除用户失败:', error);
+          showErrorToast('删除用户失败，请重试');
+        });
+      });
+    });
+  }
+
+  /**
+   * 绑定用户状态切换按钮事件
+   */
+  function bindToggleUserStatusButtons() {
+    document.querySelectorAll('.toggle-status').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const userId = this.getAttribute('data-id');
+        const status = this.getAttribute('data-status');
+        const action = status === '0' ? '禁用' : '启用';
+
+        document.getElementById('confirm-title').textContent = `确认${action}用户`;
+        document.getElementById('confirm-message').textContent =
+          `确定要${action}此用户吗？${action}后用户将${status === 'active' ? '无法' : '可以'}登录系统。`;
+
+        document.getElementById('confirm-action-btn').setAttribute('data-action', 'toggle-user-status');
+        document.getElementById('confirm-action-btn').setAttribute('data-id', userId);
+        document.getElementById('confirm-action-btn').setAttribute('data-status', status);
+
+        openConfirmModal();
+      });
+    });
+  }
+
+
+  // ================================================
+  // 7. 角色权限相关函数
+  // ================================================
+
+  /**
+   * 初始化角色权限管理功能
+   */
+  function initRolePermission() {
+    // 绑定添加角色按钮
+    document.getElementById('add-role-btn').addEventListener('click', () => {
+      document.getElementById('modal-title').textContent = '添加角色';
       document.getElementById('modal-content').innerHTML = `
         <form id="role-form">
-          <input type="hidden" id="role-id" value="${roleId}">
           <div class="mb-4">
             <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
-            <input type="text" id="role-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" value="${roleNames[roleId]}" required>
+            <input type="text" id="role-name" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="请输入角色名称" required>
           </div>
           <div class="mb-4">
             <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
-            <textarea id="role-desc" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" rows="3">${roleDescs[roleId]}</textarea>
+            <textarea id="role-desc" class="w-full px-3 py-2 border border-gray-300 rounded-md" rows="3" placeholder="请输入角色描述"></textarea>
           </div>
         </form>
       `;
       openCommonModal();
     });
-  });
 
-  // 分配权限按钮
-  document.querySelectorAll('.assign-permission').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const roleId = this.getAttribute('data-id');
-      const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
-      document.getElementById('permission-modal-title').textContent = `分配权限 - ${roleNames[roleId]}`;
-      openPermissionModal();
+    // 绑定编辑角色按钮
+    document.querySelectorAll('.edit-role').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const roleId = this.getAttribute('data-id');
+        const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
+        const roleDescs = {
+          '1': '拥有系统所有操作权限',
+          '2': '可执行常规操作，无用户管理权限',
+          '3': '仅查看权限，无修改/执行权限'
+        };
+
+        document.getElementById('modal-title').textContent = '编辑角色';
+        document.getElementById('modal-content').innerHTML = `
+          <form id="role-form">
+            <input type="hidden" id="role-id" value="${roleId}">
+            <div class="mb-4">
+              <label for="role-name" class="block text-sm font-medium text-gray-700 mb-1">角色名称 <span class="text-danger">*</span></label>
+              <input type="text" id="role-name" class="w-full px-3 py-2 border border-gray-300 rounded-md" value="${roleNames[roleId]}" required>
+            </div>
+            <div class="mb-4">
+              <label for="role-desc" class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
+              <textarea id="role-desc" class="w-full px-3 py-2 border border-gray-300 rounded-md" rows="3">${roleDescs[roleId]}</textarea>
+            </div>
+          </form>
+        `;
+        openCommonModal();
+      });
     });
-  });
 
-  // 删除角色按钮
-  document.querySelectorAll('.delete-role').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const roleId = this.getAttribute('data-id');
-      document.getElementById('confirm-title').textContent = '确认删除角色';
-      document.getElementById('confirm-message').textContent = '确定要删除此角色吗？删除后关联的用户将失去该角色权限。';
-      document.getElementById('confirm-action-btn').classList.remove('bg-primary');
-      document.getElementById('confirm-action-btn').classList.add('bg-danger');
+    // 绑定分配权限按钮
+    document.querySelectorAll('.assign-permission').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const roleId = this.getAttribute('data-id');
+        const roleNames = { '1': '超级管理员', '2': '操作员', '3': '查看者' };
+        document.getElementById('permission-modal-title').textContent = `分配权限 - ${roleNames[roleId]}`;
+        openPermissionModal();
+      });
+    });
 
-      // 存储当前操作信息
-      document.getElementById('confirm-action-btn').setAttribute('data-action', 'delete-role');
-      document.getElementById('confirm-action-btn').setAttribute('data-id', roleId);
-      document.getElementById('confirm-action-btn').removeAttribute('data-config');
+    // 绑定删除角色按钮
+    document.querySelectorAll('.delete-role').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const roleId = this.getAttribute('data-id');
+        document.getElementById('confirm-title').textContent = '确认删除角色';
+        document.getElementById('confirm-message').textContent = '确定要删除此角色吗？删除后关联的用户将失去该角色权限。';
+        document.getElementById('confirm-action-btn').setAttribute('data-action', 'delete-role');
+        document.getElementById('confirm-action-btn').setAttribute('data-id', roleId);
+        openConfirmModal();
+      });
+    });
+  }
 
+
+  // ================================================
+  // 8. 基本设置相关函数
+  // ================================================
+
+  /**
+   * 初始化基本设置功能
+   */
+  function initBasicSettings() {
+    // 保存设置按钮事件
+    document.getElementById('save-settings-btn').addEventListener('click', () => {
+      const configData = {
+        systemName: document.getElementById('system-name').value.trim(),
+        defaultSession: document.getElementById('session-timeout').value,
+        logRetentionSelect: document.getElementById('log-retention').value,
+        enableThemeMode: document.getElementById('theme-mode').value,
+        passwordPolicy: document.getElementById('password-policy').value
+      };
+
+      document.getElementById('confirm-title').textContent = '保存系统设置';
+      document.getElementById('confirm-message').textContent = '部分设置需要重启系统才能生效，是否继续？';
+      document.getElementById('confirm-action-btn').setAttribute('data-config', JSON.stringify(configData));
       openConfirmModal();
     });
-  });
-}
 
-// 保存用户/角色按钮事件
-document.getElementById('save-modal-btn').addEventListener('click', () => {
-  closeCommonModal();
-  const isEditUser = document.getElementById('user-id');
-  const isEditRole = document.getElementById('role-id');
-
-  if (isEditUser) {
-    showSuccessToast('用户编辑成功');
-  } else if (isEditRole) {
-    showSuccessToast('角色编辑成功');
-  } else if (document.getElementById('username')) {
-    showSuccessToast('用户添加成功');
-  } else {
-    showSuccessToast('角色添加成功');
+    // 重置按钮事件
+    document.getElementById('reset-btn').addEventListener('click', () => {
+      if (confirm('确定要重置所有设置为默认值吗？')) {
+        showSuccessToast('所有设置已重置为默认值');
+      }
+    });
   }
-});
 
-// 保存权限分配
-document.getElementById('save-permission-btn').addEventListener('click', () => {
-  closePermissionModal();
-  showSuccessToast('权限分配成功');
-});
 
-// 模态框操作函数
-function openCommonModal() {
-  const modal = document.getElementById('common-modal');
-  modal.classList.remove('hidden');
-  // 触发重排后再添加动画类
-  setTimeout(() => {
-    modal.querySelector('div').classList.add('scale-100');
-    modal.querySelector('div').classList.remove('scale-95');
-  }, 10);
-}
+  // ================================================
+  // 9. 模态框与提示框相关函数
+  // ================================================
 
-function closeCommonModal() {
-  const modal = document.getElementById('common-modal');
-  modal.querySelector('div').classList.remove('scale-100');
-  modal.querySelector('div').classList.add('scale-95');
-  setTimeout(() => {
-    modal.classList.add('hidden');
-  }, 200);
-}
+  /**
+   * 绑定确认模态框事件
+   */
+  function bindConfirmModalEvents() {
+    document.getElementById('confirm-action-btn').addEventListener('click', function() {
+      const action = this.getAttribute('data-action');
+      const configData = this.getAttribute('data-config');
 
-function openPermissionModal() {
-  const modal = document.getElementById('permission-modal');
-  modal.classList.remove('hidden');
-  setTimeout(() => {
-    modal.querySelector('div').classList.add('scale-100');
-    modal.querySelector('div').classList.remove('scale-95');
-  }, 10);
-}
+      if (configData) {
+        // 保存系统配置
+        saveSystemConfig(JSON.parse(configData));
+      } else if (action === 'delete-role') {
+        // 删除角色
+        closeConfirmModal();
+        showSuccessToast('角色删除成功');
+      } else if (action === 'toggle-user-status') {
+        // 切换用户状态
+        const userId = this.getAttribute('data-id');
+        const status = this.getAttribute('data-status');
+        const newStatus = status === 'active' ? 'inactive' : 'active';
 
-function closePermissionModal() {
-  const modal = document.getElementById('permission-modal');
-  modal.querySelector('div').classList.remove('scale-100');
-  modal.querySelector('div').classList.add('scale-95');
-  setTimeout(() => {
-    modal.classList.add('hidden');
-  }, 200);
-}
+        fetch('/toggle_user_status', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrf_token')
+          },
+          body: JSON.stringify({ id: userId, status: newStatus })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            closeConfirmModal();
+            showSuccessToast(`用户已${newStatus === 'active' ? '启用' : '禁用'}`);
+            window.location.reload();
+          } else {
+            showErrorToast('操作失败: ' + data.message);
+          }
+        });
+      }
+    });
+  }
 
-function openConfirmModal() {
-  const modal = document.getElementById('confirm-modal');
-  modal.classList.remove('hidden');
-  setTimeout(() => {
-    modal.querySelector('div').classList.add('scale-100');
-    modal.querySelector('div').classList.remove('scale-95');
-  }, 10);
-}
+  /**
+   * 保存系统配置
+   * @param {Object} configData - 配置数据对象
+   */
+  function saveSystemConfig(configData) {
+    fetch('/api/system-config', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrf_token')
+      },
+      body: JSON.stringify({
+        system_name: configData.systemName,
+        default_session_timeout: configData.defaultSession,
+        log_retention_days: configData.logRetentionSelect,
+        color_mode: configData.enableThemeMode,
+        password_strategy: configData.passwordPolicy
+      })
+    })
+    .then(response => {
+      if (!response.ok) return response.json().then(err => { throw new Error(err.error); });
+      return response.json();
+    })
+    .then(data => {
+      closeConfirmModal();
+      showSuccessToast('系统配置保存成功');
+      window.location.reload();
+    })
+    .catch(error => {
+      console.error('保存配置失败:', error);
+      showErrorToast('保存失败: ' + error.message);
+    });
+  }
 
-function closeConfirmModal() {
-  const modal = document.getElementById('confirm-modal');
-  modal.querySelector('div').classList.remove('scale-100');
-  modal.querySelector('div').classList.add('scale-95');
-  setTimeout(() => {
-    modal.classList.add('hidden');
-  }, 200);
-}
+  /**
+   * 打开通用模态框
+   */
+  function openCommonModal() {
+    const modal = document.getElementById('common-modal');
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      modal.querySelector('div').classList.add('scale-100');
+      modal.querySelector('div').classList.remove('scale-95');
+    }, 10);
+  }
 
-// 显示成功提示
-function showSuccessToast(message) {
-  const toast = document.getElementById('success-toast');
-  toast.querySelector('span').textContent = message;
-  toast.classList.remove('translate-x-full', 'opacity-0');
-  setTimeout(() => {
-    toast.classList.add('translate-x-full', 'opacity-0');
-  }, 3000);
-}
+  /**
+   * 关闭通用模态框
+   */
+  function closeCommonModal() {
+    const modal = document.getElementById('common-modal');
+    modal.querySelector('div').classList.remove('scale-100');
+    modal.querySelector('div').classList.add('scale-95');
+    setTimeout(() => {
+      modal.classList.add('hidden');
+    }, 200);
+  }
 
-// 【新增】显示错误提示
-function showErrorToast(message) {
-  const toast = document.getElementById('error-toast');
-  toast.querySelector('span').textContent = message;
-  toast.classList.remove('translate-x-full', 'opacity-0');
-  setTimeout(() => {
-    toast.classList.add('translate-x-full', 'opacity-0');
-  }, 3000);
-}
+  /**
+   * 打开权限分配模态框
+   */
+  function openPermissionModal() {
+    const modal = document.getElementById('permission-modal');
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      modal.querySelector('div').classList.add('scale-100');
+      modal.querySelector('div').classList.remove('scale-95');
+    }, 10);
+  }
 
-// 关闭模态框按钮事件
-document.getElementById('close-modal').addEventListener('click', closeCommonModal);
-document.getElementById('cancel-modal-btn').addEventListener('click', closeCommonModal);
-document.getElementById('close-permission-modal').addEventListener('click', closePermissionModal);
-document.getElementById('cancel-permission-btn').addEventListener('click', closePermissionModal);
-document.getElementById('cancel-confirm-btn').addEventListener('click', closeConfirmModal);
+  /**
+   * 关闭权限分配模态框
+   */
+  function closePermissionModal() {
+    const modal = document.getElementById('permission-modal');
+    modal.querySelector('div').classList.remove('scale-100');
+    modal.querySelector('div').classList.add('scale-95');
+    setTimeout(() => {
+      modal.classList.add('hidden');
+    }, 200);
+  }
 
-// 点击模态框外部关闭
-document.getElementById('common-modal').addEventListener('click', (e) => {
-  if (e.target === document.getElementById('common-modal')) closeCommonModal();
-});
-document.getElementById('permission-modal').addEventListener('click', (e) => {
-  if (e.target === document.getElementById('permission-modal')) closePermissionModal();
-});
-document.getElementById('confirm-modal').addEventListener('click', (e) => {
-  if (e.target === document.getElementById('confirm-modal')) closeConfirmModal();
-});
-  </script>
+  /**
+   * 打开确认模态框
+   */
+  function openConfirmModal() {
+    const modal = document.getElementById('confirm-modal');
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      modal.querySelector('div').classList.add('scale-100');
+      modal.querySelector('div').classList.remove('scale-95');
+    }, 10);
+  }
+
+  /**
+   * 关闭确认模态框
+   */
+  function closeConfirmModal() {
+    const modal = document.getElementById('confirm-modal');
+    modal.querySelector('div').classList.remove('scale-100');
+    modal.querySelector('div').classList.add('scale-95');
+    setTimeout(() => {
+      modal.classList.add('hidden');
+    }, 200);
+  }
+
+  /**
+   * 显示成功提示
+   * @param {string} message - 提示消息
+   */
+  function showSuccessToast(message) {
+    const toast = document.getElementById('success-toast');
+    toast.querySelector('span').textContent = message;
+    toast.classList.remove('translate-x-full', 'opacity-0');
+    setTimeout(() => {
+      toast.classList.add('translate-x-full', 'opacity-0');
+    }, 3000);
+  }
+
+  /**
+   * 显示错误提示
+   * @param {string} message - 提示消息
+   */
+  function showErrorToast(message) {
+    const toast = document.getElementById('error-toast');
+    toast.querySelector('span').textContent = message;
+    toast.classList.remove('translate-x-full', 'opacity-0');
+    setTimeout(() => {
+      toast.classList.add('translate-x-full', 'opacity-0');
+    }, 3000);
+  }
+
+
+  // ================================================
+  // 10. 关闭按钮事件绑定
+  // ================================================
+
+  // 关闭模态框按钮
+  document.getElementById('close-modal').addEventListener('click', closeCommonModal);
+  document.getElementById('cancel-modal-btn').addEventListener('click', closeCommonModal);
+  document.getElementById('close-permission-modal').addEventListener('click', closePermissionModal);
+  document.getElementById('cancel-permission-btn').addEventListener('click', closePermissionModal);
+  document.getElementById('cancel-confirm-btn').addEventListener('click', closeConfirmModal);
+
+  // 点击模态框外部关闭
+  document.getElementById('common-modal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('common-modal')) closeCommonModal();
+  });
+  document.getElementById('permission-modal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('permission-modal')) closePermissionModal();
+  });
+  document.getElementById('confirm-modal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('confirm-modal')) closeConfirmModal();
+  });
+</script>
 {% endblock script %}
