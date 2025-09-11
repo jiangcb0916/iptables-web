@@ -1562,11 +1562,21 @@ def roles():
                 ''', (role['id'],))
                 permissions = [row['code'] for row in cursor.fetchall()]
 
+                # 新增：查询角色关联的用户数量
+                cursor.execute('''
+                SELECT COUNT(DISTINCT ur.user_id) as user_count
+                FROM user_roles ur
+                LEFT JOIN user u ON ur.user_id = u.id
+                WHERE ur.role_id = ?
+                ''', (role['id'],))
+                user_count = cursor.fetchone()['user_count'] or 0
+
                 role_list.append({
                     'id': role['id'],
                     'role_name': role['role_name'],
                     'role_description': role['role_description'],
                     'permissions': permissions,  # 返回角色拥有的权限列表
+                    'user_count': user_count,  # 新增：角色关联用户数量
                     'created_at': role['created_at'],
                     'updated_at': role['updated_at']
                 })

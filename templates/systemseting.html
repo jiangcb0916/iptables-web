@@ -376,7 +376,7 @@
                           <div class="text-sm font-medium text-gray-900">{{ role.role_name }}</div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ role.role_description }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">0</td> <!-- 这里假设用户数为0，实际应从后端获取 -->
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ role.user_count }}</td> <!-- 这里假设用户数为0，实际应从后端获取 -->
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ role.created_at }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <button class="text-primary hover:text-primary/80 mr-3 edit-role" data-id="{{ role.id }}">编辑</button>
@@ -1388,18 +1388,20 @@
             '用户管理': [],
             '防火墙操作': [],
             '审计日志': [],
-            '主机操作': []
+            '主机操作': [],
+            '角色管理': []
         };
 
         // 将权限分配到对应组
         permissions.forEach(perm => {
             let groupName = '其他权限';
 
-            if (perm.code.startsWith('system_')) groupName = '系统设置';
+            if (perm.code.startsWith('sys_')) groupName = '系统设置';
             else if (perm.code.startsWith('user_')) groupName = '用户管理';
-            else if (perm.code.startsWith('firewall_')) groupName = '防火墙操作';
-            else if (perm.code.startsWith('audit_')) groupName = '审计日志';
-            else if (perm.code.startsWith('host_')) groupName = '主机操作';
+            else if (perm.code.startsWith('iptab_')) groupName = '防火墙操作';
+            else if (perm.code.startsWith('log_')) groupName = '审计日志';
+            else if (perm.code.startsWith('hosts_')) groupName = '主机操作';
+            else if (perm.code.startsWith('role_')) groupName = '角色管理';
 
             if (!permissionGroups[groupName]) permissionGroups[groupName] = [];
             permissionGroups[groupName].push(perm);
