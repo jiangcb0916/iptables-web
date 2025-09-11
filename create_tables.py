@@ -265,32 +265,28 @@ def init_default_permissions(conn):
         print(f"初始化权限数据出错: {e}")
 
 
-def main():
-    database = "firewall_management.db"  # 数据库文件名
-
-    # 创建数据库连接
-    conn = create_connection(database)
-
-    if conn is not None:
-        # 创建核心业务表（保持不变）
-        create_hosts_table(conn)
-        create_template_table(conn)
-        create_rule_table(conn)
-        create_system_config_table(conn)
-
-        # 创建RBAC相关表（新增和修改）
-        create_user_table(conn)  # 修改：移除role_id字段
-        create_role_table(conn)  # 修改：移除硬编码权限字段
-        create_permissions_table(conn)  # 新增：权限表
-        create_role_permissions_table(conn)  # 新增：角色-权限关联表
-        create_user_roles_table(conn)  # 新增：用户-角色关联表
-
-        # 初始化默认权限数据
-        init_default_permissions(conn)
-
-        conn.close()
-    else:
-        print("无法创建数据库连接")
+# 【新增】创建操作日志表
+def create_operation_logs_table(conn):
+    """创建操作日志表"""
+    try:
+        sql_create_operation_logs_table = """
+        CREATE TABLE IF NOT EXISTS operation_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,                      -- 操作用户ID
+            username TEXT NOT NULL,               -- 操作用户名
+            operation_type TEXT NOT NULL,         -- 操作类型：添加/编辑/删除等
+            operation_object TEXT NOT NULL,       -- 操作对象：用户/角色/主机等
+            operation_summary TEXT NOT NULL,      -- 操作内容摘要（新增字段）
+            operation_details TEXT,               -- 操作详情
+            success INTEGER NOT NULL,             -- 操作结果：1成功，0失败
+            operation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- 操作时间
+        );
+        """
+        cursor = conn.cursor()
+        cursor.execute(sql_create_operation_logs_table)
+        print("操作日志表创建成功")
+    except Error as e:
+        print(f"创建表时出错: {e}")
 
 
 def main():
@@ -313,6 +309,9 @@ def main():
             create_permissions_table(conn)  # 新增：权限表
             create_role_permissions_table(conn)  # 新增：角色-权限关联表
             create_user_roles_table(conn)  # 新增：用户-角色关联表
+
+            # 【新增】创建操作日志表
+            create_operation_logs_table(conn)
 
             # 初始化默认权限数据
             init_default_permissions(conn)

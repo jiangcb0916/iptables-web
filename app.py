@@ -13,10 +13,11 @@ from paramiko.client import AutoAddPolicy
 from datetime import datetime
 import math
 from io import StringIO
-from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, abort, g
+from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, g
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import time
+import json  # 【新增】导入JSON模块用于序列化详细信息
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # 生产环境中应使用更安全的密钥
@@ -35,6 +36,7 @@ app.static_folder = 'static'
 
 def permission_required(permission_code):
     """权限检查装饰器"""
+
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -50,7 +52,9 @@ def permission_required(permission_code):
                     'message': '没有操作权限，请联系管理员获取权限'
                 }), 403
             return f(*args, **kwargs)
+
         return decorated_function
+
     return decorator
 
 
@@ -60,6 +64,39 @@ def get_db():
         db = g._database = sqlite3.connect(DATABASE)
         db.row_factory = sqlite3.Row
     return db
+
+
+# 【新增】操作日志记录函数
+def log_operation(user_id, username, operation_type, operation_object, operation_summary, operation_details, success):
+    """
+    记录操作日志
+    :param user_id: 操作用户ID
+    :param username: 操作用户名
+    :param operation_type: 操作类型(添加/编辑/删除等)
+    :param operation_object: 操作对象(用户/角色/主机等)
+    :param operation_summary: 操作内容摘要
+    :param operation_details: 操作详情(JSON格式)
+    :param success: 操作结果(1成功,0失败)
+    """
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute('''
+        INSERT INTO operation_logs 
+        (user_id, username, operation_type, operation_object, operation_summary, operation_details, success, operation_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (user_id, username, operation_type, operation_object, operation_summary, operation_details, success))
+        db.commit()
+    except Exception as e:
+        app.logger.error(f"记录操作日志失败: {str(e)}")
+        if 'db' in locals():
+            db.rollback()
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
 
 @app.teardown_appcontext
@@ -555,9 +592,50 @@ def rules_add():
             # 查看
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL {} --line-number -t filter'.format(direction))
+        # 【修复】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='防火墙规则',
+            operation_summary=f"添加防火墙规则: {all_params['protocol']} {all_params['port']} ({direction})",
+            operation_details=json.dumps({
+                "host_id": host_id,
+                "host_ip": hostname,
+                "rule_id": rule_id,
+                "direction": direction,
+                "protocol": all_params['protocol'],
+                "port": all_params['port'],
+                "policy": all_params['auth_policy'],
+                "source": all_params['auth_object'],
+                "description": all_params['description'],
+                "operating_system": operating_system,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
+
         data_list = get_rule(iptables_output)
         return render_template('rule.html', data_list=data_list, id=host_id)
     except Exception as e:
+        # 【修复】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='防火墙规则',
+            operation_summary=f"添加防火墙规则失败: {all_params.get('protocol')} {all_params.get('port')}",
+            operation_details=json.dumps({
+                "host_id": host_id,
+                "rule_id": rule_id,
+                "direction": direction,
+                "request_data": all_params,  # 完整请求参数
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
 
@@ -615,8 +693,42 @@ def del_rule():
                 sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                  cmd='iptables-save > /etc/iptables/rules.v4')
         data_list = get_rule(iptables_output)
+        # 【修复】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='防火墙规则',
+            operation_summary=f"删除防火墙规则: ID {rule_id} (方向: {direction})",
+            operation_details=json.dumps({
+                "host_id": host_id,
+                "host_ip": hostname,
+                "rule_id": rule_id,
+                "direction": direction,
+                "operating_system": operating_system,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
         return render_template('rule.html', data_list=data_list, id=host_id)
     except Exception as e:
+        # 【修复】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='防火墙规则',
+            operation_summary=f"删除防火墙规则失败: ID {rule_id} (方向: {direction})",
+            operation_details=json.dumps({
+                "host_id": host_id,
+                "rule_id": rule_id,
+                "direction": direction,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
 
@@ -674,8 +786,13 @@ def hosts():
 @login_required
 @permission_required('hosts_add')  # 添加主机添加权限
 def add_host():
+    data = None
     try:
+        # 【修改】提前获取并验证JSON数据
         data = request.get_json()
+        if data is None:
+            return jsonify({'success': False, 'message': '无效的JSON数据'}), 400
+
         # 验证必填字段
         required_fields = ['host_name', 'host_identifier', 'ip_address', 'operating_system']
         for field in required_fields:
@@ -706,11 +823,58 @@ def add_host():
         ))
 
         db.commit()
+        # 【修改】日志记录增加operation_summary和JSON格式的operation_details
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='主机',
+            operation_summary=f"添加了主机: {data['host_name']} ({data['ip_address']})",  # 简短摘要
+            operation_details=json.dumps({  # 详细JSON数据
+                "host_name": data['host_name'],
+                "ip_address": data['ip_address'],
+                "operating_system": data['operating_system'],
+                "ssh_port": data.get('ssh_port', 22),
+                "auth_method": data.get('auth_method', 'password')
+            }),
+            success=1
+        )
         return jsonify({'success': True, 'message': '主机添加成功'})
 
     except sqlite3.IntegrityError:
+        # 【修改】确保data已定义
+        data = data or {}
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='主机',
+            operation_summary=f"添加主机失败: {data.get('host_name', '未知主机')}",
+            operation_details=json.dumps({
+                "error": "主机标识已存在",
+                "host_identifier": data.get('host_identifier')
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': '主机标识已存在'}), 409
     except Exception as e:
+        # 【修改】确保data已定义并提供默认值
+        data = data or {}
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='主机',
+            operation_summary=f"添加主机失败: {data.get('host_name', '未知主机')}",
+            operation_details=json.dumps({
+                "error": str(e),
+                "host_data": {
+                    "host_name": data.get('host_name'),
+                    "ip_address": data.get('ip_address')
+                }
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -719,17 +883,68 @@ def add_host():
 @login_required
 @permission_required('hosts_del')  # 添加主机删除权限
 def del_host():
+    host = None
     host_id = request.args.get('id')
     try:
         db = get_db()
         cursor = db.cursor()
+
+        # 【新增】先查询主机信息用于日志
+        cursor.execute('SELECT host_name, ip_address FROM hosts WHERE id = ?', (host_id,))
+        host = cursor.fetchone()
+        if not host:
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='主机',
+                operation_summary=f"删除主机失败: ID {host_id} (主机不存在)",
+                operation_details=json.dumps({
+                    "host_id": host_id,
+                    "error": "主机不存在",
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=0
+            )
+            return jsonify({'success': False, 'message': '主机不存在'}), 404
+
         # 删除主机
         cursor.execute('DELETE FROM hosts WHERE id = ?', (host_id,))
         db.commit()
-        if cursor.rowcount == 0:
-            return jsonify({'success': False, 'message': '主机不存在'}), 404
+        # 【修复】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='主机',
+            operation_summary=f"删除主机: {host['host_name']} ({host['ip_address']})",
+            operation_details=json.dumps({
+                "host_id": host_id,
+                "host_name": host['host_name'],
+                "ip_address": host['ip_address'],
+                "operating_system": host['operating_system'],
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
         return jsonify({'success': True, 'message': '主机删除成功'})
     except Exception as e:
+        # 【修复】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='主机',
+            operation_summary=f"删除主机失败: ID {host_id}",
+            operation_details=json.dumps({
+                "host_id": host_id,
+                "host_info": host if 'host' in locals() else None,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -740,9 +955,18 @@ def del_host():
 def update_host():
     data = request.get_json()
     host_id = data['id']
+    original_host_name = None
     try:
         db = get_db()
         cursor = db.cursor()
+        # 【新增】获取主机原始信息用于日志
+        cursor.execute('SELECT host_name, ip_address FROM hosts WHERE id = ?', (host_id,))
+        host = cursor.fetchone()
+        if not host:
+            return jsonify({'success': False, 'message': '主机不存在'}), 404
+        original_host_name = host['host_name']
+        original_ip = host['ip_address']
+
         # 不修改密码
         if data['password'] is None and data['private_key'] == '':
             cursor.execute(
@@ -761,10 +985,51 @@ def update_host():
                  data['ssh_port'], data['username'], data['auth_method'], data['password'], data['private_key'],
                  datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
             db.commit()
-            if cursor.rowcount == 0:
-                return jsonify({'success': False, 'message': '主机不存在'}), 404
-            return jsonify({'success': True, 'message': '主机编辑成功'})
+        # 【修复】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='编辑',
+            operation_object='主机',
+            operation_summary=f"编辑主机: {original_host_name} -> {data['host_name']}",
+            operation_details=json.dumps({
+                "host_id": host_id,
+                "original": {
+                    "host_name": original_host_name,
+                    "ip_address": original_ip
+                },
+                "updated": {
+                    "host_name": data['host_name'],
+                    "ip_address": data['ip_address'],
+                    "ssh_port": data['ssh_port'],
+                    "operating_system": data['operating_system'],
+                    "auth_method": data.get('auth_method')
+                },
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
+        if cursor.rowcount == 0:
+            return jsonify({'success': False, 'message': '主机不存在'}), 404
+        return jsonify({'success': True, 'message': '主机编辑成功'})
     except Exception as e:
+        # 【修复】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='编辑',
+            operation_object='主机',
+            operation_summary=f"编辑主机失败: ID {host_id}",
+            operation_details=json.dumps({
+                "host_id": host_id,
+                "update_data": data,
+                "original_host_name": original_host_name if 'original_host_name' in locals() else None,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -821,9 +1086,9 @@ def templates():
 @login_required
 @permission_required('temp_add')
 def templates_add():
+    data = None
     try:
         data = request.get_json()
-        # print(data)
         db = get_db()
         cursor = db.cursor()
         # 插入主机数据
@@ -868,12 +1133,75 @@ def templates_add():
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             ))
 
+            # 获取规则数量用于日志
+            rule_count = len(data['rules'])
+
             db.commit()
+            # 【修复】记录成功日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='添加',
+                operation_object='模板',
+                operation_summary=f"添加模板: {data['name']} (规则数: {rule_count})",
+                operation_details=json.dumps({
+                    "template_id": template_id,
+                    "template_name": data['name'],
+                    "direction": data['direction'],
+                    "description": data['description'],
+                    "rule_count": rule_count,
+                    "rules": [
+                        {
+                            "protocol": rule['protocol'],
+                            "port": rule['port'],
+                            "policy": "允许" if rule['policy'] == 'ACCEPT' else "拒绝",
+                            "source": rule['auth_object'],
+                            "description": rule['description']
+                        } for rule in data['rules']
+                    ],
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=1
+            )
         return jsonify({'success': True, 'message': '模板添加成功'})
 
     except sqlite3.IntegrityError:
+        # 【修复】记录失败日志
+        data = data or {}
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='模板',
+            operation_summary=f"添加模板失败: {data.get('name', '未知模板')} (标识已存在)",
+            operation_details=json.dumps({
+                "template_name": data.get('name'),
+                "description": data.get('description'),
+                "error": "模板标识已存在",
+                "error_type": "IntegrityError",
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': '模板名称已存在'}), 409
     except Exception as e:
+        # 【修复】记录失败日志
+        data = data or {}
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='模板',
+            operation_summary=f"添加模板失败: {data.get('name', '未知模板')}",
+            operation_details=json.dumps({
+                "template_name": data.get('name'),
+                "request_data": data,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -883,18 +1211,60 @@ def templates_add():
 @permission_required('temp_del')
 def templates_del():
     template_id = request.args.get('temp_id')
+    template = None  # 初始化template变量
     try:
         db = get_db()
         cursor = db.cursor()
+        # 【新增】获取模板名称用于日志
+        cursor.execute('SELECT template_name FROM templates WHERE id = ?', (template_id,))
+        template = cursor.fetchone()
+        if not template:
+            return jsonify({'success': False, 'message': '模板不存在'}), 404
+        template_name = template['template_name']
+        # 查询该模板下的规则数量
+        cursor.execute('SELECT COUNT(*) as rule_count FROM rules WHERE template_id = ?', (template_id,))
+        rule_count = cursor.fetchone()['rule_count']
+
         # 删除主机
         cursor.execute('DELETE FROM templates WHERE id = ?', (template_id,))
         cursor.execute('DELETE FROM rules WHERE template_id = ?', (template_id,))
-
         db.commit()
+        # 【修复】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='模板',
+            operation_summary=f"删除模板: {template_name} (规则数: {rule_count})",
+            operation_details=json.dumps({
+                "template_id": template_id,
+                "template_name": template_name,
+                "deleted_rules": rule_count,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
+
         if cursor.rowcount == 0:
             return jsonify({'success': False, 'message': '模板不存在'}), 404
         return jsonify({'success': True, 'message': '模板删除成功'})
     except Exception as e:
+        # 【修复】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='模板',
+            operation_summary=f"删除模板失败: ID {template_id}",
+            operation_details=json.dumps({
+                "template_id": template_id,
+                "template_name": template['template_name'] if template else None,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -903,10 +1273,25 @@ def templates_del():
 @login_required
 @permission_required('temp_edit')
 def templates_edit():
+    data = None
+    original_template_name = None
     try:
         data = request.get_json()
         db = get_db()
         cursor = db.cursor()
+
+        # 【新增】获取原模板名称用于日志
+        cursor.execute('SELECT template_name FROM templates WHERE id = ?', (data['temp_id'],))
+        template = cursor.fetchone()
+        if not template:
+            return jsonify({'success': False, 'message': '模板不存在'}), 404
+        original_template_name = template['template_name']
+
+        # 获取修改前后的规则数量
+        cursor.execute('SELECT COUNT(*) as old_count FROM rules WHERE template_id = ?', (data['temp_id'],))
+        old_rule_count = cursor.fetchone()['old_count']
+        new_rule_count = len(data['rules'])
+
         # 修改模板信息
         cursor.execute('''
         UPDATE  templates set template_name = ?, template_identifier = ?, direction = ?, updated_at =? WHERE id = ?;
@@ -919,6 +1304,7 @@ def templates_edit():
         ))
         # 先删除旧规则
         cursor.execute('DELETE FROM rules WHERE template_id = ?', (data['temp_id'],))
+        rule_count = 0
         for rule in data['rules']:
             if rule['policy'] == '允许':
                 policy = 'ACCEPT'
@@ -939,13 +1325,67 @@ def templates_edit():
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             ))
-
+            rule_count += 1
             db.commit()
+        # 【修复】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='编辑',
+            operation_object='模板',
+            operation_summary=f"编辑模板: {original_template_name} -> {data['name']} (规则数: {old_rule_count}→{new_rule_count})",
+            operation_details=json.dumps({
+                "template_id": data['temp_id'],
+                "original": {
+                    "name": original_template_name,
+                    "rule_count": old_rule_count
+                },
+                "updated": {
+                    "name": data['name'],
+                    "description": data['description'],
+                    "direction": data['direction'],
+                    "rule_count": new_rule_count
+                },
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
         return jsonify({'success': True, 'message': '模板修改成功'})
 
     except sqlite3.IntegrityError:
+        # 【修复】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='编辑',
+            operation_object='模板',
+            operation_summary=f"编辑模板失败: {original_template_name or '未知模板'}",
+            operation_details=json.dumps({
+                "template_id": data.get('temp_id'),
+                "error": "模板名称已存在",
+                "error_type": "IntegrityError",
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': '模板名称不存在'}), 409
     except Exception as e:
+        # 【修复】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='编辑',
+            operation_object='模板',
+            operation_summary=f"编辑模板失败: {original_template_name or '未知模板'}",
+            operation_details=json.dumps({
+                "template_id": data.get('temp_id'),
+                "update_data": data,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
@@ -992,7 +1432,6 @@ def temp_host_api():
 @permission_required('iptab_add')
 def temp_to_hosts():
     all_params = request.get_json()
-    print(all_params)
     template_id = all_params['template_id']
     host_ids_list = all_params['host_ids']
     # 获取模板的规则
@@ -1000,6 +1439,13 @@ def temp_to_hosts():
         # 获取数据库连接
         db = get_db()
         cursor = db.cursor()
+        # 获取模板名称和主机名称列表
+        cursor.execute('SELECT template_name FROM templates WHERE id = ?', (template_id,))
+        template_name = cursor.fetchone()['template_name']
+
+        cursor.execute('SELECT id, host_name FROM hosts WHERE id IN ({})'.format(','.join(host_ids_list)))
+        host_names = {str(h['id']): h['host_name'] for h in cursor.fetchall()}
+
         # 获取模板的方向
         cursor.execute(''' select direction from templates  where id = {} ;'''.format(template_id))
         direction_data = cursor.fetchone()
@@ -1095,14 +1541,50 @@ def temp_to_hosts():
                     elif operating_system == 'ubuntu':
                         sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                          cmd='iptables-save > /etc/iptables/rules.v4')
-        # 将规则添加到主机上
 
+        # 【修复】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='应用',
+            operation_object='模板',
+            operation_summary=f"应用模板到主机: {template_name} ({len(host_ids_list)}台主机)",
+            operation_details=json.dumps({
+                "template_id": template_id,
+                "template_name": template_name,
+                "direction": direction,
+                "applied_hosts": [
+                    {"host_id": hid, "host_name": host_names.get(hid, "未知主机")}
+                    for hid in host_ids_list
+                ],
+                "applied_rules": len(cmd_list),
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
+        # 将规则添加到主机上
         return jsonify({
             'success': True,
             'message': "成功"
         })
 
     except Exception as e:
+        # 【修复】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='应用',
+            operation_object='模板',
+            operation_summary=f"应用模板失败: ID {template_id}",
+            operation_details=json.dumps({
+                "template_id": template_id,
+                "host_ids": host_ids_list,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
         # 错误处理，同样返回JSON格式
         return jsonify({
             'success': False,
@@ -1133,15 +1615,21 @@ def get_system_config():
             except Exception as e:
                 app.logger.error(f"获取系统配置失败: {str(e)}")
                 return jsonify({'error': '获取系统配置失败'}), 500
+
         # 调用嵌套函数并返回结果
         return get_config()
     else:
         @permission_required('sys_edit')
         def update_config():
+            data = None
             try:
                 data = request.get_json()
                 db = get_db()
                 cursor = db.cursor()
+                # 获取原始配置用于日志
+                cursor.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1')
+                original_config = dict(cursor.fetchone())
+
                 system_name = data['system_name']
                 default_session_timeout = data['default_session_timeout']
                 log_retention_time = data['log_retention_days']
@@ -1152,13 +1640,56 @@ def get_system_config():
                 cursor.execute(
                     ''' update system_config  set system_name = ?, session_timeout = ?, log_retention_time = ?, color_mode = ?,password_strategy = ?, updated_at = ?  where id=1; ''',
                     (
-                        system_name, default_session_timeout, log_retention_time, color_mode, password_strategy, updated_at
+                        system_name, default_session_timeout, log_retention_time, color_mode, password_strategy,
+                        updated_at
                     ))
                 db.commit()
+                # 【修复】记录成功日志
+                log_operation(
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    operation_type='编辑',
+                    operation_object='系统设置',
+                    operation_summary=f"更新系统设置: {data['system_name']}",
+                    operation_details=json.dumps({
+                        "original": {
+                            "system_name": original_config['system_name'],
+                            "session_timeout": original_config['session_timeout'],
+                            "log_retention": original_config['log_retention_time'],
+                            "color_mode": original_config['color_mode']
+                        },
+                        "updated": {
+                            "system_name": data['system_name'],
+                            "session_timeout": data['default_session_timeout'],
+                            "log_retention": data['log_retention_days'],
+                            "color_mode": data['color_mode'],
+                            "password_strategy": data['password_strategy']
+                        },
+                        "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }),
+                    success=1
+                )
                 return jsonify({'success': True, 'message': '保存系统配置成功'})
             except Exception as e:
+                # 【修复】记录失败日志
+                data = data or {}
+                log_operation(
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    operation_type='编辑',
+                    operation_object='系统设置',
+                    operation_summary=f"更新系统设置失败",
+                    operation_details=json.dumps({
+                        "update_data": data,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }),
+                    success=0
+                )
                 app.logger.error(f"保存系统配置失败: {str(e)}")
                 return jsonify({'error': '保存系统配置失败'}), 500
+
         # 调用嵌套函数并返回结果
         return update_config()
 
@@ -1337,7 +1868,6 @@ def users():
                         'created_at': i['created_at']
                     }
                     user_list.append(user_dict)
-                print(user_list)
                 return render_template('systemseting.html', user_list=user_list)
             except Exception as e:
                 print(e)
@@ -1346,6 +1876,7 @@ def users():
                     "success": False,
                     "message": f"获取用户列表失败: {str(e)}"
                 }), 500
+
         # 调用嵌套函数并返回结果
         return get_users()
     # 如果是添加用户
@@ -1353,10 +1884,15 @@ def users():
         db = get_db()
         @permission_required('user_add')
         def add_user():
+            # 初始化可能在日志中使用的变量
+            username = ""
+            email = ""
+            role_id = ""
+            status = "active"
+            user_data = None  # 初始化user_data变量
             try:
                 # 获取JSON数据而非表单数据
                 user_data = request.get_json()
-                print(user_data)
                 if not user_data:
                     return jsonify({
                         "success": False,
@@ -1416,6 +1952,24 @@ def users():
 
                 # 【修改】统一提交事务（用户表和关联表一起提交）
                 db.commit()
+                # 【修复】记录成功日志（添加summary和JSON格式details）
+                log_operation(
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    operation_type='添加',
+                    operation_object='用户',
+                    operation_summary=f"添加用户: {username}",  # 简略摘要
+                    operation_details=json.dumps({  # JSON格式详细信息
+                        "user_id": user_id,
+                        "username": username,
+                        "email": email,
+                        "status": status,
+                        "role_id": role_id,
+                        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }),
+                    success=1
+                )
 
                 return jsonify({
                     "success": True,
@@ -1423,23 +1977,63 @@ def users():
                 }), 200
 
             except sqlite3.IntegrityError as e:
-                print(e)
                 db.rollback()
+                # 【修复】记录失败日志（添加summary和JSON格式details）
+                log_operation(
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    operation_type='添加',
+                    operation_object='用户',
+                    operation_summary=f"添加用户失败: {username} (用户名/邮箱已存在)",  # 简略摘要
+                    operation_details=json.dumps({  # JSON格式详细信息
+                        "username": username,
+                        "email": email,
+                        "conflict_field": "用户名" if db.execute("SELECT 1 FROM user WHERE username = ?",
+                                                                 (username,)).fetchone() else "邮箱",
+                        "error": "用户名或邮箱已存在",
+                        "error_type": "IntegrityError",
+                        "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }),
+                    success=0
+                )
                 return jsonify({
                     "success": False,
                     "message": "用户名或邮箱已存在，请更换！"
                 }), 409
             except Exception as e:
-                print(e)
+                # 【修复】记录失败日志（添加summary和JSON格式details）
+                log_operation(
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    operation_type='添加',
+                    operation_object='用户',
+                    operation_summary=f"添加用户失败: {username}",  # 简略摘要
+                    operation_details=json.dumps({  # JSON格式详细信息
+                        "username": username,
+                        "email": email,
+                        "role_id": role_id,
+                        "request_data": {
+                            "username": username,
+                            "email": email,
+                            "status": status,
+                            "role_id": role_id
+                        },
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }),
+                    success=0
+                )
+
                 if 'db' in locals():
                     db.rollback()
                 return jsonify({
                     "success": False,
                     "message": f"添加失败：{str(e)}"
                 }), 500
+
         # 调用嵌套函数并返回结果
         return add_user()
-
 
 
 @app.route('/user_edit', methods=['GET', 'POST'])
@@ -1471,23 +2065,50 @@ def user_edit():
         except Exception as e:
             return jsonify({'success': False, 'message': f"获取用户信息失败: {str(e)}"}), 500
     elif request.method == 'POST':
-        # 打印请求数据
-        data = request.get_json()
-        print("0"*100)
-        print(data)
-        user_id = data['id']
+        # 初始化可能在日志中使用的变量，避免"赋值前引用"
+        data = request.get_json() or {}  # 确保data是字典，避免None
+        user_id = data.get('id', 'unknown')  # 安全获取用户ID
+        original_username = "未知用户"
+        original_status = "unknown"
+        username = "unknown"
+        email = "unknown"
+        status = "unknown"
+        roles = []
+        operation_type = "编辑"
+
         db = get_db()
         try:
             cursor = db.cursor()
             # 获取用户当前信息，用于处理部分更新情况（添加status字段）
+            # 【修改】重命名变量，避免与Flask-Login的current_user冲突
             cursor.execute('SELECT username, email, status FROM user WHERE id = ?', (user_id,))
-            current_user = cursor.fetchone()
-            if not current_user:
+            user_data = cursor.fetchone()  # 将变量名从current_user改为user_data
+            if not user_data:
+                # 记录用户不存在日志
+                log_operation(
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    operation_type='编辑',
+                    operation_object='用户',
+                    operation_summary=f"编辑用户失败: ID {user_id} (用户不存在)",
+                    operation_details=json.dumps({
+                        "user_id": user_id,
+                        "error": "用户不存在",
+                        "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }),
+                    success=0
+                )
                 return jsonify({'success': False, 'message': '用户不存在'}), 404
-            # 提取数据，如未提供则使用当前信息
-            username = data.get('username', current_user['username'])
-            email = data.get('email', current_user['email'])
-            status = data.get('status', current_user['status'])  # 默认为当前状态
+
+            # 更新变量值（确保所有日志变量都已初始化）
+            original_username = user_data['username']
+            original_status = user_data['status']
+            username = data.get('username', original_username)
+            email = data.get('email', user_data['email'])
+            status = data.get('status', user_data['status'])
+            roles = data.get('role', [])
+            operation_type = '禁用' if status == 'inactive' and original_status == 'active' else '编辑'
+
             # 更新用户基本信息
             if 'password' in data and data['password']:
                 # 如果提供了新密码，则更新密码
@@ -1514,12 +2135,82 @@ def user_edit():
                             VALUES (?, ?)
                             ''', [(user_id, role_id) for role_id in roles])
             db.commit()
+            # 【新增】记录成功日志
+            details = f"用户名: {original_username}, 状态变更: {original_status}→{status}"
+            if 'role' in data:
+                details += f", 角色变更: {data.get('role')}"
+            # 记录成功日志（标准化格式）
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type=operation_type,
+                operation_object='用户',
+                operation_summary=f"{operation_type}用户: {original_username}",  # 简略摘要
+                operation_details=json.dumps({  # JSON详细信息
+                    "user_id": user_id,
+                    "original_info": {
+                        "username": original_username,
+                        "email": user_data['email'],
+                        "status": original_status
+                    },
+                    "updated_info": {
+                        "username": username,
+                        "email": email,
+                        "status": status,
+                        "roles": roles,
+                        "password_updated": 'password' in data and bool(data['password'])
+                    },
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=1
+            )
             return jsonify({'success': True, 'message': '用户更新成功'})
         except sqlite3.IntegrityError:
             db.rollback()
+            # 【新增】记录失败日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='编辑',
+                operation_object='用户',
+                operation_summary=f"编辑用户失败: {original_username} (用户名/邮箱已存在)",  # 简略摘要
+                operation_details=json.dumps({  # JSON详细信息
+                    "user_id": user_id,
+                    "conflict_info": {
+                        "username": username,
+                        "email": email,
+                        "conflict_field": "用户名" if db.execute("SELECT 1 FROM user WHERE username = ?",
+                                                                 (username,)).fetchone() else "邮箱"
+                    },
+                    "error": "用户名或邮箱已存在",
+                    "error_type": "IntegrityError",
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=0
+            )
             return jsonify({'success': False, 'message': '用户名或邮箱已存在'}), 409
         except Exception as e:
             db.rollback()
+            # 【新增】记录失败日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='编辑',
+                operation_object='用户',
+                operation_summary=f"编辑用户失败: {original_username}",  # 简略摘要
+                operation_details=json.dumps({  # JSON详细信息
+                    "user_id": user_id,
+                    "user_info": {
+                        "original_username": original_username,
+                        "target_username": username,
+                        "email": email
+                    },
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=0
+            )
             return jsonify({'success': False, 'message': f"更新用户失败: {str(e)}"}), 500
 
 
@@ -1534,17 +2225,58 @@ def user_del():
     db = get_db()
     try:
         cursor = db.cursor()
+
+        # 【新增】获取用户名用于日志
+        cursor.execute('SELECT username FROM user WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='用户',
+                operation_details=f"用户ID不存在: {user_id}",
+                success=0
+            )
+            return jsonify({'success': False, 'message': '用户不存在'}), 404
+        username = user['username']
         # 删除用户角色关联
         cursor.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
         # 删除用户
         cursor.execute('DELETE FROM user WHERE id = ?', (user_id,))
         if cursor.rowcount == 0:
             db.rollback()
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='用户',
+                operation_details=f"用户ID不存在: {user_id}",
+                success=0
+            )
             return jsonify({'success': False, 'message': '用户不存在'}), 404
         db.commit()
+        # 【新增】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='用户',
+            operation_details=f"用户名: {username}, 用户ID: {user_id}",
+            success=1
+        )
         return jsonify({'success': True, 'message': '用户删除成功'})
     except Exception as e:
         db.rollback()
+        # 【新增】记录失败日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='用户',
+            operation_details=f"用户ID: {user_id}, 失败原因: {str(e)}",
+            success=0
+        )
         return jsonify({'success': False, 'message': f"删除用户失败: {str(e)}"}), 500
 
 
@@ -1657,9 +2389,27 @@ def roles():
                     VALUES (?, ?)
                     ''', [(role_id, p) for p in permissions])
             db.commit()
+            # 【新增】记录成功日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='添加',
+                operation_object='角色',
+                operation_details=f"角色名称: {role_data.get('role_name')}, 权限数量: {len(permissions)}",
+                success=1
+            )
             return jsonify({"success": True, "message": "角色添加成功！"}), 200
         except Exception as e:
             db.rollback()
+            # 【新增】记录失败日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='添加',
+                operation_object='角色',
+                operation_details=f"失败原因: {str(e)}",
+                success=0
+            )
             return jsonify({"success": False, "message": f"错误：{str(e)}"}), 500
 
 
@@ -1702,6 +2452,22 @@ def role_edit():
         db = get_db()
         try:
             cursor = db.cursor()
+            # 【新增】获取原角色名称用于日志
+            cursor.execute('SELECT role_name FROM roles WHERE id = ?', (role_id,))
+            role = cursor.fetchone()
+            if not role:
+                log_operation(
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    operation_type='编辑',
+                    operation_object='角色',
+                    operation_details=f"角色ID不存在: {role_id}",
+                    success=0
+                )
+                return jsonify(success=False, message='角色不存在'), 404
+            original_role_name = role['role_name']
+            # 【修复】提前初始化permissions变量，确保所有路径都有定义
+            permissions = data.get('permissions', [])
 
             # 更新角色信息
             cursor.execute('''
@@ -1720,7 +2486,6 @@ def role_edit():
                 cursor.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
 
                 # 添加新权限
-                permissions = data['permissions']
                 if permissions:
                     cursor.executemany('''
                     INSERT INTO role_permissions (role_id, permission_id)
@@ -1728,13 +2493,27 @@ def role_edit():
                     ''', [(role_id, p) for p in permissions])
 
             db.commit()
+            # 【新增】记录成功日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='编辑',
+                operation_object='角色',
+                operation_details=f"原角色名: {original_role_name}, 新角色名: {data['role_name']}, 权限数量: {len(permissions)}",
+                success=1
+            )
             return jsonify({'success': True, 'message': '角色更新成功'})
 
-        except sqlite3.IntegrityError:
-            db.rollback()
-            return jsonify({'success': False, 'message': '角色名称已存在'}), 409
         except Exception as e:
             db.rollback()
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='编辑',
+                operation_object='角色',
+                operation_details=f"角色ID: {role_id}, 失败原因: {str(e)}",
+                success=0
+            )
             return jsonify({'success': False, 'message': f"更新角色失败: {str(e)}"}), 500
 
 
@@ -1750,6 +2529,21 @@ def role_del():
     db = get_db()
     try:
         cursor = db.cursor()
+        # 【新增】获取角色名称用于日志
+        cursor.execute('SELECT role_name FROM roles WHERE id = ?', (role_id,))
+        role = cursor.fetchone()
+        if not role:
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='角色',
+                operation_details=f"角色ID不存在: {role_id}",
+                success=0
+            )
+            return jsonify(success=False, message='角色不存在'), 404
+        role_name = role['role_name']
+
         # 检查是否有关联用户
         cursor.execute('SELECT COUNT(*) as count FROM user_roles WHERE role_id = ?', (role_id,))
         count = cursor.fetchone()['count']
@@ -1768,10 +2562,27 @@ def role_del():
             return jsonify({'success': False, 'message': '角色不存在'}), 404
 
         db.commit()
+        # 【新增】记录成功日志
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='角色',
+            operation_details=f"角色名称: {role_name}, 角色ID: {role_id}",
+            success=1
+        )
         return jsonify({'success': True, 'message': '角色删除成功'})
 
     except Exception as e:
         db.rollback()
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='角色',
+            operation_details=f"角色ID: {role_id}, 失败原因: {str(e)}",
+            success=0
+        )
         return jsonify({'success': False, 'message': f"删除角色失败: {str(e)}"}), 500
 
 
@@ -1801,6 +2612,21 @@ def role_permissions(role_id):
         cursor = db.cursor()
 
         try:
+            # 【新增】获取角色名称用于日志
+            cursor.execute('SELECT role_name FROM roles WHERE id = ?', (role_id,))
+            role = cursor.fetchone()
+            if not role:
+                log_operation(
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    operation_type='分配',
+                    operation_object='角色权限',
+                    operation_details=f"角色ID不存在: {role_id}",
+                    success=0
+                )
+                return jsonify({"success": False, "message": "角色不存在"}), 404
+            role_name = role['role_name']
+
             # 先删除现有权限
             cursor.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
 
@@ -1812,9 +2638,27 @@ def role_permissions(role_id):
                 ''', [(role_id, p) for p in permissions])
 
             db.commit()
+            # 【新增】记录成功日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='分配',
+                operation_object='角色权限',
+                operation_details=f"角色名称: {role_name}, 角色ID: {role_id}, 权限数量: {len(permissions)}",
+                success=1
+            )
             return jsonify({"success": True, "message": "权限分配成功！"})
         except Exception as e:
             db.rollback()
+            # 【新增】记录失败日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='分配',
+                operation_object='角色权限',
+                operation_details=f"角色ID: {role_id}, 失败原因: {str(e)}",
+                success=0
+            )
             return jsonify({"success": False, "message": f"权限分配失败：{str(e)}"}), 500
 
 
