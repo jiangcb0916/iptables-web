@@ -893,9 +893,17 @@ def del_host():
         db = get_db()
         cursor = db.cursor()
 
-        # 【新增】先查询主机信息用于日志
-        cursor.execute('SELECT host_name, ip_address FROM hosts WHERE id = ?', (host_id,))
-        host = cursor.fetchone()
+        # 【修复1】修改查询语句，获取所有需要的字段
+        cursor.execute('SELECT host_name, ip_address, operating_system FROM hosts WHERE id = ?', (host_id,))
+        host_row = cursor.fetchone()
+
+        # 【修复2】将Row对象转换为字典
+        if host_row:
+            columns = [column[0] for column in cursor.description]
+            host = dict(zip(columns, host_row))
+        else:
+            host = None
+
         if not host:
             log_operation(
                 user_id=current_user.id,
@@ -915,7 +923,8 @@ def del_host():
         # 删除主机
         cursor.execute('DELETE FROM hosts WHERE id = ?', (host_id,))
         db.commit()
-        # 【修复】记录成功日志
+
+        # 【修复3】现在可以安全访问所有字段
         log_operation(
             user_id=current_user.id,
             username=current_user.username,
@@ -933,7 +942,7 @@ def del_host():
         )
         return jsonify({'success': True, 'message': '主机删除成功'})
     except Exception as e:
-        # 【修复】记录失败日志
+        # 【修复4】确保host_info是可序列化的字典
         log_operation(
             user_id=current_user.id,
             username=current_user.username,
@@ -942,7 +951,7 @@ def del_host():
             operation_summary=f"删除主机失败: ID {host_id}",
             operation_details=json.dumps({
                 "host_id": host_id,
-                "host_info": host if 'host' in locals() else None,
+                "host_info": host,  # 现在是字典而非Row对象
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -2895,6 +2904,98 @@ def role_permissions(role_id):
 @login_required
 @permission_required('log_view')
 def logs():
+    # 如果是API请求（带X-Requested-With头），返回JSON数据
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        # 获取分页参数，默认第1页，每页10条
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        offset = (page - 1) * per_page
+
+        # 初始化查询条件
+        query_conditions = []
+        query_params = []
+
+        # 处理搜索和筛选参数
+        operation_type = request.args.get('operation_type')
+        operation_object = request.args.get('operation_object')
+        success = request.args.get('success')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+
+        if operation_type:
+            query_conditions.append("operation_type = ?")
+            query_params.append(operation_type)
+        if operation_object:
+            query_conditions.append("operation_object = ?")
+            query_params.append(operation_object)
+        if success is not None:
+            query_conditions.append("success = ?")
+            query_params.append(int(success))
+        if start_time:
+            query_conditions.append("operation_time >= ?")
+            query_params.append(start_time)
+        if end_time:
+            query_conditions.append("operation_time <= ?")
+            query_params.append(end_time + " 23:59:59")
+
+        # 构建查询SQL
+        where_clause = "WHERE " + " AND ".join(query_conditions) if query_conditions else ""
+        query_params_count = query_params.copy()
+
+        try:
+            db = get_db()
+            cursor = db.cursor()
+
+            # 查询总记录数
+            cursor.execute(f"SELECT COUNT(*) as total FROM operation_logs {where_clause}", query_params_count)
+            total = cursor.fetchone()['total']
+
+            # 查询当前页数据
+            query_params_paginated = query_params.copy()
+            query_params_paginated.extend([per_page, offset])
+            cursor.execute(f"""
+                SELECT id, user_id, username, operation_type, operation_object, 
+                       operation_summary, operation_details, success, operation_time
+                FROM operation_logs 
+                {where_clause}
+                ORDER BY operation_time DESC 
+                LIMIT ? OFFSET ?
+            """, query_params_paginated)
+
+            logs = cursor.fetchall()
+
+            # 转换为字典列表
+            log_list = []
+            for log in logs:
+                log_dict = dict(log)
+                # 将operation_details从JSON字符串解析为对象（如果存在）
+                if log_dict['operation_details']:
+                    try:
+                        log_dict['operation_details'] = json.loads(log_dict['operation_details'])
+                    except json.JSONDecodeError:
+                        pass  # 保持原始字符串格式
+                log_list.append(log_dict)
+
+            # 返回分页数据
+            return jsonify({
+                'success': True,
+                'data': log_list,
+                'pagination': {
+                    'total': total,
+                    'page': page,
+                    'per_page': per_page,
+                    'pages': (total + per_page - 1) // per_page  # 总页数
+                }
+            })
+
+        except Exception as e:
+            app.logger.error(f"日志查询失败: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': f"日志查询失败: {str(e)}"
+            }), 500
+
+    # 非API请求，返回日志页面
     return render_template('logs.html')
 
 
