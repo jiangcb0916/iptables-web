@@ -283,6 +283,7 @@ def rules_out():
 # 修改规则
 @app.route("/rules_update", methods=['POST'])
 @login_required
+@permission_required('iptab_edit')  # 添加规则编辑权限
 def rules_update():
     all_params = request.get_json()
     host_id = all_params['host_id']
@@ -428,6 +429,7 @@ def rules_update():
 # 添加规则
 @app.route("/rules_add", methods=['POST'])
 @login_required
+@permission_required('iptab_add')  # 添加规则添加权限
 def rules_add():
     all_params = request.get_json()
     host_id = all_params['host_id']
@@ -564,6 +566,7 @@ def rules_add():
 # 删除规则
 @app.route("/rule_del", methods=['DELETE'])
 @login_required
+@permission_required('iptab_del')  # 添加规则删除权限
 def del_rule():
     all_params = dict(request.args)
     host_id = all_params['host_id']
@@ -623,6 +626,7 @@ def del_rule():
 # 主机管理页面路由 - 读取数据库并返回数据到前端
 @app.route("/hosts", methods=['GET'])
 @login_required
+@permission_required('hosts_view')  # 添加主机查看权限
 def hosts():
     all_params = dict(request.args)
     page = all_params['page']
@@ -669,6 +673,7 @@ def hosts():
 # 添加主机
 @app.route('/host_add', methods=['POST'])
 @login_required
+@permission_required('hosts_add')  # 添加主机添加权限
 def add_host():
     try:
         data = request.get_json()
@@ -713,6 +718,7 @@ def add_host():
 # 删除主机
 @app.route('/host_del', methods=['DELETE'])
 @login_required
+@permission_required('hosts_del')  # 添加主机删除权限
 def del_host():
     host_id = request.args.get('id')
     try:
@@ -730,6 +736,7 @@ def del_host():
 
 # 修改主机
 @app.route('/host_update', methods=['POST'])
+@permission_required('hosts_edit')  # 添加主机编辑权限
 @login_required
 def update_host():
     data = request.get_json()
@@ -979,6 +986,7 @@ def temp_host_api():
 # 应用模板
 @app.route("/temp_to_hosts", methods=['POST'])
 @login_required
+@permission_required('iptab_add')
 def temp_to_hosts():
     all_params = request.get_json()
     print(all_params)
@@ -1102,6 +1110,7 @@ def temp_to_hosts():
 # 系统设置
 @app.route("/systemseting", methods=['GET'])
 @login_required
+@permission_required('sys_view')  # 添加系统设置查看权限
 def systemseting():
     return render_template('systemseting.html')
 
@@ -1110,36 +1119,41 @@ def systemseting():
 @app.route('/api/system-config', methods=['GET', 'POST'])
 def get_system_config():
     if request.method == "GET":
-        try:
-            db = get_db()
-            config = db.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
-            print(dict(config))
-            return jsonify(dict(config)) if config else jsonify({})
-        except Exception as e:
-            app.logger.error(f"获取系统配置失败: {str(e)}")
-            return jsonify({'error': '获取系统配置失败'}), 500
+        @permission_required('sys_view')
+        def get_config():
+            try:
+
+                db = get_db()
+                config = db.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
+                print(dict(config))
+                return jsonify(dict(config)) if config else jsonify({})
+            except Exception as e:
+                app.logger.error(f"获取系统配置失败: {str(e)}")
+                return jsonify({'error': '获取系统配置失败'}), 500
     else:
-        try:
-            data = request.get_json()
-            db = get_db()
-            cursor = db.cursor()
-            system_name = data['system_name']
-            default_session_timeout = data['default_session_timeout']
-            log_retention_time = data['log_retention_days']
-            color_mode = data['color_mode']
-            password_strategy = data['password_strategy']
-            updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            # 更新system_config 表
-            cursor.execute(
-                ''' update system_config  set system_name = ?, session_timeout = ?, log_retention_time = ?, color_mode = ?,password_strategy = ?, updated_at = ?  where id=1; ''',
-                (
-                    system_name, default_session_timeout, log_retention_time, color_mode, password_strategy, updated_at
-                ))
-            db.commit()
-            return jsonify({'success': True, 'message': '保存系统配置成功'})
-        except Exception as e:
-            app.logger.error(f"保存系统配置失败: {str(e)}")
-            return jsonify({'error': '保存系统配置失败'}), 500
+        @permission_required('sys_edit')
+        def update_config():
+            try:
+                data = request.get_json()
+                db = get_db()
+                cursor = db.cursor()
+                system_name = data['system_name']
+                default_session_timeout = data['default_session_timeout']
+                log_retention_time = data['log_retention_days']
+                color_mode = data['color_mode']
+                password_strategy = data['password_strategy']
+                updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                # 更新system_config 表
+                cursor.execute(
+                    ''' update system_config  set system_name = ?, session_timeout = ?, log_retention_time = ?, color_mode = ?,password_strategy = ?, updated_at = ?  where id=1; ''',
+                    (
+                        system_name, default_session_timeout, log_retention_time, color_mode, password_strategy, updated_at
+                    ))
+                db.commit()
+                return jsonify({'success': True, 'message': '保存系统配置成功'})
+            except Exception as e:
+                app.logger.error(f"保存系统配置失败: {str(e)}")
+                return jsonify({'error': '保存系统配置失败'}), 500
 
 
 # 获取会话超时时间（从数据库）
@@ -1285,129 +1299,135 @@ def login():
 
 
 @app.route('/users', methods=['GET', 'POST'])
+@login_required
+@permission_required('user_view')
 def users():
     # 如果是查看用户管理页面
     if request.method == "GET":
-        try:
-            db = get_db()
-            cursor = db.cursor()
-            # 查询用户基本信息及关联的角色
-            cursor.execute(''' 
-            SELECT u.id, u.username, u.email, u.status, u.created_at,
-                   GROUP_CONCAT(r.role_name, ', ') as roles
-            FROM user u
-            LEFT JOIN user_roles ur ON u.id = ur.user_id
-            LEFT JOIN roles r ON ur.role_id = r.id
-            GROUP BY u.id
-            ''')
-            data = cursor.fetchall()
-            user_list = []
-            for i in data:
-                user_dict = {
-                    'id': i['id'],
-                    'roles': i['roles'] if i['roles'] else 'None',
-                    'username': i['username'],
-                    'email': i['email'],
-                    'status': i['status'],
-                    'created_at': i['created_at']
-                }
-                user_list.append(user_dict)
-            print(user_list)
-            return render_template('systemseting.html', user_list=user_list)
-        except Exception as e:
-            print(e)
-            # 添加异常情况下的响应
-            return jsonify({
-                "success": False,
-                "message": f"获取用户列表失败: {str(e)}"
-            }), 500
+        @permission_required('user_view')
+        def get_users():
+            try:
+                db = get_db()
+                cursor = db.cursor()
+                # 查询用户基本信息及关联的角色
+                cursor.execute(''' 
+                SELECT u.id, u.username, u.email, u.status, u.created_at,
+                       GROUP_CONCAT(r.role_name, ', ') as roles
+                FROM user u
+                LEFT JOIN user_roles ur ON u.id = ur.user_id
+                LEFT JOIN roles r ON ur.role_id = r.id
+                GROUP BY u.id
+                ''')
+                data = cursor.fetchall()
+                user_list = []
+                for i in data:
+                    user_dict = {
+                        'id': i['id'],
+                        'roles': i['roles'] if i['roles'] else 'None',
+                        'username': i['username'],
+                        'email': i['email'],
+                        'status': i['status'],
+                        'created_at': i['created_at']
+                    }
+                    user_list.append(user_dict)
+                print(user_list)
+                return render_template('systemseting.html', user_list=user_list)
+            except Exception as e:
+                print(e)
+                # 添加异常情况下的响应
+                return jsonify({
+                    "success": False,
+                    "message": f"获取用户列表失败: {str(e)}"
+                }), 500
     # 如果是添加用户
     elif request.method == 'POST':
         db = get_db()
-        try:
-            # 获取JSON数据而非表单数据
-            user_data = request.get_json()
-            print(user_data)
-            if not user_data:
-                return jsonify({
-                    "success": False,
-                    "message": "未收到数据，请检查请求格式"
-                }), 400
-
-            cursor = db.cursor()
-            # 从JSON数据中获取字段并验证
-            username = user_data.get('username')
-            password = user_data.get('password')
-            email = user_data.get('email')
-            status = user_data.get('status', 'active')  # 默认状态为active
-            # 【新增】获取角色ID并验证
-            role_id = user_data.get('role')
-            if not role_id:
-                return jsonify({
-                    "success": False,
-                    "message": "角色为必填项"
-                }), 400
+        @permission_required('user_add')
+        def add_user():
             try:
-                role_id = int(role_id)  # 转换为整数
-            except ValueError:
+                # 获取JSON数据而非表单数据
+                user_data = request.get_json()
+                print(user_data)
+                if not user_data:
+                    return jsonify({
+                        "success": False,
+                        "message": "未收到数据，请检查请求格式"
+                    }), 400
+
+                cursor = db.cursor()
+                # 从JSON数据中获取字段并验证
+                username = user_data.get('username')
+                password = user_data.get('password')
+                email = user_data.get('email')
+                status = user_data.get('status', 'active')  # 默认状态为active
+                # 【新增】获取角色ID并验证
+                role_id = user_data.get('role')
+                if not role_id:
+                    return jsonify({
+                        "success": False,
+                        "message": "角色为必填项"
+                    }), 400
+                try:
+                    role_id = int(role_id)  # 转换为整数
+                except ValueError:
+                    return jsonify({
+                        "success": False,
+                        "message": "无效的角色ID格式"
+                    }), 400
+
+                # 验证必填字段
+                if not username or not password or not email:
+                    return jsonify({
+                        "success": False,
+                        "message": "用户名、密码和邮箱为必填项"
+                    }), 400
+
+                # 密码哈希处理
+                hashed_password = generate_password_hash(password)
+                cursor.execute(''' 
+                INSERT INTO user
+                (username, password, email, status, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                 ''', (
+                    username,
+                    hashed_password,  # 使用哈希后的密码
+                    email,
+                    status,
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                ))
+
+                # 【新增】获取新创建用户的ID
+                user_id = cursor.lastrowid
+
+                # 【新增】插入用户-角色关联记录
+                cursor.execute('''
+                INSERT INTO user_roles (user_id, role_id)
+                VALUES (?, ?)
+                ''', (user_id, role_id))
+
+                # 【修改】统一提交事务（用户表和关联表一起提交）
+                db.commit()
+
                 return jsonify({
-                    "success": False,
-                    "message": "无效的角色ID格式"
-                }), 400
+                    "success": True,
+                    "message": "用户添加成功！"
+                }), 200
 
-            # 验证必填字段
-            if not username or not password or not email:
-                return jsonify({
-                    "success": False,
-                    "message": "用户名、密码和邮箱为必填项"
-                }), 400
-
-            # 密码哈希处理
-            hashed_password = generate_password_hash(password)
-            cursor.execute(''' 
-            INSERT INTO user
-            (username, password, email, status, created_at)
-            VALUES (?, ?, ?, ?, ?)
-             ''', (
-                username,
-                hashed_password,  # 使用哈希后的密码
-                email,
-                status,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            ))
-
-            # 【新增】获取新创建用户的ID
-            user_id = cursor.lastrowid
-
-            # 【新增】插入用户-角色关联记录
-            cursor.execute('''
-            INSERT INTO user_roles (user_id, role_id)
-            VALUES (?, ?)
-            ''', (user_id, role_id))
-
-            # 【修改】统一提交事务（用户表和关联表一起提交）
-            db.commit()
-
-            return jsonify({
-                "success": True,
-                "message": "用户添加成功！"
-            }), 200
-
-        except sqlite3.IntegrityError as e:
-            print(e)
-            db.rollback()
-            return jsonify({
-                "success": False,
-                "message": "用户名或邮箱已存在，请更换！"
-            }), 409
-        except Exception as e:
-            print(e)
-            if 'db' in locals():
+            except sqlite3.IntegrityError as e:
+                print(e)
                 db.rollback()
-            return jsonify({
-                "success": False,
-                "message": f"添加失败：{str(e)}"
-            }), 500
+                return jsonify({
+                    "success": False,
+                    "message": "用户名或邮箱已存在，请更换！"
+                }), 409
+            except Exception as e:
+                print(e)
+                if 'db' in locals():
+                    db.rollback()
+                return jsonify({
+                    "success": False,
+                    "message": f"添加失败：{str(e)}"
+                }), 500
 
 
 @app.route('/user_edit', methods=['GET', 'POST'])
@@ -1789,6 +1809,7 @@ def role_permissions(role_id):
 # 操作日志
 @app.route("/logs", methods=['GET'])
 @login_required
+@permission_required('log_view')
 def logs():
     return render_template('logs.html')
 
