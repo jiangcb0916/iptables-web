@@ -315,26 +315,9 @@
                 <div class="flex items-center justify-between px-4 py-3 sm:px-6 mt-4">
                   <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                     <div>
-                      <p class="text-sm text-gray-700">
-                        显示第 <span class="font-medium">1</span> 到 <span class="font-medium">3</span> 条，共 <span class="font-medium">12</span> 条记录
-                      </p>
                     </div>
                     <div>
                       <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                        <a href="#" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                          <span class="sr-only">上一页</span>
-                          <i class="fa fa-chevron-left text-xs"></i>
-                        </a>
-                        <a href="#" aria-current="page" class="z-10 bg-primary text-white relative inline-flex items-center px-4 py-2 border border-primary text-sm font-medium">
-                          1
-                        </a>
-                        <a href="#" class="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium">
-                          2
-                        </a>
-                        <a href="#" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                          <span class="sr-only">下一页</span>
-                          <i class="fa fa-chevron-right text-xs"></i>
-                        </a>
                       </nav>
                     </div>
                   </div>
@@ -1060,33 +1043,42 @@
         const userId = this.getAttribute('data-id');
         const userName = this.closest('tr').querySelector('td:nth-child(2)').textContent;
 
-        if (!confirm(`确定要删除用户"${userName}"吗？此操作不可恢复！`)) {
-          return;
-        }
+        // 【美化修改】使用自定义确认模态框替代原生confirm
+        document.getElementById('confirm-title').textContent = '确认删除用户';
+        document.getElementById('confirm-message').textContent =
+          `确定要删除用户"${userName}"吗？此操作不可恢复！`;
 
-        fetch(`/user_del?id=${userId}`, {
-          method: 'DELETE',
-          headers: {
-            'X-CSRFToken': getCookie('csrf_token')
-          }
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showSuccessToast('用户删除成功');
-            window.location.reload();
-          } else {
-            showErrorToast('删除失败: ' + data.message);
-          }
-        })
-        .catch(error => {
-          console.error('删除用户失败:', error);
-          showErrorToast('删除用户失败，请重试');
-        });
+        // 绑定确认按钮事件
+        const confirmBtn = document.getElementById('confirm-action-btn');
+        confirmBtn.onclick = function() {
+          // 执行删除操作
+          fetch(`/user_del?id=${userId}`, {
+            method: 'DELETE',
+            headers: {
+              'X-CSRFToken': getCookie('csrf_token')
+            }
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              closeConfirmModal();
+              showSuccessToast('用户删除成功');
+              window.location.reload();
+            } else {
+              showErrorToast('删除失败: ' + data.message);
+            }
+          })
+          .catch(error => {
+            console.error('删除用户失败:', error);
+            showErrorToast('删除用户失败，请重试');
+          });
+        };
+
+        // 显示确认模态框
+        openConfirmModal();
       });
     });
   }
-
   /**
    * 绑定用户状态切换按钮事件
    */
