@@ -1441,6 +1441,7 @@ def user_edit():
     elif request.method == 'POST':
         # 打印请求数据
         data = request.get_json()
+        print("0"*100)
         print(data)
         user_id = data['id']
         db = get_db()
@@ -1470,7 +1471,7 @@ def user_edit():
                         WHERE id = ?
                         ''', (username, email, status, user_id))
             # 处理角色分配（如果提供了角色数据）
-            if 'roles' in data:
+            if 'role' in data:
                 # 删除用户现有角色
                 cursor.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
                 # 分配新角色
@@ -1523,22 +1524,17 @@ def assign_user_roles(user_id):
     roles = data['roles']
     db = get_db()
     try:
-
         cursor = db.cursor()
-
         # 先删除现有角色
         cursor.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
-
         # 分配新角色
         if roles:
             cursor.executemany('''
             INSERT INTO user_roles (user_id, role_id)
             VALUES (?, ?)
             ''', [(user_id, role_id) for role_id in roles])
-
         db.commit()
         return jsonify({'success': True, 'message': '角色分配成功'})
-
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'message': f"角色分配失败: {str(e)}"}), 500
