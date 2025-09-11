@@ -35,23 +35,22 @@ app.static_folder = 'static'
 
 def permission_required(permission_code):
     """权限检查装饰器"""
-
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if not current_user.is_authenticated:
+                # 未登录用户重定向到登录页
                 return redirect(url_for('login'))
 
             # 检查用户是否有指定权限
             if not current_user.has_permission(permission_code):
-                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify(success=False, message='没有操作权限')
-                abort(403)  # 拒绝访问
-
+                # 统一返回JSON格式的权限错误，包含403状态码
+                return jsonify({
+                    'success': False,
+                    'message': '没有操作权限，请联系管理员获取权限'
+                }), 403
             return f(*args, **kwargs)
-
         return decorated_function
-
     return decorator
 
 
@@ -772,6 +771,7 @@ def update_host():
 # 查看模板
 @app.route("/templates", methods=['GET'])
 @login_required
+@permission_required('temp_view')
 def templates():
     try:
         db = get_db()
@@ -819,6 +819,7 @@ def templates():
 # 添加模板
 @app.route("/temp_add", methods=['POST'])
 @login_required
+@permission_required('temp_add')
 def templates_add():
     try:
         data = request.get_json()
@@ -879,6 +880,7 @@ def templates_add():
 # 删除模板
 @app.route("/temp_del", methods=['DELETE'])
 @login_required
+@permission_required('temp_del')
 def templates_del():
     template_id = request.args.get('temp_id')
     try:
@@ -899,6 +901,7 @@ def templates_del():
 # 修改模板
 @app.route("/temp_edit", methods=['POST'])
 @login_required
+@permission_required('temp_edit')
 def templates_edit():
     try:
         data = request.get_json()
@@ -1117,12 +1120,12 @@ def systemseting():
 
 # 系统配置接口
 @app.route('/api/system-config', methods=['GET', 'POST'])
+@login_required  # 添加登录验证
 def get_system_config():
     if request.method == "GET":
         @permission_required('sys_view')
         def get_config():
             try:
-
                 db = get_db()
                 config = db.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
                 print(dict(config))
@@ -1130,6 +1133,8 @@ def get_system_config():
             except Exception as e:
                 app.logger.error(f"获取系统配置失败: {str(e)}")
                 return jsonify({'error': '获取系统配置失败'}), 500
+        # 调用嵌套函数并返回结果
+        return get_config()
     else:
         @permission_required('sys_edit')
         def update_config():
@@ -1154,6 +1159,8 @@ def get_system_config():
             except Exception as e:
                 app.logger.error(f"保存系统配置失败: {str(e)}")
                 return jsonify({'error': '保存系统配置失败'}), 500
+        # 调用嵌套函数并返回结果
+        return update_config()
 
 
 # 获取会话超时时间（从数据库）
@@ -1339,6 +1346,8 @@ def users():
                     "success": False,
                     "message": f"获取用户列表失败: {str(e)}"
                 }), 500
+        # 调用嵌套函数并返回结果
+        return get_users()
     # 如果是添加用户
     elif request.method == 'POST':
         db = get_db()
@@ -1428,6 +1437,8 @@ def users():
                     "success": False,
                     "message": f"添加失败：{str(e)}"
                 }), 500
+        # 调用嵌套函数并返回结果
+        return add_user()
 
 
 @app.route('/user_edit', methods=['GET', 'POST'])

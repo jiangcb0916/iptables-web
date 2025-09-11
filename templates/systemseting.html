@@ -526,6 +526,43 @@
     return cookieValue;
   }
 
+  // 修改全局fetch错误处理
+  function handleFetchError(response, defaultMessage = '操作失败') {
+    if (response.status === 403) {
+      return Promise.reject(new Error('没有对应的权限，请联系管理员获取权限'));
+    }
+    if (!response.ok) {
+      return response.json()
+        .then(err => Promise.reject(new Error(err.message || defaultMessage)))
+        .catch(() => Promise.reject(new Error(defaultMessage)));
+    }
+    return response.json();
+  }
+
+  /**
+   * 统一API请求函数 - 自动应用错误处理
+   * @param {string} url - 请求URL
+   * @param {Object} options - Fetch选项
+   * @param {string} errorMessage - 错误提示消息
+   * @returns {Promise} - 返回处理后的Promise
+   */
+  function apiRequest(url, options = {}, errorMessage = '操作失败') {
+    // 默认headers
+    const headers = {
+      'X-CSRFToken': getCookie('csrf_token'),
+      ...options.headers
+    };
+
+    // 如果是POST/PUT等方法且没有设置Content-Type，默认使用application/json
+    if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase()) &&
+        !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    return fetch(url, { ...options, headers })
+      .then(response => handleFetchError(response, errorMessage));
+  }
+
 
   // ================================================
   // 2. 全局变量
@@ -565,11 +602,7 @@
    * 从后端获取系统配置并填充到表单
    */
   function fetchSystemConfigAndPopulateForm() {
-    fetch('/api/system-config')
-      .then(response => {
-        if (!response.ok) throw new Error('获取系统配置失败');
-        return response.json();
-      })
+    apiRequest('/api/system-config', {}, '获取系统配置失败')
       .then(config => {
         // 填充系统名称
         const systemNameInput = document.getElementById('system-name');
@@ -605,6 +638,7 @@
       })
       .catch(error => {
         console.error('获取系统配置失败:', error);
+        showErrorToast(error.message); // 直接显示错误信息
       });
   }
 
@@ -870,17 +904,14 @@
       },
       body: JSON.stringify(userData)
     })
-    .then(response => {
-      if (!response.ok) return response.json().then(err => { throw new Error(err.message); });
-      return response.json();
-    })
+    .then(response => handleFetchError(response, '添加用户失败'))
     .then(data => {
       closeCommonModal();
       showSuccessToast('用户添加成功');
       window.location.reload();
     })
     .catch(error => {
-      showErrorToast('添加失败: ' + error.message);
+      showErrorToast(error.message); // 直接显示错误信息
       console.error('添加用户错误:', error);
     });
   }
@@ -892,11 +923,7 @@
     document.querySelectorAll('.edit-user').forEach(btn => {
       btn.addEventListener('click', function() {
         const userId = this.getAttribute('data-id');
-        fetch(`/user_edit?id=${userId}`)
-          .then(response => {
-            if (!response.ok) throw new Error('获取用户数据失败');
-            return response.json();
-          })
+        apiRequest(`/user_edit?id=${userId}`, {}, '获取用户数据失败')
           .then(data => {
             if (data.success) {
               renderEditUserForm(data.user, data.roles, data.user_roles);
@@ -909,7 +936,7 @@
           })
           .catch(error => {
             console.error('编辑用户请求失败:', error);
-            showErrorToast('加载用户信息失败');
+            showErrorToast(error.message);
           });
       });
     });
@@ -1106,24 +1133,18 @@
    * 加载所有角色列表
    */
   function loadRoles() {
-    fetch('/roles', {
-      headers: { 'Accept': 'application/json' }
-    })
-    .then(response => {
-      if (!response.ok) throw new Error('获取角色列表失败');
-      return response.json();
-    })
-    .then(data => {
-      if (data.success) {
-        renderRoleTable(data.roles);
-      } else {
-        showErrorToast('加载角色失败: ' + data.message);
-      }
-    })
-    .catch(error => {
-      console.error('加载角色列表错误:', error);
-      showErrorToast('加载角色列表失败');
-    });
+    apiRequest('/roles', { headers: { 'Accept': 'application/json' } }, '获取角色列表失败')
+      .then(data => {
+        if (data.success) {
+          renderRoleTable(data.roles);
+        } else {
+          showErrorToast('加载角色失败: ' + data.message);
+        }
+      })
+      .catch(error => {
+        console.error('加载角色列表错误:', error);
+        showErrorToast(error.message);
+      });
   }
 
   /**
@@ -1265,11 +1286,7 @@
    * @param {number} roleId - 角色ID
    */
   function openEditRoleModal(roleId) {
-    fetch(`/role_edit?id=${roleId}`)
-      .then(response => {
-        if (!response.ok) throw new Error('获取角色信息失败');
-        return response.json();
-      })
+    apiRequest(`/role_edit?id=${roleId}`, {}, '获取角色信息失败')
       .then(data => {
         if (data.success) {
           const role = data.role;
@@ -1297,7 +1314,7 @@
       })
       .catch(error => {
         console.error('获取角色信息错误:', error);
-        showErrorToast('加载角色信息失败');
+        showErrorToast(error.message);
       });
   }
 
@@ -1351,11 +1368,7 @@
     document.getElementById('permission-role-id').value = roleId;
 
     // 加载权限列表
-    fetch(`/roles/${roleId}/permissions`)
-      .then(response => {
-        if (!response.ok) throw new Error('获取权限列表失败');
-        return response.json();
-      })
+    apiRequest(`/roles/${roleId}/permissions`, {}, '获取权限列表失败')
       .then(data => {
         if (data.success) {
           renderPermissionCheckboxes(data.permissions);
@@ -1366,7 +1379,7 @@
       })
       .catch(error => {
         console.error('获取权限列表错误:', error);
-        showErrorToast('加载权限列表失败');
+        showErrorToast(error.message);
       });
   }
 
@@ -1387,6 +1400,7 @@
             '系统设置': [],
             '用户管理': [],
             '防火墙操作': [],
+            '模板管理': [],
             '审计日志': [],
             '主机操作': [],
             '角色管理': []
@@ -1399,6 +1413,7 @@
             if (perm.code.startsWith('sys_')) groupName = '系统设置';
             else if (perm.code.startsWith('user_')) groupName = '用户管理';
             else if (perm.code.startsWith('iptab_')) groupName = '防火墙操作';
+            else if (perm.code.startsWith('temp_')) groupName = '模板操作';
             else if (perm.code.startsWith('log_')) groupName = '审计日志';
             else if (perm.code.startsWith('hosts_')) groupName = '主机操作';
             else if (perm.code.startsWith('role_')) groupName = '角色管理';
@@ -1606,10 +1621,7 @@
         password_strategy: configData.passwordPolicy
       })
     })
-    .then(response => {
-      if (!response.ok) return response.json().then(err => { throw new Error(err.error); });
-      return response.json();
-    })
+    .then(response => handleFetchError(response, '保存系统配置失败'))
     .then(data => {
       closeConfirmModal();
       showSuccessToast('系统配置保存成功');
@@ -1617,7 +1629,7 @@
     })
     .catch(error => {
       console.error('保存配置失败:', error);
-      showErrorToast('保存失败: ' + error.message);
+      showErrorToast(error.message); // 直接显示错误信息
     });
   }
 
