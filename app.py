@@ -92,6 +92,7 @@ def log_operation(user_id, username, operation_type, operation_object, operation
         if 'db' in locals():
             db.rollback()
 
+
 @app.teardown_appcontext
 def close_connection(exception):
     db = getattr(g, '_database', None)
@@ -116,6 +117,9 @@ def init_db():
 
 
 def pwd_shell_cmd(hostname, port, user, pwd, cmd):
+    stdin = None
+    stdout = None
+    stderr = None
     try:
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(hostname=hostname, port=port, username=user, password=pwd, timeout=5)
@@ -1882,6 +1886,7 @@ def users():
     # 如果是添加用户
     elif request.method == 'POST':
         db = get_db()
+
         @permission_required('user_add')
         def add_user():
             # 初始化可能在日志中使用的变量
@@ -2223,6 +2228,9 @@ def user_del():
     if int(user_id) == current_user.id:
         return jsonify({'success': False, 'message': '不能删除当前登录用户'}), 400
     db = get_db()
+    # 初始化变量，避免赋值前引用问题
+    username = "未知用户"  # <-- 添加默认值
+    cursor = None  # <-- 初始化cursor
     try:
         cursor = db.cursor()
 
@@ -2235,7 +2243,12 @@ def user_del():
                 username=current_user.username,
                 operation_type='删除',
                 operation_object='用户',
-                operation_details=f"用户ID不存在: {user_id}",
+                operation_summary=f"删除用户失败: ID {user_id} (用户不存在)",
+                operation_details=json.dumps({
+                    "user_id": user_id,
+                    "error": "用户不存在",
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=0
             )
             return jsonify({'success': False, 'message': '用户不存在'}), 404
@@ -2251,7 +2264,12 @@ def user_del():
                 username=current_user.username,
                 operation_type='删除',
                 operation_object='用户',
-                operation_details=f"用户ID不存在: {user_id}",
+                operation_summary=f"删除用户失败: ID {user_id} (用户不存在)",
+                operation_details=json.dumps({
+                    "user_id": user_id,
+                    "error": "用户不存在",
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=0
             )
             return jsonify({'success': False, 'message': '用户不存在'}), 404
@@ -2262,20 +2280,31 @@ def user_del():
             username=current_user.username,
             operation_type='删除',
             operation_object='用户',
-            operation_details=f"用户名: {username}, 用户ID: {user_id}",
+            operation_summary=f"删除用户: {username}",
+            operation_details=json.dumps({
+                "user_id": user_id,
+                "username": username,
+                "deleted_roles": cursor.rowcount,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
             success=1
         )
         return jsonify({'success': True, 'message': '用户删除成功'})
     except Exception as e:
         db.rollback()
-        # 【新增】记录失败日志
         log_operation(
             user_id=current_user.id,
             username=current_user.username,
             operation_type='删除',
             operation_object='用户',
-            operation_details=f"用户ID: {user_id}, 失败原因: {str(e)}",
-            success=0
+            operation_summary=f"删除用户: {username}",
+            operation_details=json.dumps({
+                "user_id": user_id,
+                "username": username,
+                "deleted_roles": cursor.rowcount,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
         )
         return jsonify({'success': False, 'message': f"删除用户失败: {str(e)}"}), 500
 
@@ -2361,6 +2390,8 @@ def roles():
         if not current_user.has_permission('role_add'):
             return jsonify(success=False, message='没有添加角色权限'), 403
         db = get_db()
+        # 【修复】提前初始化role_data变量，确保所有代码路径都能访问
+        role_data = None  # <-- 添加此行，在try块外初始化变量
         try:
             # 获取JSON数据（而非表单数据）
             role_data = request.get_json()
@@ -2369,13 +2400,15 @@ def roles():
             cursor = db.cursor()
 
             # 创建角色 - 使用role_data而非request.form
+            role_name = role_data.get('role_name')
+            role_description = role_data.get('role_description', '')
 
             cursor.execute(''' 
                 INSERT INTO roles (role_name, role_description, created_at, updated_at)
                 VALUES (?, ?, ?, ?)
                  ''', (
-                role_data.get('role_name'),  # <-- 修复：从JSON数据获取
-                role_data.get('role_description', ''),  # <-- 修复：从JSON数据获取，提供默认值
+                role_name,  # <-- 修复：从JSON数据获取
+                role_description,  # <-- 修复：从JSON数据获取，提供默认值
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             ))
@@ -2388,6 +2421,12 @@ def roles():
                     INSERT INTO role_permissions (role_id, permission_id)
                     VALUES (?, ?)
                     ''', [(role_id, p) for p in permissions])
+            # 获取权限名称列表用于日志
+            permission_names = []
+            if permissions:
+                placeholders = ', '.join(['?'] * len(permissions))
+                cursor.execute(f'SELECT code FROM permissions WHERE id IN ({placeholders})', permissions)
+                permission_names = [row['code'] for row in cursor.fetchall()]
             db.commit()
             # 【新增】记录成功日志
             log_operation(
@@ -2395,19 +2434,67 @@ def roles():
                 username=current_user.username,
                 operation_type='添加',
                 operation_object='角色',
-                operation_details=f"角色名称: {role_data.get('role_name')}, 权限数量: {len(permissions)}",
+                operation_summary=f"添加角色: {role_name}",  # 简略摘要
+                operation_details=json.dumps({  # JSON格式详细信息
+                    "role_id": role_id,
+                    "role_name": role_name,
+                    "role_description": role_description,
+                    "permissions": {
+                        "count": len(permissions),
+                        "permission_ids": permissions,
+                        "permission_codes": permission_names
+                    },
+                    "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=1
             )
             return jsonify({"success": True, "message": "角色添加成功！"}), 200
-        except Exception as e:
+        except sqlite3.IntegrityError as e:
             db.rollback()
-            # 【新增】记录失败日志
+            # 【修复】记录失败日志，确保role_data已初始化
             log_operation(
                 user_id=current_user.id,
                 username=current_user.username,
                 operation_type='添加',
                 operation_object='角色',
-                operation_details=f"失败原因: {str(e)}",
+                operation_summary=f"添加角色失败: {(role_data.get('role_name') if role_data else '未知角色')} (角色名称已存在)",
+                # 安全获取角色名
+                operation_details=json.dumps({
+                    "role_name": role_data.get('role_name') if role_data else None,
+                    "role_description": role_data.get('role_description', '') if role_data else '',
+                    "permissions": {
+                        "count": len(role_data.get('permissions', [])) if role_data else 0,
+                        "permission_ids": role_data.get('permissions', []) if role_data else []
+                    },
+                    "error": "角色名称已存在",
+                    "error_type": "IntegrityError",
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=0
+            )
+            return jsonify({"success": False, "message": f"错误：{str(e)}"}), 500
+        except Exception as e:
+            db.rollback()
+            # 【修复】确保role_data已初始化，避免赋值前引用
+            role_data = role_data or {}  # <-- 添加此行确保role_data是字典
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='添加',
+                operation_object='角色',
+                operation_summary=f"添加角色失败: {role_data.get('role_name', '未知角色')}",  # 现在安全了
+                operation_details=json.dumps({
+                    "role_name": role_data.get('role_name'),
+                    "role_description": role_data.get('role_description', ''),
+                    "permissions": {
+                        "count": len(role_data.get('permissions', [])),
+                        "permission_ids": role_data.get('permissions', [])
+                    },
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=0
             )
             return jsonify({"success": False, "message": f"错误：{str(e)}"}), 500
@@ -2448,11 +2535,16 @@ def role_edit():
 
     elif request.method == 'POST':
         data = request.get_json()
-        role_id = data['id']
+        role_id = data.get('id')
         db = get_db()
+        # 初始化变量，避免赋值前引用
+        original_role_name = "未知角色"
+        permissions = []
+        permission_codes = []
+
         try:
             cursor = db.cursor()
-            # 【新增】获取原角色名称用于日志
+            # 获取原角色名称用于日志
             cursor.execute('SELECT role_name FROM roles WHERE id = ?', (role_id,))
             role = cursor.fetchone()
             if not role:
@@ -2461,12 +2553,19 @@ def role_edit():
                     username=current_user.username,
                     operation_type='编辑',
                     operation_object='角色',
-                    operation_details=f"角色ID不存在: {role_id}",
+                    operation_summary=f"编辑角色失败: 角色ID {role_id} (角色不存在)",
+                    operation_details=json.dumps({
+                        "role_id": role_id,
+                        "error": "角色不存在",
+                        "error_type": "NotFoundError",
+                        "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }),
                     success=0
                 )
                 return jsonify(success=False, message='角色不存在'), 404
             original_role_name = role['role_name']
-            # 【修复】提前初始化permissions变量，确保所有路径都有定义
+
+            # 初始化权限变量
             permissions = data.get('permissions', [])
 
             # 更新角色信息
@@ -2482,24 +2581,40 @@ def role_edit():
 
             # 如果有提交权限，则更新权限
             if 'permissions' in data:
-                # 先删除现有权限
                 cursor.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
-
-                # 添加新权限
+                permissions = data['permissions']
                 if permissions:
                     cursor.executemany('''
                     INSERT INTO role_permissions (role_id, permission_id)
                     VALUES (?, ?)
                     ''', [(role_id, p) for p in permissions])
 
+                # 获取权限名称用于日志详情
+                if permissions:
+                    placeholders = ', '.join(['?'] * len(permissions))
+                    cursor.execute(f'SELECT code FROM permissions WHERE id IN ({placeholders})', permissions)
+                    permission_codes = [row['code'] for row in cursor.fetchall()]
+
             db.commit()
-            # 【新增】记录成功日志
             log_operation(
                 user_id=current_user.id,
                 username=current_user.username,
                 operation_type='编辑',
                 operation_object='角色',
-                operation_details=f"原角色名: {original_role_name}, 新角色名: {data['role_name']}, 权限数量: {len(permissions)}",
+                operation_summary=f"编辑角色: {original_role_name} → {data['role_name']}",
+                operation_details=json.dumps({
+                    "role_id": role_id,
+                    "original_role_name": original_role_name,
+                    "new_role_name": data['role_name'],
+                    "role_description": data['role_description'],
+                    "permissions": {
+                        "count": len(permissions),
+                        "permission_ids": permissions,
+                        "permission_codes": permission_codes
+                    },
+                    "updated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=1
             )
             return jsonify({'success': True, 'message': '角色更新成功'})
@@ -2511,7 +2626,19 @@ def role_edit():
                 username=current_user.username,
                 operation_type='编辑',
                 operation_object='角色',
-                operation_details=f"角色ID: {role_id}, 失败原因: {str(e)}",
+                operation_summary=f"编辑角色失败: {original_role_name}",
+                operation_details=json.dumps({
+                    "role_id": role_id,
+                    "original_role_name": original_role_name,
+                    "request_data": {
+                        "new_role_name": data.get('role_name'),
+                        "role_description": data.get('role_description'),
+                        "permission_count": len(permissions)
+                    },
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=0
             )
             return jsonify({'success': False, 'message': f"更新角色失败: {str(e)}"}), 500
@@ -2527,18 +2654,29 @@ def role_del():
     if int(role_id) == 1:
         return jsonify({'success': False, 'message': '不能删除默认管理员角色'}), 400
     db = get_db()
+    # 初始化变量避免赋值前引用
+    role_name = "未知角色"
+    deleted_permissions_count = 0
+
     try:
         cursor = db.cursor()
-        # 【新增】获取角色名称用于日志
+        # 获取角色名称用于日志
         cursor.execute('SELECT role_name FROM roles WHERE id = ?', (role_id,))
         role = cursor.fetchone()
         if not role:
+            # 【优化】角色不存在日志
             log_operation(
                 user_id=current_user.id,
                 username=current_user.username,
                 operation_type='删除',
                 operation_object='角色',
-                operation_details=f"角色ID不存在: {role_id}",
+                operation_summary=f"删除角色失败: 角色ID {role_id} (角色不存在)",  # 简略摘要
+                operation_details=json.dumps({  # JSON详细信息
+                    "role_id": role_id,
+                    "error": "角色不存在",
+                    "error_type": "NotFoundError",
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=0
             )
             return jsonify(success=False, message='角色不存在'), 404
@@ -2548,39 +2686,86 @@ def role_del():
         cursor.execute('SELECT COUNT(*) as count FROM user_roles WHERE role_id = ?', (role_id,))
         count = cursor.fetchone()['count']
         if count > 0:
+            # 【新增】关联用户存在时记录日志
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='角色',
+                operation_summary=f"删除角色失败: {role_name} (已分配给{count}个用户)",  # 简略摘要
+                operation_details=json.dumps({  # JSON详细信息
+                    "role_id": role_id,
+                    "role_name": role_name,
+                    "user_count": count,
+                    "error": "角色已分配给用户，无法删除",
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=0
+            )
             db.rollback()
             return jsonify({'success': False, 'message': f'该角色已分配给{count}个用户，请先移除用户关联'}), 400
 
         # 删除角色权限关联
         cursor.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
+        deleted_permissions_count = cursor.rowcount  # 记录删除的权限关联数量
 
         # 删除角色
         cursor.execute('DELETE FROM roles WHERE id = ?', (role_id,))
+        deleted_role_count = cursor.rowcount
 
-        if cursor.rowcount == 0:
+        if deleted_role_count == 0:
             db.rollback()
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='角色',
+                operation_summary=f"删除角色失败: 角色ID {role_id} (角色不存在)",
+                operation_details=json.dumps({
+                    "role_id": role_id,
+                    "error": "角色不存在",
+                    "error_type": "NotFoundError",
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=0
+            )
             return jsonify({'success': False, 'message': '角色不存在'}), 404
 
         db.commit()
-        # 【新增】记录成功日志
+        # 【优化】删除成功日志
         log_operation(
             user_id=current_user.id,
             username=current_user.username,
             operation_type='删除',
             operation_object='角色',
-            operation_details=f"角色名称: {role_name}, 角色ID: {role_id}",
+            operation_summary=f"删除角色: {role_name} (ID: {role_id})",  # 简略摘要
+            operation_details=json.dumps({  # JSON详细信息
+                "role_id": role_id,
+                "role_name": role_name,
+                "deleted_permissions_count": deleted_permissions_count,
+                "deleted_role_count": deleted_role_count,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
             success=1
         )
         return jsonify({'success': True, 'message': '角色删除成功'})
 
     except Exception as e:
         db.rollback()
+        # 【优化】异常日志
         log_operation(
             user_id=current_user.id,
             username=current_user.username,
             operation_type='删除',
             operation_object='角色',
-            operation_details=f"角色ID: {role_id}, 失败原因: {str(e)}",
+            operation_summary=f"删除角色失败: {role_name}",  # 简略摘要
+            operation_details=json.dumps({  # JSON详细信息
+                "role_id": role_id,
+                "role_name": role_name,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
             success=0
         )
         return jsonify({'success': False, 'message': f"删除角色失败: {str(e)}"}), 500
@@ -2605,58 +2790,101 @@ def role_permissions(role_id):
             "permissions": [dict(perm) for perm in permissions]
         })
 
+
     elif request.method == 'POST':
         # 更新角色权限
         permissions = request.json.get('permissions', [])
         print(permissions)
         cursor = db.cursor()
-
+        # 初始化变量避免赋值前引用
+        role_name = "未知角色"
+        old_permissions = []
+        permission_codes = []
         try:
-            # 【新增】获取角色名称用于日志
+            # 获取角色名称和现有权限用于日志
             cursor.execute('SELECT role_name FROM roles WHERE id = ?', (role_id,))
             role = cursor.fetchone()
             if not role:
+                # 【优化】角色不存在日志
                 log_operation(
                     user_id=current_user.id,
                     username=current_user.username,
                     operation_type='分配',
                     operation_object='角色权限',
-                    operation_details=f"角色ID不存在: {role_id}",
+                    operation_summary=f"分配角色权限失败: 角色ID {role_id} (角色不存在)",  # 简略摘要
+                    operation_details=json.dumps({  # JSON详细信息
+                        "role_id": role_id,
+                        "error": "角色不存在",
+                        "error_type": "NotFoundError",
+                        "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }),
                     success=0
                 )
                 return jsonify({"success": False, "message": "角色不存在"}), 404
             role_name = role['role_name']
-
+            # 获取原权限列表用于变更对比
+            cursor.execute('SELECT permission_id FROM role_permissions WHERE role_id = ?', (role_id,))
+            old_permissions = [row['permission_id'] for row in cursor.fetchall()]
             # 先删除现有权限
             cursor.execute('DELETE FROM role_permissions WHERE role_id = ?', (role_id,))
-
             # 添加新权限
             if permissions:
                 cursor.executemany('''
                 INSERT INTO role_permissions (role_id, permission_id)
                 VALUES (?, ?)
                 ''', [(role_id, p) for p in permissions])
-
+                # 获取权限代码用于日志详情
+                placeholders = ', '.join(['?'] * len(permissions))
+                cursor.execute(f'SELECT id, code FROM permissions WHERE id IN ({placeholders})', permissions)
+                permission_codes = {row['id']: row['code'] for row in cursor.fetchall()}
             db.commit()
-            # 【新增】记录成功日志
+            # 【优化】分配成功日志
             log_operation(
                 user_id=current_user.id,
                 username=current_user.username,
                 operation_type='分配',
                 operation_object='角色权限',
-                operation_details=f"角色名称: {role_name}, 角色ID: {role_id}, 权限数量: {len(permissions)}",
+                operation_summary=f"分配角色权限: {role_name} (权限数量: {len(permissions)})",  # 简略摘要
+                operation_details=json.dumps({  # JSON详细信息
+                    "role_id": role_id,
+                    "role_name": role_name,
+                    "permission_changes": {
+                        "old_count": len(old_permissions),
+                        "new_count": len(permissions),
+                        "added": list(set(permissions) - set(old_permissions)),
+                        "removed": list(set(old_permissions) - set(permissions)),
+                        "total_changed": abs(len(permissions) - len(old_permissions))
+                    },
+                    "current_permissions": {
+                        "count": len(permissions),
+                        "permission_ids": permissions,
+                        "permission_codes": permission_codes  # 权限代码映射
+                    },
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=1
             )
             return jsonify({"success": True, "message": "权限分配成功！"})
         except Exception as e:
             db.rollback()
-            # 【新增】记录失败日志
+            # 【优化】分配失败日志
             log_operation(
                 user_id=current_user.id,
                 username=current_user.username,
                 operation_type='分配',
                 operation_object='角色权限',
-                operation_details=f"角色ID: {role_id}, 失败原因: {str(e)}",
+                operation_summary=f"分配角色权限失败: {role_name}",  # 简略摘要
+                operation_details=json.dumps({  # JSON详细信息
+                    "role_id": role_id,
+                    "role_name": role_name,
+                    "requested_permissions": {
+                        "count": len(permissions),
+                        "permission_ids": permissions
+                    },
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
                 success=0
             )
             return jsonify({"success": False, "message": f"权限分配失败：{str(e)}"}), 500
