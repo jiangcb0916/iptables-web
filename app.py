@@ -1319,7 +1319,7 @@ def templates_edit():
         cursor.execute('DELETE FROM rules WHERE template_id = ?', (data['temp_id'],))
         rule_count = 0
         for rule in data['rules']:
-            if rule['policy'] == '允许':
+            if rule['policy'] == '允许' or rule['policy'] == 'ACCEPT':
                 policy = 'ACCEPT'
             else:
                 policy = 'DROP'
