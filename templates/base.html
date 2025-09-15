@@ -14,26 +14,6 @@
 
   <!-- 配置Tailwind自定义颜色和字体 -->
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            primary: '#165DFF',
-            secondary: '#6B7280',
-            success: '#10B981',
-            danger: '#EF4444',
-            warning: '#F59E0B',
-            info: '#3B82F6',
-            light: '#F3F4F6',
-            dark: '#1F2937'
-          },
-          fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-          },
-        },
-      }
-    }
-
     // 修改主题应用逻辑，只针对侧边栏
     function applyTheme(theme) {
       // 获取侧边栏元素
@@ -79,51 +59,6 @@
   </script>
 
   <!-- 自定义工具类 -->
-  <style type="text/tailwindcss">
-    @layer utilities {
-      .content-auto {
-        content-visibility: auto;
-      }
-      .table-shadow {
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      }
-      .btn-hover {
-        @apply transition-all duration-200 hover:shadow-md transform hover:-translate-y-0.5;
-      }
-      .sidebar-item {
-        @apply flex items-center px-4 py-3 text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer;
-      }
-      .sidebar-item.active {
-        @apply bg-primary/10 text-primary border-l-4 border-primary;
-      }
-    }
-
-    /* 侧边栏暗色模式样式 */
-    .sidebar-container.dark {
-      background-color: #1a202c;
-      border-color: #4a5568;
-    }
-
-    .sidebar-container.dark .border-b {
-      border-color: #4a5568;
-    }
-
-    .sidebar-container.dark .hover:bg-gray-50:hover {
-      background-color: #4a5568;
-    }
-
-    .sidebar-container.dark .text-gray-500 {
-      color: #a0aec0;
-    }
-
-    .sidebar-container.dark .sidebar-item {
-      color: #e2e8f0;
-    }
-
-    .sidebar-container.dark .sidebar-item:hover {
-      color: #fff;
-    }
-  </style>
 </head>
 
 <body class="bg-gray-50 font-sans text-dark antialiased">

@@ -1,38 +1,75 @@
 {% extends 'base.html' %}
 {% block main %}
-  <style type="text/tailwindcss">
-    /* 提示消息基础样式 */
-    .toast {
-      position: fixed; /* 固定定位，不随滚动移动 */
-      top: 20px; /* 距离顶部20px */
-      right: 20px; /* 距离右侧20px */
-      padding: 12px 20px; /* 内边距 */
-      border-radius: 6px; /* 圆角 */
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); /* 阴影效果 */
-      z-index: 9999; /* 确保在最上层 */
-      display: flex; /* 图标和文字横向排列 */
-      align-items: center; /* 垂直居中 */
-      transition: all 0.3s ease; /* 过渡动画 */
+<style type="text/tailwindcss">
+    @layer utilities {
+      /* 提示消息基础样式 - 默认隐藏 */
+      .toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        transition: all 0.3s ease;
+        transform: translateX(120%); /* 默认向右移出屏幕 */
+        opacity: 0; /* 默认完全透明 */
+      }
+      /* 显示状态 - 通过JS添加此类 */
+      .toast.show {
+        transform: translateX(0); /* 移动到可见位置 */
+        opacity: 1; /* 完全显示 */
+      }
+      /* 颜色样式（保持不变） */
+      .bg-success { background-color: #10b981; }
+      .bg-danger { background-color: #ef4444; }
+      .text-white { color: white; }
+
+      /* 将所有工具类移至 @layer utilities 内部 */
+      .test-toast { color: red; }  /* 新增测试样式 */
+      .content-auto {
+        content-visibility: auto;
+      }
+      .table-shadow {
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      }
+      .btn-hover {
+        @apply transition-all duration-200 hover:shadow-md transform hover:-translate-y-0.5;
+      }
+      .sidebar-item {
+        @apply flex items-center px-4 py-3 text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer;
+      }
+      .sidebar-item.active {
+        @apply bg-primary/10 text-primary border-l-4 border-primary;
+      }
+    }  /* 仅保留这一个闭合括号 */
+
+    /* 侧边栏暗色模式样式 */
+    .sidebar-container.dark {
+      background-color: #1a202c;
+      border-color: #4a5568;
     }
 
-    /* 初始隐藏状态：向右移出屏幕且透明 */
-    .toast.translate-x-full {
-      transform: translateX(120%); /* 向右移出屏幕 */
-      opacity: 0; /* 完全透明 */
+    .sidebar-container.dark .border-b {
+      border-color: #4a5568;
     }
 
-    /* 显示状态（通过JS移除translate-x-full和opacity-0实现） */
-    .toast:not(.translate-x-full) {
-      transform: translateX(0); /* 回到正常位置 */
-      opacity: 1; /* 完全显示 */
+    .sidebar-container.dark .hover:bg-gray-50:hover {
+      background-color: #4a5568;
     }
 
-    /* 成功/错误状态的背景色（如果已有无需重复） */
-    .bg-success {
-      background-color: #10b981; /* 绿色 */
+    .sidebar-container.dark .text-gray-500 {
+      color: #a0aec0;
     }
-    .bg-danger {
-      background-color: #ef4444; /* 红色 */
+
+    .sidebar-container.dark .sidebar-item {
+      color: #e2e8f0;
+    }
+
+    .sidebar-container.dark .sidebar-item:hover {
+      color: #fff;
     }
   </style>
     <!-- 主内容区 -->
@@ -264,12 +301,12 @@
     </div>
   </div>
 
-  <!-- 提示消息 -->
-  <div id="success-toast" class="toast bg-success text-white translate-x-full">
+  <!-- 提示消息（初始无show类，默认隐藏） -->
+  <div id="success-toast" class="toast bg-success text-white">
     <i class="fa fa-check-circle mr-2"></i>
     <span>操作成功！</span>
   </div>
-  <div id="error-toast" class="toast bg-danger text-white translate-x-full">
+  <div id="error-toast" class="toast bg-danger text-white">
     <i class="fa fa-times-circle mr-2"></i>
     <span>操作失败，请重试！</span>
   </div>
@@ -450,13 +487,22 @@ showsum.textContent = displayText;
     }
   });
 
-  // 显示提示消息
-  function showToast(elementId) {
-    const toast = document.getElementById(elementId);
-    toast.classList.remove('translate-x-full'); // 移除隐藏类，显示toast
+  // 显示提示消息并自动隐藏
+  function showToast(toastId) {
+    const toast = document.getElementById(toastId);
+    if (!toast) return;
+
+    // 移除可能存在的show类，强制重绘
+    toast.classList.remove('show');
     setTimeout(() => {
-      toast.classList.add('translate-x-full'); // 3秒后添加隐藏类，隐藏toast
-    }, 3000);
+      // 添加show类显示提示
+      toast.classList.add('show');
+
+      // 3秒后自动隐藏
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }, 10);
   }
 
 // 保存主机 - 发送AJAX请求（同时支持新增和编辑）

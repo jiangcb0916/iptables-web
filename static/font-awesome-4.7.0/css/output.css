@@ -46,7 +46,7 @@ html,
   -o-tab-size: 4;
      tab-size: 4;
   /* 3 */
-  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  font-family: Inter, system-ui, sans-serif;
   /* 4 */
   font-feature-settings: normal;
   /* 5 */
@@ -222,6 +222,76 @@ textarea {
 /*
 Remove the inheritance of text transform in Edge and Firefox.
 */
+
+/* 提示消息基础样式 - 默认隐藏 */
+.toast {
+position: fixed;
+top: 20px;
+right: 20px;
+padding: 12px 20px;
+border-radius: 6px;
+box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+z-index: 9999;
+display: flex;
+align-items: center;
+transition: all 0.3s ease;
+transform: translateX(120%); /* 默认向右移出屏幕 */
+opacity: 0; /* 默认完全透明 */
+}
+/* 显示状态 - 通过JS添加此类 */
+.toast.show {
+transform: translateX(0); /* 移动到可见位置 */
+opacity: 1; /* 完全显示 */
+}
+/* 颜色样式（保持不变） */
+.bg-success { background-color: #10b981; }
+.bg-danger { background-color: #ef4444; }
+.text-white { color: white; }
+
+/* 将所有工具类移至 @layer utilities 内部 */
+.test-toast { color: red; }  /* 新增测试样式 */
+.content-auto {
+content-visibility: auto;
+}
+.table-shadow {
+box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+.btn-hover {
+@apply transition-all duration-200 hover:shadow-md transform hover:-translate-y-0.5;
+}
+.sidebar-item {
+@apply flex items-center px-4 py-3 text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer;
+}
+.sidebar-item.active {
+@apply bg-primary/10 text-primary border-l-4 border-primary;
+}
+
+
+/* 侧边栏暗色模式样式 */
+.sidebar-container.dark {
+background-color: #1a202c;
+border-color: #4a5568;
+}
+
+.sidebar-container.dark .border-b {
+border-color: #4a5568;
+}
+
+.sidebar-container.dark .hover:bg-gray-50:hover {
+background-color: #4a5568;
+}
+
+.sidebar-container.dark .text-gray-500 {
+color: #a0aec0;
+}
+
+.sidebar-container.dark .sidebar-item {
+color: #e2e8f0 !important;
+}
+
+.sidebar-container.dark .sidebar-item:hover {
+color: #fff !important;
+}
 
 button,
 select {
@@ -1178,7 +1248,7 @@ video {
 
 .border-primary {
   --tw-border-opacity: 1;
-  border-color: rgb(59 130 246 / var(--tw-border-opacity));
+  border-color: rgb(22 93 255 / var(--tw-border-opacity));
 }
 
 .border-success\/20 {
@@ -1235,11 +1305,11 @@ video {
 
 .bg-primary {
   --tw-bg-opacity: 1;
-  background-color: rgb(59 130 246 / var(--tw-bg-opacity));
+  background-color: rgb(22 93 255 / var(--tw-bg-opacity));
 }
 
 .bg-primary\/10 {
-  background-color: rgb(59 130 246 / 0.1);
+  background-color: rgb(22 93 255 / 0.1);
 }
 
 .bg-purple-100 {
@@ -1425,7 +1495,7 @@ video {
 }
 
 .font-sans {
-  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  font-family: Inter, system-ui, sans-serif;
 }
 
 .text-2xl {
@@ -1553,9 +1623,14 @@ video {
   color: rgb(79 70 229 / var(--tw-text-opacity));
 }
 
-.text-primary {
+.text-info {
   --tw-text-opacity: 1;
   color: rgb(59 130 246 / var(--tw-text-opacity));
+}
+
+.text-primary {
+  --tw-text-opacity: 1;
+  color: rgb(22 93 255 / var(--tw-text-opacity));
 }
 
 .text-purple-800 {
@@ -1737,11 +1812,11 @@ video {
 }
 
 .hover\:bg-primary\/10:hover {
-  background-color: rgb(59 130 246 / 0.1);
+  background-color: rgb(22 93 255 / 0.1);
 }
 
 .hover\:bg-primary\/90:hover {
-  background-color: rgb(59 130 246 / 0.9);
+  background-color: rgb(22 93 255 / 0.9);
 }
 
 .hover\:text-danger\/80:hover {
@@ -1780,11 +1855,11 @@ video {
 
 .hover\:text-primary:hover {
   --tw-text-opacity: 1;
-  color: rgb(59 130 246 / var(--tw-text-opacity));
+  color: rgb(22 93 255 / var(--tw-text-opacity));
 }
 
 .hover\:text-primary\/80:hover {
-  color: rgb(59 130 246 / 0.8);
+  color: rgb(22 93 255 / 0.8);
 }
 
 .hover\:text-red-700:hover {
@@ -1814,13 +1889,13 @@ video {
 }
 
 .hover\:shadow-primary\/30:hover {
-  --tw-shadow-color: rgb(59 130 246 / 0.3);
+  --tw-shadow-color: rgb(22 93 255 / 0.3);
   --tw-shadow: var(--tw-shadow-colored);
 }
 
 .focus\:border-primary:focus {
   --tw-border-opacity: 1;
-  border-color: rgb(59 130 246 / var(--tw-border-opacity));
+  border-color: rgb(22 93 255 / var(--tw-border-opacity));
 }
 
 .focus\:border-transparent:focus {
@@ -1856,11 +1931,11 @@ video {
 
 .focus\:ring-primary:focus {
   --tw-ring-opacity: 1;
-  --tw-ring-color: rgb(59 130 246 / var(--tw-ring-opacity));
+  --tw-ring-color: rgb(22 93 255 / var(--tw-ring-opacity));
 }
 
 .focus\:ring-primary\/20:focus {
-  --tw-ring-color: rgb(59 130 246 / 0.2);
+  --tw-ring-color: rgb(22 93 255 / 0.2);
 }
 
 .active\:translate-y-0:active {
