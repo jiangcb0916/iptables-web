@@ -16,7 +16,7 @@ iptables-save > /etc/sysconfig/iptables
 
 apt install iptables-persistent
 ```
-
+   
 
 主机表
     主机名称
