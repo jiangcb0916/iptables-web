@@ -1456,7 +1456,9 @@ def temp_to_hosts():
         cursor.execute('SELECT template_name FROM templates WHERE id = ?', (template_id,))
         template_name = cursor.fetchone()['template_name']
 
-        cursor.execute('SELECT id, host_name FROM hosts WHERE id IN ({})'.format(','.join(host_ids_list)))
+        # 修复：将整数ID转换为字符串后再拼接
+        host_ids_str = [str(id) for id in host_ids_list]
+        cursor.execute('SELECT id, host_name FROM hosts WHERE id IN ({})'.format(','.join(host_ids_str)))
         host_names = {str(h['id']): h['host_name'] for h in cursor.fetchall()}
 
         # 获取模板的方向
