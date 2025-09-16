@@ -1078,8 +1078,20 @@ def templates():
     try:
         db = get_db()
         cursor = db.cursor()
-        # 查看所有的数据
-        cursor.execute('SELECT * FROM templates ;')
+        # 获取搜索关键词
+        search_keyword = request.args.get('search', '').strip()
+
+        # 根据是否有搜索关键词构建不同查询
+        if search_keyword:
+            # 带搜索条件的查询
+            cursor.execute('''
+            SELECT * FROM templates 
+            WHERE template_name LIKE ? OR template_identifier LIKE ?
+            ''', (f'%{search_keyword}%', f'%{search_keyword}%'))
+        else:
+            # 原有的无搜索条件查询
+            cursor.execute('SELECT * FROM templates ;')
+
         result = cursor.fetchall()
         temp_info = []
         for res in result:
@@ -1111,11 +1123,22 @@ def templates():
                               'rules': data_list,
                               })
             # print(temp_info)
+
+        # 计算符合条件的模板总数
+        total_templates = len(temp_info)
+
     except sqlite3.IntegrityError:
         return jsonify({'success': False, 'message': '模板名称已存在'}), 409
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
-    return render_template('templates.html', data_list=temp_info)
+
+    # 传递搜索关键词和总数到前端
+    return render_template(
+        'templates.html',
+        data_list=temp_info,
+        search_keyword=search_keyword,
+        sum=total_templates
+    )
 
 
 # 添加模板
