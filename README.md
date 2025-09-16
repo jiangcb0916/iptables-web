@@ -18,37 +18,19 @@
 - iptables 1.8+
 - 操作系统：Linux（推荐CentOS 7+/Debian 10+/Ubuntu 20.04+）
 
-## 快速部署
+## Docker部署(推荐)
 ```shell
 # 克隆仓库
 git clone https://gitee.com/shiya_liu/iptables-web.git
 cd iptables-web
 
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate  # Windows
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 初始化数据库
-python create_tables.py
-
-# 启动应用
-flask run --host=0.0.0.0 --port=2025
-
-```
-
-## Docker部署
-```shell
 # 构建镜像
 docker build -t iptables_web:latest .
 
 # 运行容器
 docker run --net=host -d   --name iptables-web iptables_web:latest 
 ```
+
 ## 使用指南
 ### 初始登录
 
