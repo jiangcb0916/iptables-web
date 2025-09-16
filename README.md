@@ -21,7 +21,7 @@
 ## 快速部署
 ```shell
 # 克隆仓库
-git clone https://github.com/yourusername/iptables-web.git
+git clone https://gitee.com/shiya_liu/iptables-web.git
 cd iptables-web
 
 # 创建虚拟环境
