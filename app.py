@@ -2967,25 +2967,62 @@ def logs():
         # 处理搜索和筛选参数
         operation_type = request.args.get('operation_type')
         operation_object = request.args.get('operation_object')
-        success = request.args.get('success')
+        success = request.args.get('success')  # 不再立即转换为整数
         start_time = request.args.get('start_time')
         end_time = request.args.get('end_time')
+        # 新增：获取搜索关键词
+        search_keyword = request.args.get('search', '').strip()
 
         if operation_type:
-            query_conditions.append("operation_type = ?")
-            query_params.append(operation_type)
+            # 处理多个操作类型（逗号分隔）
+            if ',' in operation_type:
+                types = operation_type.split(',')
+                placeholders = ', '.join(['?'] * len(types))
+                query_conditions.append(f"operation_type IN ({placeholders})")
+                query_params.extend(types)
+            else:
+                query_conditions.append("operation_type = ?")
+                query_params.append(operation_type)
         if operation_object:
-            query_conditions.append("operation_object = ?")
-            query_params.append(operation_object)
-        if success is not None:
-            query_conditions.append("success = ?")
-            query_params.append(int(success))
+            # 处理多个操作对象（逗号分隔）
+            if ',' in operation_object:
+                objects = operation_object.split(',')
+                placeholders = ', '.join(['?'] * len(objects))
+                query_conditions.append(f"operation_object IN ({placeholders})")
+                query_params.extend(objects)
+            else:
+                query_conditions.append("operation_object = ?")
+                query_params.append(operation_object)
+
+        if success is not None and success != '':
+            # 修复：处理多个success值（逗号分隔）
+            if ',' in success:
+                # 分割逗号并转换为整数列表
+                success_values = [int(s.strip()) for s in success.split(',') if s.strip().isdigit()]
+                if success_values:
+                    placeholders = ', '.join(['?'] * len(success_values))
+                    query_conditions.append(f"success IN ({placeholders})")
+                    query_params.extend(success_values)
+            else:
+                # 单个值情况
+                try:
+                    query_conditions.append("success = ?")
+                    query_params.append(int(success))
+                except ValueError:
+                    # 忽略无效的success参数
+                    pass
+
         if start_time:
             query_conditions.append("operation_time >= ?")
             query_params.append(start_time)
         if end_time:
             query_conditions.append("operation_time <= ?")
             query_params.append(end_time + " 23:59:59")
+        # 新增：搜索关键词条件 (支持用户名、操作摘要和操作详情的模糊搜索)
+        if search_keyword:
+            query_conditions.append("(username LIKE ? OR operation_summary LIKE ? OR operation_details LIKE ?)")
+            search_param = f'%{search_keyword}%'
+            query_params.extend([search_param, search_param, search_param])
 
         # 构建查询SQL
         where_clause = "WHERE " + " AND ".join(query_conditions) if query_conditions else ""
