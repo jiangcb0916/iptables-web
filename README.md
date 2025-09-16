@@ -37,7 +37,7 @@ pip install -r requirements.txt
 python create_tables.py
 
 # 启动应用
-flask run --host=0.0.0.0 --port=5000
+flask run --host=0.0.0.0 --port=2025
 
 ```
 
