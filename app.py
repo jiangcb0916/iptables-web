@@ -18,6 +18,8 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from werkzeug.security import generate_password_hash, check_password_hash
 import time
 import json  # 【新增】导入JSON模块用于序列化详细信息
+from flask_apscheduler import APScheduler
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # 生产环境中应使用更安全的密钥
@@ -32,6 +34,66 @@ ssh = paramiko.SSHClient()
 DATABASE = 'firewall_management.db'
 # 确保静态文件目录正确配置
 app.static_folder = 'static'
+
+# 新增：初始化调度器
+scheduler = APScheduler()
+
+
+# 新增：日志清理任务
+# 新增：日志清理任务
+def clean_expired_logs():
+    """清理过期日志"""
+    # 【修复】添加应用上下文
+    with app.app_context():
+        db = get_db()
+        try:
+            cursor = db.cursor()
+
+            # 获取日志保留时间配置
+            cursor.execute('SELECT log_retention_time FROM system_config LIMIT 1')
+            config = cursor.fetchone()
+
+            # 日志保留时间为0或未配置，表示永久保留
+            if not config or not config['log_retention_time'] or config['log_retention_time'] == '0':
+                return
+
+            # 计算过期日期
+            retention_days = int(config['log_retention_time'])
+            if retention_days <= 0:
+                return
+
+            # 计算需要保留的最早日期
+            expire_date = (datetime.now() - timedelta(days=retention_days)).strftime('%Y-%m-%d %H:%M:%S')
+
+            # 删除过期日志
+            cursor.execute('DELETE FROM operation_logs WHERE operation_time < ?', (expire_date,))
+            deleted_count = cursor.rowcount
+            db.commit()
+
+            app.logger.info(f"清理过期日志成功，共删除 {deleted_count} 条记录")
+
+        except Exception as e:
+            db.rollback()
+            app.logger.error(f"清理过期日志失败: {str(e)}")
+
+
+# 正确配置调度器（无需创建新的app实例）
+scheduler.init_app(app)
+# scheduler.add_job(
+#     id='clean_expired_logs',
+#     func=clean_expired_logs,
+#     trigger='cron',
+#     hour=2,
+#     minute=0
+# )
+scheduler.add_job(
+    id='clean_expired_logs',
+    func=clean_expired_logs,
+    trigger='cron',
+    minute='*',  # 每分钟执行一次
+    hour='*'     # 每小时的每分钟都执行
+)
+scheduler.start()
 
 
 def permission_required(permission_code):
