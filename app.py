@@ -327,7 +327,6 @@ def rules_in():
         else:
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL INPUT --line-number -t filter')
-            print(iptables_output)
         data_list = get_rule(iptables_output)
         return render_template('rule.html', data_list=data_list, id=host_id)
     except Exception as e:
@@ -474,11 +473,9 @@ def rules_update():
                     # 添加规则中的：正常端口中的范围端口
                     if '-' in all_params['port']:
                         new_port = all_params['port'].replace("-", ":")
-                        print(new_port)
                         cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
                             direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
                             all_params['auth_policy'], all_params['description'])
-                        print(cmd)
                     # 添加规则中的: 正常端口中的多个端口
                     elif ',' in all_params['port']:
                         cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '
@@ -558,17 +555,17 @@ def rules_add():
                     # 添加规则中的：正常端口中的范围端口
                     if '-' in all_params['port']:
                         new_port = all_params['port'].replace("-", ":")
-                        print(new_port)
+
                         cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
                             direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
                             all_params['auth_policy'], all_params['description'])
-                        print(cmd)
+
                     # 添加规则中的: 正常端口中的多个端口
                     elif ',' in all_params['port']:
                         cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}"'.format(
                             direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
                             all_params['auth_policy'], all_params['description'])
-                        print(cmd)
+
                     else:
                         cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
                             direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
@@ -609,15 +606,15 @@ def rules_add():
                     # 添加规则中的：正常端口中的范围端口
                     if '-' in all_params['port']:
                         new_port = all_params['port'].replace("-", ":")
-                        print(new_port)
+
                         cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
                             direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
                             all_params['auth_policy'], all_params['description'])
-                        print(cmd)
+
                     # 添加规则中的: 正常端口中的多个端口
                     elif ',' in all_params['port']:
                         cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '
-                        print(cmd)
+
                     else:
                         cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
                             direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
@@ -1573,7 +1570,6 @@ def temp_to_hosts():
         temp_data = cursor.fetchall()
         cmd_list = []
         for rule in temp_data:
-            print(rule['port'])
             # 正常的tcp或udp规则
             if 'tcp' in rule['protocol'].lower() or 'udp' in rule['protocol'].lower():
                 # 正常的端口
@@ -1725,7 +1721,6 @@ def get_system_config():
             try:
                 db = get_db()
                 config = db.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
-                print(dict(config))
                 return jsonify(dict(config)) if config else jsonify({})
             except Exception as e:
                 app.logger.error(f"获取系统配置失败: {str(e)}")
@@ -1997,7 +1992,6 @@ def users():
                     user_list.append(user_dict)
                 return render_template('systemseting.html', user_list=user_list)
             except Exception as e:
-                print(e)
                 # 添加异常情况下的响应
                 return jsonify({
                     "success": False,
@@ -2772,7 +2766,6 @@ def role_edit():
 @permission_required('role_del')
 def role_del():
     role_id = request.args.get('id')
-    print(role_id)
     # 防止删除管理员角色
     if int(role_id) == 1:
         return jsonify({'success': False, 'message': '不能删除默认管理员角色'}), 400
@@ -2917,7 +2910,6 @@ def role_permissions(role_id):
     elif request.method == 'POST':
         # 更新角色权限
         permissions = request.json.get('permissions', [])
-        print(permissions)
         cursor = db.cursor()
         # 初始化变量避免赋值前引用
         role_name = "未知角色"
