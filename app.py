@@ -3035,7 +3035,11 @@ def logs():
                 except ValueError:
                     # 忽略无效的success参数
                     pass
-
+        # 新增：处理操作用户筛选
+        username = request.args.get('username')
+        if username:
+            query_conditions.append("username = ?")
+            query_params.append(username)
         if start_time:
             # 修复：转换前端时间格式为数据库格式
             start_time = start_time.replace('T', ' ')
