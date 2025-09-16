@@ -10,24 +10,23 @@ import sqlite3
 import re
 import paramiko
 from paramiko.client import AutoAddPolicy
-from datetime import datetime
 import math
 from io import StringIO
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, g
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import time
-import json  # 【新增】导入JSON模块用于序列化详细信息
+import json
 from flask_apscheduler import APScheduler
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'  # 生产环境中应使用更安全的密钥
+app.secret_key = 'your-secret-key-here'
 
 # 配置登录管理器
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login'  # 指定登录页面的路由
+login_manager.login_view = 'login'
 login_manager.login_message = '请先登录以访问该页面'
 
 ssh = paramiko.SSHClient()
@@ -39,7 +38,6 @@ app.static_folder = 'static'
 scheduler = APScheduler()
 
 
-# 新增：日志清理任务
 # 新增：日志清理任务
 def clean_expired_logs():
     """清理过期日志"""
@@ -79,19 +77,12 @@ def clean_expired_logs():
 
 # 正确配置调度器（无需创建新的app实例）
 scheduler.init_app(app)
-# scheduler.add_job(
-#     id='clean_expired_logs',
-#     func=clean_expired_logs,
-#     trigger='cron',
-#     hour=2,
-#     minute=0
-# )
 scheduler.add_job(
     id='clean_expired_logs',
     func=clean_expired_logs,
     trigger='cron',
-    minute='*',  # 每分钟执行一次
-    hour='*'     # 每小时的每分钟都执行
+    hour=2,
+    minute=0
 )
 scheduler.start()
 
