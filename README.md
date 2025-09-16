@@ -79,11 +79,10 @@ docker run --net=host -d   --name iptables-web iptables_web:latest
 - 建议在测试环境先配置规则，再应用到生产环境
 - 操作日志记录所有系统操作，建议定期备份
 
-扩展资源
-- iptables扩展模块文档[https://www.man7.org/linux/man-pages/man8/iptables-extensions.8.html]
-- Flask官方文档[https://flask.palletsprojects.com/en/2.0.x/]
-- Tailwind CSS文档[https://tailwindcss.com/docs]
-
+## 扩展资源
+- [iptables扩展模块文档](https://www.man7.org/linux/man-pages/man8/iptables-extensions.8.html)
+- [Flask官方文档](https://flask.palletsprojects.com/en/2.0.x/)
+- [Tailwind CSS文档](https://tailwindcss.com/docs)
 
 ## 截图
 ![login.png](docs%2Fscreenshots%2Flogin.png)
