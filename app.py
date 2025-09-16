@@ -1904,6 +1904,18 @@ def login():
 def users():
     # 如果是查看用户管理页面
     if request.method == "GET":
+        # 新增：如果是AJAX请求，返回用户列表JSON数据（用于日志筛选）
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            try:
+                db = get_db()
+                cursor = db.cursor()
+                cursor.execute('SELECT DISTINCT username FROM operation_logs ORDER BY username')
+                users = [{'username': row['username']} for row in cursor.fetchall()]
+                return jsonify({"success": True, "users": users})
+            except Exception as e:
+                app.logger.error(f"获取用户列表失败: {str(e)}")
+                return jsonify({"success": False, "message": "获取用户列表失败"}), 500
+
         @permission_required('user_view')
         def get_users():
             try:
@@ -2953,6 +2965,18 @@ def role_permissions(role_id):
 @login_required
 @permission_required('log_view')
 def logs():
+    # 新增：如果请求操作类型列表参数，返回操作类型数据
+    if request.args.get('get_operation_types') == 'true':
+        try:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('SELECT DISTINCT operation_type FROM operation_logs ORDER BY operation_type')
+            types = [row['operation_type'] for row in cursor.fetchall()]
+            return jsonify({"success": True, "types": types})
+        except Exception as e:
+            app.logger.error(f"获取操作类型失败: {str(e)}")
+            return jsonify({"success": False, "message": "获取操作类型失败"}), 500
+
     # 如果是API请求（带X-Requested-With头），返回JSON数据
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         # 获取分页参数，默认第1页，每页10条
@@ -3013,11 +3037,18 @@ def logs():
                     pass
 
         if start_time:
+            # 修复：转换前端时间格式为数据库格式
+            start_time = start_time.replace('T', ' ')
             query_conditions.append("operation_time >= ?")
             query_params.append(start_time)
         if end_time:
+            # 修复：转换前端时间格式为数据库格式并添加秒数
+            end_time = end_time.replace('T', ' ')
+            # 如果没有秒数部分，添加默认秒数
+            if len(end_time) <= 16:  # "YYYY-MM-DD HH:MM"长度为16
+                end_time += ":00"
             query_conditions.append("operation_time <= ?")
-            query_params.append(end_time + " 23:59:59")
+            query_params.append(end_time)
         # 新增：搜索关键词条件 (支持用户名、操作摘要和操作详情的模糊搜索)
         if search_keyword:
             query_conditions.append("(username LIKE ? OR operation_summary LIKE ? OR operation_details LIKE ?)")
