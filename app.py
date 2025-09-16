@@ -744,7 +744,8 @@ def del_rule():
 @permission_required('hosts_view')  # 添加主机查看权限
 def hosts():
     all_params = dict(request.args)
-    page = all_params['page']
+    page = all_params.get('page', '1')  # 默认为第1页
+    search_keyword = all_params.get('search', '')  # 获取搜索关键词
     page_size = 10
     start = (int(page) - 1) * page_size
     end = int(page) * page_size
@@ -752,13 +753,25 @@ def hosts():
         # 获取数据库连接
         db = get_db()
         cursor = db.cursor()
-        # 查询所有主机数据
-        cursor.execute('''
-        SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
-               operating_system, created_at, ssh_port
-        FROM hosts 
-        ORDER BY created_at DESC
-        ''')
+
+        # 搜索功能实现
+        if search_keyword:
+            # 带搜索条件的查询
+            cursor.execute('''
+            SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
+                   operating_system, created_at, ssh_port
+            FROM hosts 
+            WHERE host_name LIKE ? OR host_identifier LIKE ? OR ip_address LIKE ?
+            ORDER BY created_at DESC
+            ''', (f'%{search_keyword}%', f'%{search_keyword}%', f'%{search_keyword}%'))
+        else:
+            # 原有的无搜索条件查询
+            cursor.execute('''
+            SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
+                   operating_system, created_at, ssh_port
+            FROM hosts 
+            ORDER BY created_at DESC
+            ''')
 
         # 获取所有记录
         hosts = cursor.fetchall()
@@ -777,9 +790,20 @@ def hosts():
                 'operating_system': host['operating_system'],
                 'created_at': host['created_at']
             })
-        # 将主机数据传递到模板
-        return render_template('host.html', host_list=host_list[start:end], sum=len(host_list), start=(start + 1),
-                               end=end, current_page=page, total_pages=(math.ceil(len(host_list) / 10)))
+
+        # 计算总页数（考虑搜索结果）
+        total_items = len(host_list)
+        total_pages = math.ceil(total_items / page_size)
+
+        # 将主机数据和搜索关键词传递到模板
+        return render_template('host.html',
+                               host_list=host_list[start:end],
+                               sum=total_items,
+                               start=(start + 1),
+                               end=min(end, total_items),  # 处理最后一页可能不足一页的情况
+                               current_page=page,
+                               total_pages=total_pages,
+                               search_keyword=search_keyword)  # 传递搜索关键词到前端
     except Exception as e:
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
