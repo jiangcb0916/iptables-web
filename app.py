@@ -19,6 +19,7 @@ import time
 import json
 from flask_apscheduler import APScheduler
 from datetime import datetime, timedelta
+import pytz
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
@@ -131,14 +132,17 @@ def log_operation(user_id, username, operation_type, operation_object, operation
     :param operation_details: 操作详情(JSON格式)
     :param success: 操作结果(1成功,0失败)
     """
+    # 获取东八区当前时间
+    tz = pytz.timezone('Asia/Shanghai')
+    operation_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
     db = get_db()
     try:
         cursor = db.cursor()
         cursor.execute('''
         INSERT INTO operation_logs 
         (user_id, username, operation_type, operation_object, operation_summary, operation_details, success, operation_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ''', (user_id, username, operation_type, operation_object, operation_summary, operation_details, success))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, username, operation_type, operation_object, operation_summary, operation_details, success,operation_time))
         db.commit()
     except Exception as e:
         app.logger.error(f"记录操作日志失败: {str(e)}")
