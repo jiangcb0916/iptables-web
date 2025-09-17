@@ -3138,6 +3138,7 @@ def logs():
             log_list = []
             for log in logs:
                 log_dict = dict(log)
+                # print(log_dict)
                 # 将operation_details从JSON字符串解析为对象（如果存在）
                 if log_dict['operation_details']:
                     try:

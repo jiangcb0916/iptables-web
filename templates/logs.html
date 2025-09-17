@@ -635,7 +635,7 @@
         const resultClass = log.success ? 'text-success' : 'text-danger';
         const resultIcon = log.success ? 'fa-check-circle' : 'fa-times-circle';
         const resultText = log.success ? '成功' : '失败';
-// 操作类型样式 - 修复：组合 operation_type + operation_object（无连接符）
+        // 操作类型样式 - 修复：组合 operation_type + operation_object（无连接符）
         const fullOperationType = log.operation_object
           ? `${log.operation_type}${log.operation_object}`  // 组合类型+对象
           : log.operation_type;  // 仅类型（无对象时）
@@ -931,6 +931,7 @@
       dateInputs[1].value = formatDateTimeForInput(endDate);
     }
 
+
     /**
      * 格式化日期时间为本地字符串 (YYYY-MM-DD HH:MM:SS)
      * @param {string} dateString - 日期时间字符串
@@ -939,8 +940,27 @@
     function formatDateTime(dateString) {
       if (!dateString) return '';
       const date = new Date(dateString);
-      return date.toISOString().slice(0, 19).replace('T', ' ');
+
+      // 修复：强制使用东八区(Asia/Shanghai)时区格式化时间
+      const options = {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      };
+
+      // 使用toLocaleString格式化并转换为"YYYY-MM-DD HH:MM:SS"格式
+      const formatted = date.toLocaleString('zh-CN', options);
+      const [datePart, timePart] = formatted.split(' ');
+      const [year, month, day] = datePart.split('/');
+
+      return `${year}-${month}-${day} ${timePart}`;
     }
+
 
     /**
      * 格式化日期时间为input元素使用的格式 (YYYY-MM-DDTHH:MM)
