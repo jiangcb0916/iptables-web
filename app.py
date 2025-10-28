@@ -142,7 +142,8 @@ def log_operation(user_id, username, operation_type, operation_object, operation
         INSERT INTO operation_logs 
         (user_id, username, operation_type, operation_object, operation_summary, operation_details, success, operation_time)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, username, operation_type, operation_object, operation_summary, operation_details, success,operation_time))
+        ''', (user_id, username, operation_type, operation_object, operation_summary, operation_details, success,
+              operation_time))
         db.commit()
     except Exception as e:
         app.logger.error(f"记录操作日志失败: {str(e)}")
@@ -237,6 +238,7 @@ def get_rule(iptables_output):
         r'(?:\s+(?:(?:tcp|udp)\s+(?:dpt|spt):(\d+)|'  # 单端口 (如 tcp dpt:80)
         r'(?:tcp|udp)\s+(?:dpts|spts):(\d+:\d+)|'  # 端口范围 (如 tcp dpts:90:100)
         r'multiport\s+(?:dports|sports)\s+([\d,]+)))?'  # 多端口 (如 multiport dports 90,91,92)
+        r'(?:\s+limit: (?:up to|above) (\d+)[kmg]?b/s)?'  # 限速字段（可选：有则捕数字，无则不匹配）
         r'(?:\s+(?!/\*).*?)?'  # 排除注释的所有内容
         r'(?:\s+/\*\s*(.*?)\s*\*/)?$'  # 注释
     )
@@ -252,7 +254,8 @@ def get_rule(iptables_output):
             port = match.group(7) or '-1/-1'
             port_range = match.group(8) or ''
             port_mul = match.group(9) or ''
-            comment = match.group(10) or ''
+            limit = match.group(10) or ''
+            comment = match.group(11) or ''
             # 提取other内容（排除注释部分）
             # 先去掉注释，再取destination之后的内容
             line_without_comment = re.sub(r'/\*.*?\*/', '', line).strip()
@@ -266,6 +269,7 @@ def get_rule(iptables_output):
                         "source": source,
                         "destination": destination,
                         "port": port_range,
+                        "limit": limit,
                         "comment": comment
                         }
             elif port_mul != '':
@@ -275,6 +279,7 @@ def get_rule(iptables_output):
                         "source": source,
                         "destination": destination,
                         "port": port_mul,
+                        "limit": limit,
                         "comment": comment
                         }
             else:
@@ -284,11 +289,13 @@ def get_rule(iptables_output):
                         "source": source,
                         "destination": destination,
                         "port": port,
+                        "limit": limit,
                         "comment": comment
                         }
             data_list.append(data)
         else:
             print(f"无法匹配的规则: {line}")
+    print(data_list)
     return data_list
 
 
