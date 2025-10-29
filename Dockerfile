@@ -1,4 +1,4 @@
-FROM python:alpine3.21
+FROM crpi-op3zvwuk4p823yir.cn-hangzhou.personal.cr.aliyuncs.com/lsy_linux/python:alpine3.21
 RUN mkdir -p /iptables-web
 ADD . /iptables-web
 WORKDIR /iptables-web
