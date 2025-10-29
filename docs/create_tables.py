@@ -79,6 +79,7 @@ def create_rule_table(conn):
             port TEXT DEFAULT '-1/-1',        -- 单端口
             auth_object TEXT DEFAULT '0.0.0.0/0',        -- 授权对象
             description TEXT ,        -- 注释
+            limit TEXT ,        -- 限流
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );

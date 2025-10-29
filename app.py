@@ -5,6 +5,7 @@
 # @FileName: app.py
 # @Software: PyCharm
 # @Function:
+import random
 from functools import wraps
 import sqlite3
 import re
@@ -38,6 +39,13 @@ app.static_folder = 'static'
 # 新增：初始化调度器
 scheduler = APScheduler()
 
+
+# 生成6位随机小写英文字母组成的名字
+def random_name(length=6):
+    # 定义小写英文字母范围（a-z对应的ASCII码是97-122）
+    letters = [chr(i) for i in range(97, 123)]  # 等价于 ['a','b',...,'z']
+    # 从letters中随机选6个字符，拼接成字符串
+    return ''.join(random.choice(letters) for _ in range(length))
 
 # 新增：日志清理任务
 def clean_expired_logs():
@@ -295,7 +303,6 @@ def get_rule(iptables_output):
             data_list.append(data)
         else:
             print(f"无法匹配的规则: {line}")
-    print(data_list)
     return data_list
 
 
@@ -425,29 +432,59 @@ def rules_update():
                     # 添加规则中的：正常端口中的范围端口
                     if '-' in all_params['port']:
                         new_port = all_params['port'].replace("-", ":")
-                        # print(new_port)
-                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
-                            all_params['auth_policy'], all_params['description'])
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
+
                     # 添加规则中的: 正常端口中的多个端口
                     elif ',' in all_params['port']:
-                        cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                                all_params['port'],
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                                all_params['port'],
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
+
+                    else:
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                                all_params['port'],
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                                all_params['port'],
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
+                else:
+                    if all_params['limit'] == '':
+                        # tcp 或udp的所有端口
+                        cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'],
                             all_params['auth_policy'], all_params['description'])
                     else:
-                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                            all_params['auth_policy'], all_params['description'])
-                else:
-                    # tcp 或udp的所有端口
-                    cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
-                        all_params['auth_policy'], all_params['description'])
+                        cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                            all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
             # ICMP 或 all 协议的规则
             else:
-                cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
-                    direction, rule_id, all_params['auth_object'], all_params['protocol'],
-                    all_params['auth_policy'], all_params['description'])
+                if all_params['limit'] == '':
+                    cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['description'])
+                else:
+                    cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
 
             # 添加
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
@@ -484,26 +521,59 @@ def rules_update():
                     # 添加规则中的：正常端口中的范围端口
                     if '-' in all_params['port']:
                         new_port = all_params['port'].replace("-", ":")
-                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
-                            all_params['auth_policy'], all_params['description'])
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
+
                     # 添加规则中的: 正常端口中的多个端口
                     elif ',' in all_params['port']:
-                        cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                                all_params['port'],
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                                all_params['port'],
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
+
                     else:
-                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                            all_params['auth_policy'], all_params['description'])
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                                all_params['port'],
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                                all_params['port'],
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
                 else:
-                    # tcp 或udp的所有端口
-                    cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
-                        all_params['auth_policy'], all_params['description'])
+                    if all_params['limit'] == '':
+                        # tcp 或udp的所有端口
+                        cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                            all_params['auth_policy'], all_params['description'])
+                    else:
+                        cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                            all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
             # ICMP 或 all 协议的规则
             else:
-                cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
-                    direction, rule_id, all_params['auth_object'], all_params['protocol'],
-                    all_params['auth_policy'], all_params['description'])
+                if all_params['limit'] == '':
+                    cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['description'])
+                else:
+                    cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
 
             # 添加
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
@@ -533,6 +603,7 @@ def rules_update():
 @permission_required('iptab_add')  # 添加规则添加权限
 def rules_add():
     all_params = request.get_json()
+    print(all_params)
     host_id = all_params['host_id']
     rule_id = all_params['rule_id']
     direction = all_params['direction']
@@ -566,31 +637,55 @@ def rules_add():
                     # 添加规则中的：正常端口中的范围端口
                     if '-' in all_params['port']:
                         new_port = all_params['port'].replace("-", ":")
-
-                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
-                            all_params['auth_policy'], all_params['description'])
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
 
                     # 添加规则中的: 正常端口中的多个端口
                     elif ',' in all_params['port']:
-                        cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                            all_params['auth_policy'], all_params['description'])
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
 
                     else:
-                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                            all_params['auth_policy'], all_params['description'])
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
                 else:
-                    # tcp 或udp的所有端口
-                    cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
-                        all_params['auth_policy'], all_params['description'])
+                    if all_params['limit'] == '':
+                        # tcp 或udp的所有端口
+                        cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                            all_params['auth_policy'], all_params['description'])
+                    else:
+                        cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                            all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
             # ICMP 或 all 协议的规则
             else:
-                cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
-                    direction, rule_id, all_params['auth_object'], all_params['protocol'],
-                    all_params['auth_policy'], all_params['description'])
+                if all_params['limit'] == '':
+                    cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['description'])
+                else:
+                    cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
 
             # 添加
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
@@ -617,29 +712,55 @@ def rules_add():
                     # 添加规则中的：正常端口中的范围端口
                     if '-' in all_params['port']:
                         new_port = all_params['port'].replace("-", ":")
-
-                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
-                            all_params['auth_policy'], all_params['description'])
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], new_port,
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
 
                     # 添加规则中的: 正常端口中的多个端口
                     elif ',' in all_params['port']:
-                        cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} -m multiport --dports {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
 
                     else:
-                        cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
-                            all_params['auth_policy'], all_params['description'])
+                        if all_params['limit'] == '':
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                                all_params['auth_policy'], all_params['description'])
+                        else:
+                            cmd = 'iptables -I {}  {} -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule_id, all_params['auth_object'], all_params['protocol'], all_params['port'],
+                                all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
                 else:
                     # tcp 或udp的所有端口
-                    cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
-                        all_params['auth_policy'], all_params['description'])
+                    if all_params['limit'] == '':
+                        cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                            all_params['auth_policy'], all_params['description'])
+                    else:
+                        cmd = 'iptables -I {}  {} -s {} -p {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                            direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                            all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'])
             # ICMP 或 all 协议的规则
             else:
-                cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
-                    direction, rule_id, all_params['auth_object'], all_params['protocol'],
-                    all_params['auth_policy'], all_params['description'])
+                if all_params['limit'] == '':
+                    cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['description'])
+                else:
+                    cmd = 'iptables -I {}  {} -s {} -p {}  -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                        direction, rule_id, all_params['auth_object'], all_params['protocol'],
+                        all_params['auth_policy'], all_params['limit'], rule_id, all_params['description'], )
 
             # 添加
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
@@ -1173,7 +1294,8 @@ def templates():
                     'auth_object': rule['auth_object'],
                     'description': rule['description'],
                     'created_at': rule['created_at'],
-                    'updated_at': rule['updated_at']
+                    'updated_at': rule['updated_at'],
+                    'limit': rule['limit'],
                 })
 
             temp_info.append({'template_id': template_id,
@@ -1210,6 +1332,7 @@ def templates_add():
     data = None
     try:
         data = request.get_json()
+        print(data)
         db = get_db()
         cursor = db.cursor()
         # 插入主机数据
@@ -1241,8 +1364,8 @@ def templates_add():
                 policy = 'DROP'
             cursor.execute('''
             INSERT INTO rules 
-            (template_id, policy, protocol, port,auth_object,description,created_at,updated_at)
-            VALUES (?, ?, ?, ?,?, ?, ?,?)
+            (template_id, policy, protocol, port, auth_object, description, created_at, updated_at, "limit")
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 template_id,
                 policy,
@@ -1251,7 +1374,8 @@ def templates_add():
                 rule['auth_object'],
                 rule['description'],
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                rule['limit']
             ))
 
             # 获取规则数量用于日志
@@ -1277,7 +1401,8 @@ def templates_add():
                             "port": rule['port'],
                             "policy": "允许" if rule['policy'] == 'ACCEPT' else "拒绝",
                             "source": rule['auth_object'],
-                            "description": rule['description']
+                            "description": rule['description'],
+                            "limit": rule['limit']
                         } for rule in data['rules']
                     ],
                     "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1426,6 +1551,7 @@ def templates_edit():
         # 先删除旧规则
         cursor.execute('DELETE FROM rules WHERE template_id = ?', (data['temp_id'],))
         rule_count = 0
+
         for rule in data['rules']:
             if rule['policy'] == '允许' or rule['policy'] == 'ACCEPT':
                 policy = 'ACCEPT'
@@ -1434,8 +1560,8 @@ def templates_edit():
             # 添加新规则
             cursor.execute('''
             INSERT INTO rules 
-            (template_id, policy, protocol, port,auth_object,description,created_at,updated_at)
-            VALUES (?, ?, ?, ?,?, ?, ?,?)
+            (template_id, policy, protocol, port, auth_object, description, created_at, updated_at, "limit")
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 data['temp_id'],
                 policy,
@@ -1444,7 +1570,8 @@ def templates_edit():
                 rule['auth_object'],
                 rule['description'],
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                rule.get('limit', '')  # 添加limit字段
             ))
             rule_count += 1
             db.commit()
@@ -1588,35 +1715,62 @@ def temp_to_hosts():
                     # 添加规则中的：正常端口中的范围端口
                     if '-' in rule['port']:
                         new_port = rule['port'].replace("-", ":")
-                        # print(new_port)
-                        cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule['auth_object'], rule['protocol'], new_port,
-                            rule['policy'], rule['description'])
+                        if rule['limit'] == '':
+                            cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule['auth_object'], rule['protocol'], new_port,
+                                rule['policy'], rule['description'])
+                        else:
+                            cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule['auth_object'], rule['protocol'], new_port,
+                                rule['policy'], rule['limit'], random_name(), rule['description'])
                         cmd_list.append(cmd)
                     # 添加规则中的: 正常端口中的多个端口
                     elif ',' in rule['port']:
-                        cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
-                            direction, rule['auth_object'], rule['protocol'],
-                            rule['port'],
-                            rule['policy'], rule['description'])
+                        if rule['limit'] == '':
+                            cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
+                                direction, rule['auth_object'], rule['protocol'],
+                                rule['port'],
+                                rule['policy'], rule['description'])
+                        else:
+                            cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment --comment "{}" '.format(
+                                direction, rule['auth_object'], rule['protocol'],
+                                rule['port'],
+                                rule['policy'], rule['limit'], random_name(), rule['description'])
                         cmd_list.append(cmd)
                     else:
-                        cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule['auth_object'], rule['protocol'],
-                            rule['port'],
-                            rule['policy'], rule['description'])
+                        if rule['limit'] == '':
+                            cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                                direction, rule['auth_object'], rule['protocol'],
+                                rule['port'],
+                                rule['policy'], rule['description'])
+                        else:
+                            cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                                direction, rule['auth_object'], rule['protocol'],
+                                rule['port'],
+                                rule['policy'], rule['limit'], random_name(), rule['description'])
                         cmd_list.append(cmd)
                 else:
-                    # tcp 或udp的所有端口
-                    cmd = 'iptables -A {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule['auth_object'], rule['protocol'],
-                        rule['policy'], rule['description'])
+                    if rule['limit'] == '':
+                        # tcp 或udp的所有端口
+                        cmd = 'iptables -A {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule['auth_object'], rule['protocol'],
+                            rule['policy'], rule['description'])
+                    else:
+                        # tcp 或udp的所有端口
+                        cmd = 'iptables -A {} -s {} -p {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}"'.format(
+                            direction, rule['auth_object'], rule['protocol'],
+                            rule['policy'], rule['limit'], random_name(), rule['description'])
                     cmd_list.append(cmd)
             # ICMP 或 all 协议的规则
             else:
-                cmd = 'iptables -A {}  -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
-                    direction, rule['auth_object'], rule['protocol'],
-                    rule['policy'], rule['description'])
+                if rule['limit'] == '':
+                    cmd = 'iptables -A {}  -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                        direction, rule['auth_object'], rule['protocol'],
+                        rule['policy'], rule['description'])
+                else:
+                    cmd = 'iptables -A {}  -s {} -p {}  -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}"'.format(
+                        direction, rule['auth_object'], rule['protocol'],
+                        rule['policy'], rule['limit'], random_name(), rule['description'])
                 cmd_list.append(cmd)
         # 获取主机的信息
         for host_id in host_ids_list:
