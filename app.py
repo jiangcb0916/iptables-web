@@ -128,6 +128,26 @@ def get_db():
     return db
 
 
+def hash_user_password(plain_password):
+    """
+    统一用户密码哈希算法，避免依赖环境缺失scrypt导致登录失败。
+    """
+    return generate_password_hash(plain_password, method='pbkdf2:sha256')
+
+
+def verify_user_password(hashed_password, plain_password):
+    """
+    校验用户密码，兼容不同哈希算法并给出明确错误信息。
+    """
+    try:
+        return check_password_hash(hashed_password, plain_password)
+    except AttributeError as e:
+        # 某些Python/OpenSSL构建不支持scrypt，Werkzeug校验会触发该异常
+        if isinstance(hashed_password, str) and hashed_password.startswith('scrypt:'):
+            raise ValueError('当前运行环境不支持scrypt密码校验，请重置该账号密码后重试') from e
+        raise
+
+
 # 【新增】操作日志记录函数
 def log_operation(user_id, username, operation_type, operation_object, operation_summary, operation_details, success):
     """
@@ -306,11 +326,151 @@ def get_rule(iptables_output):
     return data_list
 
 
+def _get_rule_view_hosts(cursor):
+    """获取规则查看页面可选主机列表。"""
+    cursor.execute('''
+    SELECT id, host_name, host_identifier, ip_address
+    FROM hosts
+    ORDER BY created_at DESC
+    ''')
+    return cursor.fetchall()
+
+
+def _normalize_template_rule(rule):
+    """将模板规则标准化，便于与iptables列表规则对比。"""
+    template_port = (rule['port'] if 'port' in rule.keys() else '-1/-1') or '-1/-1'
+    if template_port != '-1/-1' and '-' in template_port:
+        template_port = template_port.replace('-', ':')
+    return {
+        'policy': ((rule['policy'] if 'policy' in rule.keys() else '') or '').upper(),
+        'protocol': ((rule['protocol'] if 'protocol' in rule.keys() else '') or '').lower(),
+        'source': ((rule['auth_object'] if 'auth_object' in rule.keys() else '') or '').strip(),
+        'comment': ((rule['description'] if 'description' in rule.keys() else '') or '').strip(),
+        'port': template_port
+    }
+
+
+def _is_same_rule(iptables_rule, template_rule):
+    """根据关键字段匹配是否是同一条规则。"""
+    return (
+            (iptables_rule.get('target') or '').upper() == template_rule['policy']
+            and (iptables_rule.get('prot') or '').lower() == template_rule['protocol']
+            and (iptables_rule.get('source') or '').strip() == template_rule['source']
+            and (iptables_rule.get('comment') or '').strip() == template_rule['comment']
+            and (iptables_rule.get('port') or '-1/-1') == template_rule['port']
+    )
+
+
+def _collect_template_applied_host_ids(cursor, template_id):
+    """
+    从操作日志中提取该模板曾应用过的主机ID。
+    若日志不存在或解析失败，返回空列表。
+    """
+    host_ids = set()
+    cursor.execute('''
+    SELECT operation_details FROM operation_logs
+    WHERE operation_type = '应用' AND operation_object = '模板' AND success = 1
+    ''')
+    rows = cursor.fetchall()
+    for row in rows:
+        try:
+            details = json.loads(row['operation_details']) if row['operation_details'] else {}
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if str(details.get('template_id')) != str(template_id):
+            continue
+        applied_hosts = details.get('applied_hosts') or []
+        for host in applied_hosts:
+            host_id = host.get('host_id')
+            if host_id is not None:
+                host_ids.add(str(host_id))
+    return list(host_ids)
+
+
+def _delete_template_rules_on_host(host, direction, template_rules):
+    """
+    在单台主机上删除模板规则：
+    通过规则特征匹配出当前链中的行号，再按倒序删除，避免行号漂移。
+    """
+    hostname = host['ip_address']
+    port = host['ssh_port']
+    user = host['username']
+    pwd = host['password']
+    auth_method = host['auth_method']
+    private_key = host['private_key']
+    operating_system = host['operating_system']
+
+    def run_cmd(cmd):
+        if auth_method == 'password':
+            return pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd, cmd=cmd)
+        return sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key, cmd=cmd)
+
+    iptables_output = run_cmd('iptables -nL {} --line-number -t filter -v'.format(direction))
+    current_rules = get_rule(iptables_output)
+
+    line_numbers_to_delete = set()
+    normalized_template_rules = [_normalize_template_rule(rule) for rule in template_rules]
+    for ipt_rule in current_rules:
+        for temp_rule in normalized_template_rules:
+            if _is_same_rule(ipt_rule, temp_rule):
+                try:
+                    line_numbers_to_delete.add(int(ipt_rule['num']))
+                except (TypeError, ValueError):
+                    pass
+                break
+
+    if not line_numbers_to_delete:
+        return 0
+
+    for line_num in sorted(line_numbers_to_delete, reverse=True):
+        run_cmd('iptables -D {} {}'.format(direction, line_num))
+
+    if operating_system == 'centos' or operating_system == 'redhat':
+        run_cmd('iptables-save > /etc/sysconfig/iptables')
+    elif operating_system == 'debian':
+        run_cmd('iptables-save > /etc/iptables/rules.v4')
+    elif operating_system == 'ubuntu':
+        run_cmd('iptables-save > /etc/iptables/rules.v4')
+
+    return len(line_numbers_to_delete)
+
+
 # 根路径路由：重定向到 /hosts?page=1
 @app.route('/')
 def index():
     # 使用 url_for 生成 hosts 路由的 URL，指定 page=1
     return redirect(url_for('hosts', page=1))
+
+
+@app.route("/rules_view", methods=['GET'])
+@login_required
+def rules_view():
+    """
+    规则查看入口：
+    支持主机选择和方向选择，最终跳转到已有规则详情页。
+    """
+    all_params = dict(request.args)
+    selected_host_id = all_params.get('host_id')
+    direction = (all_params.get('direction') or 'INPUT').upper()
+    if direction not in ('INPUT', 'OUTPUT'):
+        direction = 'INPUT'
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        host_list = _get_rule_view_hosts(cursor)
+        if not host_list:
+            flash('暂无主机，请先添加主机后再查看规则')
+            return redirect(url_for('hosts', page=1))
+
+        host_ids = {str(host['id']) for host in host_list}
+        if selected_host_id not in host_ids:
+            selected_host_id = str(host_list[0]['id'])
+
+        if direction == 'OUTPUT':
+            return redirect(url_for('rules_out', host_id=selected_host_id))
+        return redirect(url_for('rules_in', host_id=selected_host_id))
+    except Exception as e:
+        return f"获取主机数据失败: {str(e)}", 500
 
 
 # 查看规则
@@ -346,7 +506,8 @@ def rules_in():
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL INPUT --line-number -t filter')
         data_list = get_rule(iptables_output)
-        return render_template('rule.html', data_list=data_list, id=host_id)
+        host_options = _get_rule_view_hosts(cursor)
+        return render_template('rule.html', data_list=data_list, id=host_id, host_options=host_options)
     except Exception as e:
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
@@ -384,7 +545,8 @@ def rules_out():
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL OUTPUT --line-number -t filter')
         data_list = get_rule(iptables_output)
-        return render_template('rule.html', data_list=data_list, id=host_id)
+        host_options = _get_rule_view_hosts(cursor)
+        return render_template('rule.html', data_list=data_list, id=host_id, host_options=host_options)
     except Exception as e:
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
@@ -1462,16 +1624,64 @@ def templates_del():
         db = get_db()
         cursor = db.cursor()
         # 【新增】获取模板名称用于日志
-        cursor.execute('SELECT template_name FROM templates WHERE id = ?', (template_id,))
+        cursor.execute('SELECT template_name, direction FROM templates WHERE id = ?', (template_id,))
         template = cursor.fetchone()
         if not template:
             return jsonify({'success': False, 'message': '模板不存在'}), 404
         template_name = template['template_name']
+        direction = template['direction']
+
+        # 查询模板规则，后续用于清理主机上对应iptables规则
+        cursor.execute('''
+        SELECT policy, protocol, port, auth_object, description, "limit"
+        FROM rules WHERE template_id = ?
+        ''', (template_id,))
+        template_rules = cursor.fetchall()
+
+        # 获取该模板曾应用过的主机ID，若日志中没有，则兜底扫描所有主机
+        applied_host_ids = _collect_template_applied_host_ids(cursor, template_id)
+        if applied_host_ids:
+            safe_host_ids = [int(host_id) for host_id in applied_host_ids if str(host_id).isdigit()]
+            if not safe_host_ids:
+                safe_host_ids = [-1]
+            placeholders = ','.join(['?'] * len(safe_host_ids))
+            cursor.execute('''
+            SELECT id, ssh_port, username, ip_address, auth_method, password, private_key, operating_system
+            FROM hosts WHERE id IN ({})
+            '''.format(placeholders), tuple(safe_host_ids))
+        else:
+            cursor.execute('''
+            SELECT id, ssh_port, username, ip_address, auth_method, password, private_key, operating_system
+            FROM hosts
+            ''')
+        target_hosts = cursor.fetchall()
+
+        deleted_rule_total = 0
+        failed_hosts = []
+        for host in target_hosts:
+            try:
+                deleted_count = _delete_template_rules_on_host(host, direction, template_rules)
+                deleted_rule_total += deleted_count
+            except Exception as host_error:
+                failed_hosts.append({
+                    'host_id': host['id'],
+                    'host_ip': host['ip_address'],
+                    'error': str(host_error)
+                })
+
+        # 任一主机清理失败时，阻止删除模板，避免模板与主机规则状态不一致
+        if failed_hosts:
+            return jsonify({
+                'success': False,
+                'message': '模板规则清理失败，已阻止模板删除',
+                'failed_hosts': failed_hosts
+            }), 500
+
         # 查询该模板下的规则数量
         cursor.execute('SELECT COUNT(*) as rule_count FROM rules WHERE template_id = ?', (template_id,))
         rule_count = cursor.fetchone()['rule_count']
 
-        # 删除主机
+        # 删除模板与模板规则
         cursor.execute('DELETE FROM templates WHERE id = ?', (template_id,))
         cursor.execute('DELETE FROM rules WHERE template_id = ?', (template_id,))
         db.commit()
@@ -1486,6 +1696,8 @@ def templates_del():
                 "template_id": template_id,
                 "template_name": template_name,
                 "deleted_rules": rule_count,
+                "deleted_host_rules": deleted_rule_total,
+                "affected_hosts": len(target_hosts),
                 "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }),
             success=1
@@ -2094,7 +2306,15 @@ def login():
                 'X-Requested-With') == 'XMLHttpRequest' else \
                 render_template('login.html', error='用户已被禁用')
 
-        if not check_password_hash(user_data['password'], password):
+        try:
+            password_ok = verify_user_password(user_data['password'], password)
+        except ValueError as verify_error:
+            app.logger.error(f"登录密码校验失败: {str(verify_error)}")
+            return jsonify(success=False, message=str(verify_error)) if request.headers.get(
+                'X-Requested-With') == 'XMLHttpRequest' else \
+                render_template('login.html', error=str(verify_error))
+
+        if not password_ok:
             return jsonify(success=False, message='密码不正确') if request.headers.get(
                 'X-Requested-With') == 'XMLHttpRequest' else \
                 render_template('login.html', error='密码不正确')
@@ -2215,7 +2435,7 @@ def users():
                     }), 400
 
                 # 密码哈希处理
-                hashed_password = generate_password_hash(password)
+                hashed_password = hash_user_password(password)
                 cursor.execute(''' 
                 INSERT INTO user
                 (username, password, email, status, created_at)
@@ -2399,7 +2619,7 @@ def user_edit():
             # 更新用户基本信息
             if 'password' in data and data['password']:
                 # 如果提供了新密码，则更新密码
-                hashed_password = generate_password_hash(data['password'])
+                hashed_password = hash_user_password(data['password'])
                 cursor.execute('''
                         UPDATE user SET username = ?, email = ?, status = ?, password = ? 
                         WHERE id = ?

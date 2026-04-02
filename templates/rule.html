@@ -64,6 +64,18 @@
               </a>
             </div>
 
+            <!-- 主机选择 -->
+            <div class="flex items-center bg-white p-1 rounded-lg border border-gray-200 self-start md:self-auto">
+              <label for="host-select" class="text-sm text-secondary px-2">主机</label>
+              <select id="host-select" class="px-3 py-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                {% for host in host_options %}
+                  <option value="{{ host.id }}" {% if host.id|string == id|string %}selected{% endif %}>
+                    {{ host.host_name }} ({{ host.ip_address }})
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+
             <!-- 新增规则按钮 - 右侧 -->
             <button id="add-rule-btn" class="bg-primary text-white px-5 py-2.5 rounded-lg font-medium flex items-center btn-hover self-start md:self-auto ml-auto">
               <i class="fa fa-plus mr-2"></i> 新增规则
@@ -247,6 +259,20 @@
 
     // 页面加载时设置初始状态
     setActiveDirection();
+
+    // 按主机切换规则查看
+    const hostSelect = document.getElementById('host-select');
+    if (hostSelect) {
+      hostSelect.addEventListener('change', function () {
+        const currentPath = window.location.pathname;
+        const hostId = hostSelect.value;
+        if (currentPath.includes('/rules_out')) {
+          window.location.href = `/rules_out?host_id=${hostId}`;
+        } else {
+          window.location.href = `/rules_in?host_id=${hostId}`;
+        }
+      });
+    }
 
     inboundBtn.addEventListener('click', () => {
       inboundBtn.classList.remove('text-secondary', 'hover:bg-gray-100');

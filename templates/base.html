@@ -90,6 +90,13 @@
             </a>
           </div>
 
+          <div class="sidebar-item cursor-pointer">
+            <a href="/rules_view" class="block w-full h-full p-3 flex items-center">
+              <i class="fa fa-fire w-5 h-5 mr-3"></i>
+              <span>规则查看</span>
+            </a>
+          </div>
+
           <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-6">系统</p>
 
           <div class="sidebar-item cursor-pointer">
@@ -171,6 +178,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 定义系统设置相关的路径
   const systemSettingPaths = ['/systemseting', '/users', '/roles'];
+  const ruleViewPaths = ['/rules_view', '/rules_in', '/rules_out'];
 
   // 遍历每个按钮，判断路径是否匹配
   sidebarItems.forEach(item => {
@@ -181,11 +189,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // 检查当前路径是否是系统设置或其子模块
     const isSystemSettingItem = linkPath === '/systemseting';
     const isSystemRelatedPage = systemSettingPaths.includes(currentPath);
+    const isRuleViewItem = linkPath === '/rules_view';
+    const isRuleRelatedPage = ruleViewPaths.includes(currentPath);
 
     // 匹配规则：
     // 1. 普通项：路径完全匹配
     // 2. 系统设置项：当前路径是系统设置或其子模块（users/roles）
-    if (currentPath === linkPath || (isSystemSettingItem && isSystemRelatedPage)) {
+    if (
+      currentPath === linkPath
+      || (isSystemSettingItem && isSystemRelatedPage)
+      || (isRuleViewItem && isRuleRelatedPage)
+    ) {
       item.classList.add('active');
     } else {
       item.classList.remove('active');
