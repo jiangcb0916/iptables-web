@@ -110,15 +110,6 @@ apt install -y iptables-persistent
 - 定期备份 `firewall_management.db`
 - 对关键账号启用强密码策略
 
-## 截图
-
-![login.png](docs%2Fscreenshots%2Flogin.png)
-![hosts.png](docs%2Fscreenshots%2Fhosts.png)
-![rules.png](docs%2Fscreenshots%2Frules.png)
-![templates.png](docs%2Fscreenshots%2Ftemplates.png)
-![users.png](docs%2Fscreenshots%2Fusers.png)
-![logs.png](docs%2Fscreenshots%2Flogs.png)
-
 ## 参考文档
 
 - [iptables 扩展模块文档](https://www.man7.org/linux/man-pages/man8/iptables-extensions.8.html)
