@@ -1,5 +1,20 @@
 {% extends 'base.html' %}
 {% block main %}
+    <style>
+      .logs-table-wrap {
+        max-height: calc(100vh - 340px);
+        overflow: auto;
+      }
+      .logs-table-wrap thead th {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: #f8fafc;
+      }
+      .log-row-failed {
+        background: linear-gradient(90deg, rgba(254, 242, 242, 0.75) 0%, rgba(255, 255, 255, 0) 65%);
+      }
+    </style>
 
     <!-- 主内容区 -->
     <div class="flex-1 flex flex-col overflow-hidden">
@@ -61,6 +76,40 @@
               <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">操作日志</h1>
               <p class="text-secondary">查看和管理系统操作记录，追踪用户行为</p>
             </div>
+            <div class="flex items-center gap-2">
+              <button id="refresh-log-btn" class="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                <i class="fa fa-refresh mr-1"></i> 刷新
+              </button>
+              <button id="export-csv-btn" class="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                <i class="fa fa-download mr-1"></i> 导出CSV
+              </button>
+              <div class="relative">
+                <button id="column-setting-btn" class="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors">
+                  <i class="fa fa-columns mr-1"></i> 列设置
+                </button>
+                <div id="column-setting-panel" class="hidden absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-3 space-y-2">
+                  <label class="flex items-center text-sm text-gray-700"><input type="checkbox" class="column-toggle h-4 w-4 mr-2" data-col="operation-time" checked>操作时间</label>
+                  <label class="flex items-center text-sm text-gray-700"><input type="checkbox" class="column-toggle h-4 w-4 mr-2" data-col="username" checked>操作用户</label>
+                  <label class="flex items-center text-sm text-gray-700"><input type="checkbox" class="column-toggle h-4 w-4 mr-2" data-col="operation-type" checked>操作类型</label>
+                  <label class="flex items-center text-sm text-gray-700"><input type="checkbox" class="column-toggle h-4 w-4 mr-2" data-col="operation-summary" checked>操作内容</label>
+                  <label class="flex items-center text-sm text-gray-700"><input type="checkbox" class="column-toggle h-4 w-4 mr-2" data-col="result" checked>结果</label>
+                </div>
+              </div>
+              <select id="auto-refresh-select" class="px-2 py-2 border border-gray-300 rounded-lg text-sm text-gray-700">
+                <option value="0" selected>自动刷新: 关闭</option>
+                <option value="10">自动刷新: 10秒</option>
+                <option value="30">自动刷新: 30秒</option>
+                <option value="60">自动刷新: 60秒</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="active-filter-bar" class="mb-4 hidden">
+            <div class="bg-white border border-gray-200 rounded-lg px-3 py-2 flex flex-wrap items-center gap-2">
+              <span class="text-xs text-gray-500">已应用筛选：</span>
+              <div id="active-filter-tags" class="flex flex-wrap items-center gap-2"></div>
+              <button id="clear-all-filters-btn" class="ml-auto text-xs text-primary hover:underline">清空全部</button>
+            </div>
           </div>
 
           <div class="flex flex-col lg:flex-row gap-6">
@@ -98,7 +147,7 @@
                 </div>
                 <div class="filter-item">
                   <label class="block text-sm font-medium text-gray-700 mb-2">操作类型</label>
-                  <div class="space-y-2" id="operation-types-container">
+                  <div class="space-y-2 max-h-44 overflow-y-auto pr-1" id="operation-types-container">
                     <!-- 操作类型复选框将通过JavaScript动态加载 -->
                     <div class="text-center text-gray-500 py-4 loading-types">加载操作类型中...</div>
                   </div>
@@ -106,7 +155,7 @@
 
                 <div class="filter-item">
                   <label class="block text-sm font-medium text-gray-700 mb-2">操作结果</label>
-                  <div class="space-y-2">
+                  <div class="space-y-2" id="result-filter-container">
                     <label class="flex items-center">
                       <input type="checkbox" checked class="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded" data-result="1">
                       <span class="ml-2 text-sm text-gray-700">成功</span>
@@ -150,14 +199,15 @@
                         </div>
                     </div>
 
+                    <div class="logs-table-wrap">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/6">操作时间</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/8">操作用户</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/8">操作类型</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/4">操作内容</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/10">结果</th>
+                                <th scope="col" data-col="operation-time" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/6">操作时间</th>
+                                <th scope="col" data-col="username" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/8">操作用户</th>
+                                <th scope="col" data-col="operation-type" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/8">操作类型</th>
+                                <th scope="col" data-col="operation-summary" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/4">操作内容</th>
+                                <th scope="col" data-col="result" class="px-6 py-3 text-left text-xs font-semibold text-secondary uppercase tracking-wider w-1/10">结果</th>
                                 <th scope="col" class="px-6 py-3 text-right text-xs font-semibold text-secondary uppercase tracking-wider">操作</th>
                             </tr>
                         </thead>
@@ -179,6 +229,7 @@
                             </tr>
                         </tbody>
                     </table>
+                    </div>
 
                     <!-- 分页 -->
                     <div id="pagination-container" class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
@@ -206,8 +257,8 @@
   </div>
 
   <!-- 日志详情模态框 - 移除了IP地址和用户代理显示 -->
-  <div id="log-detail-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all scale-95">
+  <div id="log-detail-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-stretch justify-end z-50 hidden">
+    <div class="bg-white w-full max-w-2xl h-full overflow-y-auto transform transition-all translate-x-full shadow-2xl">
       <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <h3 class="text-lg font-semibold">日志详情</h3>
         <button id="close-detail-modal" class="text-gray-400 hover:text-gray-500">
@@ -296,6 +347,8 @@
     let totalLogs = 0;            // 总日志数
     let totalPages = 0;           // 总页数
     let currentFilters = {};      // 当前筛选条件
+    let autoRefreshTimer = null;  // 自动刷新定时器
+    let currentLogsById = {};      // 当前页日志映射（用于详情查看）
 
     // 缓存模态框DOM元素引用 - 解决重复查询DOM导致的null引用问题
     let logDetailElements = null;
@@ -322,6 +375,15 @@
     const searchKeywordEl = document.getElementById('search-keyword');
     const searchCountEl = document.getElementById('search-count');
     const clearSearchLink = document.getElementById('clear-search-link');
+    const refreshLogBtn = document.getElementById('refresh-log-btn');
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+    const columnSettingBtn = document.getElementById('column-setting-btn');
+    const columnSettingPanel = document.getElementById('column-setting-panel');
+    const columnToggleCheckboxes = document.querySelectorAll('.column-toggle');
+    const autoRefreshSelect = document.getElementById('auto-refresh-select');
+    const activeFilterBar = document.getElementById('active-filter-bar');
+    const activeFilterTags = document.getElementById('active-filter-tags');
+    const clearAllFiltersBtn = document.getElementById('clear-all-filters-btn');
 
 
     // 页面加载完成后初始化
@@ -338,13 +400,6 @@
       logSearchInput.addEventListener('input', toggleClearSearchButton);
       clearSearchBtn.addEventListener('click', clearSearch);
       clearSearchLink.addEventListener('click', clearSearch);
-
-      // 新增：点击搜索图标触发搜索
-      document.querySelector('.fa-search').parentElement.addEventListener('click', () => {
-        if (logSearchInput.value.trim()) {
-          applyFilters();
-        }
-      });
 
       // 事件监听 - 每页显示条数变更
       perPageSelect.addEventListener('change', (e) => {
@@ -385,8 +440,18 @@
       document.getElementById('search-icon-btn').addEventListener('click', () => {
         applyFilters();
       });
+      refreshLogBtn.addEventListener('click', () => loadLogs());
+      exportCsvBtn.addEventListener('click', exportLogsCsv);
+      autoRefreshSelect.addEventListener('change', handleAutoRefreshChange);
+      clearAllFiltersBtn.addEventListener('click', resetFilters);
+      initColumnSettings();
       // 事件委托 - 处理模态框关闭和详情按钮点击
       document.addEventListener('click', (e) => {
+        if (columnSettingPanel && !columnSettingPanel.classList.contains('hidden')) {
+          if (!columnSettingPanel.contains(e.target) && e.target !== columnSettingBtn && !columnSettingBtn.contains(e.target)) {
+            columnSettingPanel.classList.add('hidden');
+          }
+        }
         // 关闭模态框
         if (e.target.closest('#close-detail-modal, #close-detail-btn') || e.target === logDetailModal) {
           closeLogDetailModal();
@@ -395,11 +460,98 @@
         // 查看日志详情
         if (e.target.closest('.view-detail-btn')) {
           const btn = e.target.closest('.view-detail-btn');
-          const log = JSON.parse(btn.dataset.log);
-          showLogDetail(log);
+          const logId = btn.getAttribute('data-log-id');
+          const log = currentLogsById[logId];
+          if (log) {
+            showLogDetail(log);
+          } else {
+            showToast('日志详情已失效，请刷新后重试', 'error');
+          }
         }
       });
     });
+
+    function initColumnSettings() {
+      const STORAGE_KEY = 'logs_visible_columns';
+      const defaultColumns = ['operation-time', 'username', 'operation-type', 'operation-summary', 'result'];
+      let visibleColumns = defaultColumns.slice();
+      try {
+        const cached = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        if (Array.isArray(cached) && cached.length) visibleColumns = cached;
+      } catch (_) {}
+
+      function applyColumnVisibility() {
+        document.querySelectorAll('[data-col]').forEach(el => {
+          const col = el.getAttribute('data-col');
+          const visible = visibleColumns.includes(col);
+          el.classList.toggle('hidden', !visible);
+        });
+      }
+
+      function syncCheckboxes() {
+        columnToggleCheckboxes.forEach(cb => {
+          cb.checked = visibleColumns.includes(cb.getAttribute('data-col'));
+        });
+      }
+
+      columnSettingBtn.addEventListener('click', () => {
+        columnSettingPanel.classList.toggle('hidden');
+      });
+
+      columnToggleCheckboxes.forEach(cb => {
+        cb.addEventListener('change', () => {
+          const col = cb.getAttribute('data-col');
+          if (cb.checked) {
+            if (!visibleColumns.includes(col)) visibleColumns.push(col);
+          } else {
+            visibleColumns = visibleColumns.filter(item => item !== col);
+          }
+          if (!visibleColumns.length) {
+            visibleColumns = ['operation-time'];
+          }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleColumns));
+          syncCheckboxes();
+          applyColumnVisibility();
+        });
+      });
+
+      window.applyLogColumnVisibility = applyColumnVisibility;
+      syncCheckboxes();
+      applyColumnVisibility();
+    }
+
+    function buildQueryParams(includePagination = true) {
+      const params = new URLSearchParams();
+      if (includePagination) {
+        params.append('page', currentPage);
+        params.append('per_page', perPage);
+      }
+
+      Object.keys(currentFilters).forEach(key => {
+        if (currentFilters[key]) params.append(key, currentFilters[key]);
+      });
+
+      const searchKeyword = logSearchInput.value.trim();
+      if (searchKeyword) params.append('search', searchKeyword);
+      return params;
+    }
+
+    function exportLogsCsv() {
+      const params = buildQueryParams(false);
+      params.append('export', 'csv');
+      window.open(`/logs?${params.toString()}`, '_blank');
+    }
+
+    function handleAutoRefreshChange() {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+      const interval = Number(autoRefreshSelect.value || '0');
+      if (interval > 0) {
+        autoRefreshTimer = setInterval(() => loadLogs(), interval * 1000);
+      }
+    }
 
 
     // 新增：加载操作用户列表
@@ -542,23 +694,8 @@
       loadingRow.classList.remove('hidden');
       emptyRow.classList.add('hidden');
 
-      // 构建查询参数
-      const params = new URLSearchParams();
-      params.append('page', currentPage);
-      params.append('per_page', perPage);
-
-      // 添加筛选参数
-      Object.keys(currentFilters).forEach(key => {
-        if (currentFilters[key]) {
-          params.append(key, currentFilters[key]);
-        }
-      });
-
-      // 添加搜索关键词
+      const params = buildQueryParams(true);
       const searchKeyword = logSearchInput.value.trim();
-      if (searchKeyword) {
-        params.append('search', searchKeyword);
-      }
 
       // 发送请求获取日志数据
       fetch(`/logs?${params.toString()}`, {
@@ -588,6 +725,7 @@
           } else {
             searchResultInfo.classList.add('hidden');
           }
+          renderActiveFilterTags();
         } else {
           showToast(data.message || '加载日志失败', 'error');
           logTableBody.innerHTML = '';
@@ -615,6 +753,7 @@
     function renderLogs(logs) {
       // 清空表格
       logTableBody.innerHTML = '';
+      currentLogsById = {};
 
       // 无数据状态
       if (logs.length === 0) {
@@ -625,8 +764,10 @@
 
       // 添加日志行
       logs.forEach(log => {
+        const logKey = String(log.id);
+        currentLogsById[logKey] = log;
         const row = document.createElement('tr');
-        row.className = 'hover:bg-gray-50 transition-colors';
+        row.className = `hover:bg-gray-50 transition-colors ${log.success ? '' : 'log-row-failed'}`;
 
         // 格式化操作时间
         const operationTime = formatDateTime(log.operation_time);
@@ -635,6 +776,7 @@
         const resultClass = log.success ? 'text-success' : 'text-danger';
         const resultIcon = log.success ? 'fa-check-circle' : 'fa-times-circle';
         const resultText = log.success ? '成功' : '失败';
+        const errorMessage = getLogErrorMessage(log);
         // 操作类型样式 - 修复：组合 operation_type + operation_object（无连接符）
         const fullOperationType = log.operation_object
           ? `${log.operation_type}${log.operation_object}`  // 组合类型+对象
@@ -642,20 +784,20 @@
         const typeStyle = getOperationTypeStyle(fullOperationType);
 
         row.innerHTML = `
-          <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${operationTime}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-sm text-dark">${log.username}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-sm">
+          <td data-col="operation-time" class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${operationTime}</td>
+          <td data-col="username" class="px-6 py-4 whitespace-nowrap text-sm text-dark">${log.username}</td>
+          <td data-col="operation-type" class="px-6 py-4 whitespace-nowrap text-sm">
             <span class="px-2 py-1 text-xs rounded-full" style="${typeStyle}">${fullOperationType}</span>
           </td>
-          <td class="px-6 py-4 text-sm text-secondary">${log.operation_summary}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-sm">
-            <span class="${resultClass} flex items-center">
+          <td data-col="operation-summary" class="px-6 py-4 text-sm text-secondary">${log.operation_summary}</td>
+          <td data-col="result" class="px-6 py-4 whitespace-nowrap text-sm">
+            <span class="${resultClass} flex items-center" ${!log.success && errorMessage ? `title="${escapeHtml(errorMessage)}"` : ''}>
               <i class="fa ${resultIcon} mr-1"></i> ${resultText}
             </span>
           </td>
           <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
             <button class="text-primary hover:text-primary/80 transition-colors view-detail-btn"
-                    data-log='${JSON.stringify(log)}'>
+                    data-log-id="${logKey}">
               <i class="fa fa-eye"></i> 详情
             </button>
           </td>
@@ -663,6 +805,26 @@
 
         logTableBody.appendChild(row);
       });
+      if (window.applyLogColumnVisibility) {
+        window.applyLogColumnVisibility();
+      }
+    }
+
+    function getLogErrorMessage(log) {
+      if (log.success) return '';
+      const details = log.operation_details;
+      if (!details) return '';
+      if (typeof details === 'string') return details;
+      return details.error || details.message || '';
+    }
+
+    function escapeHtml(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     /**
@@ -756,13 +918,13 @@
     function applyFilters() {
       // 收集操作类型筛选
       const operationTypes = [];
-      document.querySelectorAll('.filter-item:nth-child(4) input[type="checkbox"]:checked').forEach(checkbox => {
+      document.querySelectorAll('#operation-types-container input[type="checkbox"]:checked').forEach(checkbox => {
         operationTypes.push(checkbox.nextElementSibling.textContent.trim());
       });
 
       // 收集操作结果筛选
       const successValues = [];
-      document.querySelectorAll('.filter-item:nth-child(5) input[type="checkbox"]:checked').forEach(checkbox => {
+      document.querySelectorAll('#result-filter-container input[type="checkbox"]:checked').forEach(checkbox => {
         successValues.push(checkbox.nextElementSibling.textContent.trim() === '成功' ? '1' : '0');
       });
 
@@ -777,7 +939,7 @@
           return datetimeStr.replace('T', ' ') + ':00';
       };
       // 获取操作用户
-      const operator = document.querySelector('.filter-item:nth-child(3) select').value;
+      const operator = document.getElementById('operator').value;
 
       // 构建筛选条件
       currentFilters = {
@@ -809,7 +971,7 @@
       });
 
       // 重置操作结果复选框
-      document.querySelectorAll('.filter-item:nth-child(5) input[type="checkbox"]').forEach(checkbox => {
+      document.querySelectorAll('#result-filter-container input[type="checkbox"]').forEach(checkbox => {
         checkbox.checked = true;
       });
 
@@ -823,6 +985,54 @@
       currentPage = 1;
       loadLogs();
       showToast('筛选条件已重置');
+    }
+
+    function renderActiveFilterTags() {
+      const tags = [];
+      const searchKeyword = logSearchInput.value.trim();
+      if (searchKeyword) tags.push({ key: 'search', label: `关键词: ${searchKeyword}` });
+      if (currentFilters.username) tags.push({ key: 'username', label: `用户: ${currentFilters.username}` });
+      if (currentFilters.start_time || currentFilters.end_time) {
+        tags.push({ key: 'time', label: `时间: ${currentFilters.start_time || '不限'} ~ ${currentFilters.end_time || '不限'}` });
+      }
+      if (currentFilters.operation_type) tags.push({ key: 'operation_type', label: `类型: ${currentFilters.operation_type}` });
+      if (currentFilters.success) {
+        const label = currentFilters.success === '1' ? '结果: 成功' : currentFilters.success === '0' ? '结果: 失败' : '结果: 成功/失败';
+        tags.push({ key: 'success', label: label });
+      }
+
+      activeFilterTags.innerHTML = '';
+      if (!tags.length) {
+        activeFilterBar.classList.add('hidden');
+        return;
+      }
+      activeFilterBar.classList.remove('hidden');
+      tags.forEach(tag => {
+        const item = document.createElement('span');
+        item.className = 'inline-flex items-center rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 text-xs';
+        item.innerHTML = `${tag.label} <button class="ml-1 text-indigo-500 hover:text-indigo-700" data-tag-key="${tag.key}"><i class="fa fa-times"></i></button>`;
+        activeFilterTags.appendChild(item);
+      });
+      activeFilterTags.querySelectorAll('button[data-tag-key]').forEach(btn => {
+        btn.addEventListener('click', () => removeFilterTag(btn.getAttribute('data-tag-key')));
+      });
+    }
+
+    function removeFilterTag(tagKey) {
+      if (tagKey === 'search') {
+        logSearchInput.value = '';
+        toggleClearSearchButton();
+      } else if (tagKey === 'username') {
+        document.getElementById('operator').value = '';
+      } else if (tagKey === 'time') {
+        document.getElementById('start-time').value = '';
+        document.getElementById('end-time').value = '';
+      } else if (tagKey === 'operation_type') {
+        document.querySelectorAll('#operation-types-container input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+      } else if (tagKey === 'success') {
+        document.querySelectorAll('#result-filter-container input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+      }
+      applyFilters();
     }
 
     /**
@@ -876,8 +1086,8 @@
       // 显示模态框并执行动画
       logDetailModal.classList.remove('hidden');
       const modalContent = logDetailModal.querySelector('div');
-      modalContent.classList.remove('scale-95');
-      modalContent.classList.add('scale-100');
+      modalContent.classList.remove('translate-x-full');
+      modalContent.classList.add('translate-x-0');
     }
 
     /**
@@ -885,8 +1095,8 @@
      */
     function closeLogDetailModal() {
       const modalContent = logDetailModal.querySelector('div');
-      modalContent.classList.remove('scale-100');
-      modalContent.classList.add('scale-95');
+      modalContent.classList.remove('translate-x-0');
+      modalContent.classList.add('translate-x-full');
 
       // 添加微小延迟确保动画完成后再隐藏
       setTimeout(() => {
@@ -926,9 +1136,8 @@
       }
 
       // 格式化时间为datetime-local格式
-      const dateInputs = document.querySelectorAll('.filter-item:nth-child(2) input[type="datetime-local"]');
-      dateInputs[0].value = formatDateTimeForInput(startDate);
-      dateInputs[1].value = formatDateTimeForInput(endDate);
+      document.getElementById('start-time').value = formatDateTimeForInput(startDate);
+      document.getElementById('end-time').value = formatDateTimeForInput(endDate);
     }
 
 

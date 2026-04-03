@@ -13,11 +13,12 @@ import ipaddress
 import os
 import base64
 import hashlib
+import csv
 import paramiko
 from paramiko.client import AutoAddPolicy
 import math
 from io import StringIO
-from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, g
+from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, g, Response
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from cryptography.fernet import Fernet
@@ -4086,7 +4087,75 @@ def role_permissions(role_id):
 @login_required
 @permission_required('log_view')
 def logs():
-    # 新增：如果请求操作类型列表参数，返回操作类型数据
+    def build_filter_conditions():
+        query_conditions = []
+        query_params = []
+
+        operation_type = request.args.get('operation_type')
+        operation_object = request.args.get('operation_object')
+        success = request.args.get('success')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        search_keyword = request.args.get('search', '').strip()
+        username = request.args.get('username')
+
+        if operation_type:
+            type_values = [t.strip() for t in operation_type.split(',') if t.strip()]
+            if len(type_values) == 1:
+                query_conditions.append("operation_type = ?")
+                query_params.append(type_values[0])
+            elif len(type_values) > 1:
+                placeholders = ', '.join(['?'] * len(type_values))
+                query_conditions.append(f"operation_type IN ({placeholders})")
+                query_params.extend(type_values)
+
+        if operation_object:
+            object_values = [o.strip() for o in operation_object.split(',') if o.strip()]
+            if len(object_values) == 1:
+                query_conditions.append("operation_object = ?")
+                query_params.append(object_values[0])
+            elif len(object_values) > 1:
+                placeholders = ', '.join(['?'] * len(object_values))
+                query_conditions.append(f"operation_object IN ({placeholders})")
+                query_params.extend(object_values)
+
+        if success is not None and success != '':
+            success_values = [int(s.strip()) for s in success.split(',') if s.strip().isdigit()]
+            if len(success_values) == 1:
+                query_conditions.append("success = ?")
+                query_params.append(success_values[0])
+            elif len(success_values) > 1:
+                placeholders = ', '.join(['?'] * len(success_values))
+                query_conditions.append(f"success IN ({placeholders})")
+                query_params.extend(success_values)
+
+        if username:
+            query_conditions.append("username = ?")
+            query_params.append(username)
+
+        if start_time:
+            start_time = start_time.replace('T', ' ')
+            if len(start_time) <= 16:
+                start_time += ":00"
+            query_conditions.append("operation_time >= ?")
+            query_params.append(start_time)
+
+        if end_time:
+            end_time = end_time.replace('T', ' ')
+            if len(end_time) <= 16:
+                end_time += ":00"
+            query_conditions.append("operation_time <= ?")
+            query_params.append(end_time)
+
+        if search_keyword:
+            query_conditions.append("(username LIKE ? OR operation_summary LIKE ? OR operation_details LIKE ?)")
+            search_param = f'%{search_keyword}%'
+            query_params.extend([search_param, search_param, search_param])
+
+        where_clause = "WHERE " + " AND ".join(query_conditions) if query_conditions else ""
+        return where_clause, query_params
+
+    # 获取操作类型列表
     if request.args.get('get_operation_types') == 'true':
         try:
             db = get_db()
@@ -4098,128 +4167,82 @@ def logs():
             app.logger.error(f"获取操作类型失败: {str(e)}")
             return jsonify({"success": False, "message": "获取操作类型失败"}), 500
 
-    # 如果是API请求（带X-Requested-With头），返回JSON数据
+    # 导出 CSV（按当前筛选条件）
+    if request.args.get('export') == 'csv':
+        try:
+            db = get_db()
+            cursor = db.cursor()
+            where_clause, query_params = build_filter_conditions()
+            cursor.execute(f"""
+                SELECT operation_time, username, operation_type, operation_object, operation_summary, success
+                FROM operation_logs
+                {where_clause}
+                ORDER BY operation_time DESC
+                LIMIT 5000
+            """, query_params)
+            rows = cursor.fetchall()
+
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['操作时间', '操作用户', '操作类型', '操作对象', '操作内容', '结果'])
+            for row in rows:
+                writer.writerow([
+                    row['operation_time'],
+                    row['username'],
+                    row['operation_type'],
+                    row['operation_object'] or '',
+                    row['operation_summary'] or '',
+                    '成功' if row['success'] else '失败'
+                ])
+
+            filename = f"operation_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            return Response(
+                output.getvalue(),
+                mimetype='text/csv; charset=utf-8',
+                headers={
+                    'Content-Disposition': f'attachment; filename="{filename}"'
+                }
+            )
+        except Exception as e:
+            app.logger.error(f"导出日志失败: {str(e)}")
+            return jsonify({"success": False, "message": f"导出日志失败: {str(e)}"}), 500
+
+    # AJAX 获取分页日志
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        # 获取分页参数，默认第1页，每页10条
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
         offset = (page - 1) * per_page
 
-        # 初始化查询条件
-        query_conditions = []
-        query_params = []
-
-        # 处理搜索和筛选参数
-        operation_type = request.args.get('operation_type')
-        operation_object = request.args.get('operation_object')
-        success = request.args.get('success')  # 不再立即转换为整数
-        start_time = request.args.get('start_time')
-        end_time = request.args.get('end_time')
-        # 新增：获取搜索关键词
-        search_keyword = request.args.get('search', '').strip()
-
-        if operation_type:
-            # 处理多个操作类型（逗号分隔）
-            if ',' in operation_type:
-                types = operation_type.split(',')
-                placeholders = ', '.join(['?'] * len(types))
-                query_conditions.append(f"operation_type IN ({placeholders})")
-                query_params.extend(types)
-            else:
-                query_conditions.append("operation_type = ?")
-                query_params.append(operation_type)
-        if operation_object:
-            # 处理多个操作对象（逗号分隔）
-            if ',' in operation_object:
-                objects = operation_object.split(',')
-                placeholders = ', '.join(['?'] * len(objects))
-                query_conditions.append(f"operation_object IN ({placeholders})")
-                query_params.extend(objects)
-            else:
-                query_conditions.append("operation_object = ?")
-                query_params.append(operation_object)
-
-        if success is not None and success != '':
-            # 修复：处理多个success值（逗号分隔）
-            if ',' in success:
-                # 分割逗号并转换为整数列表
-                success_values = [int(s.strip()) for s in success.split(',') if s.strip().isdigit()]
-                if success_values:
-                    placeholders = ', '.join(['?'] * len(success_values))
-                    query_conditions.append(f"success IN ({placeholders})")
-                    query_params.extend(success_values)
-            else:
-                # 单个值情况
-                try:
-                    query_conditions.append("success = ?")
-                    query_params.append(int(success))
-                except ValueError:
-                    # 忽略无效的success参数
-                    pass
-        # 新增：处理操作用户筛选
-        username = request.args.get('username')
-        if username:
-            query_conditions.append("username = ?")
-            query_params.append(username)
-        if start_time:
-            # 修复：转换前端时间格式为数据库格式
-            start_time = start_time.replace('T', ' ')
-            query_conditions.append("operation_time >= ?")
-            query_params.append(start_time)
-        if end_time:
-            # 修复：转换前端时间格式为数据库格式并添加秒数
-            end_time = end_time.replace('T', ' ')
-            # 如果没有秒数部分，添加默认秒数
-            if len(end_time) <= 16:  # "YYYY-MM-DD HH:MM"长度为16
-                end_time += ":00"
-            query_conditions.append("operation_time <= ?")
-            query_params.append(end_time)
-        # 新增：搜索关键词条件 (支持用户名、操作摘要和操作详情的模糊搜索)
-        if search_keyword:
-            query_conditions.append("(username LIKE ? OR operation_summary LIKE ? OR operation_details LIKE ?)")
-            search_param = f'%{search_keyword}%'
-            query_params.extend([search_param, search_param, search_param])
-
-        # 构建查询SQL
-        where_clause = "WHERE " + " AND ".join(query_conditions) if query_conditions else ""
-        query_params_count = query_params.copy()
-
         try:
             db = get_db()
             cursor = db.cursor()
+            where_clause, query_params = build_filter_conditions()
 
-            # 查询总记录数
-            cursor.execute(f"SELECT COUNT(*) as total FROM operation_logs {where_clause}", query_params_count)
+            cursor.execute(f"SELECT COUNT(*) as total FROM operation_logs {where_clause}", query_params.copy())
             total = cursor.fetchone()['total']
 
-            # 查询当前页数据
             query_params_paginated = query_params.copy()
             query_params_paginated.extend([per_page, offset])
             cursor.execute(f"""
-                SELECT id, user_id, username, operation_type, operation_object, 
+                SELECT id, user_id, username, operation_type, operation_object,
                        operation_summary, operation_details, success, operation_time
-                FROM operation_logs 
+                FROM operation_logs
                 {where_clause}
-                ORDER BY operation_time DESC 
+                ORDER BY operation_time DESC
                 LIMIT ? OFFSET ?
             """, query_params_paginated)
 
             logs = cursor.fetchall()
-
-            # 转换为字典列表
             log_list = []
             for log in logs:
                 log_dict = dict(log)
-                # print(log_dict)
-                # 将operation_details从JSON字符串解析为对象（如果存在）
                 if log_dict['operation_details']:
                     try:
                         log_dict['operation_details'] = json.loads(log_dict['operation_details'])
                     except json.JSONDecodeError:
-                        pass  # 保持原始字符串格式
+                        pass
                 log_list.append(log_dict)
 
-            # 返回分页数据
             return jsonify({
                 'success': True,
                 'data': log_list,
@@ -4227,18 +4250,13 @@ def logs():
                     'total': total,
                     'page': page,
                     'per_page': per_page,
-                    'pages': (total + per_page - 1) // per_page  # 总页数
+                    'pages': (total + per_page - 1) // per_page
                 }
             })
-
         except Exception as e:
             app.logger.error(f"日志查询失败: {str(e)}")
-            return jsonify({
-                'success': False,
-                'message': f"日志查询失败: {str(e)}"
-            }), 500
+            return jsonify({'success': False, 'message': f"日志查询失败: {str(e)}"}), 500
 
-    # 非API请求，返回日志页面
     return render_template('logs.html')
 
 
