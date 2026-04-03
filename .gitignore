@@ -1,3 +1,4 @@
 .idea
 .gitignore
 firewall_management.db
+.specstory/

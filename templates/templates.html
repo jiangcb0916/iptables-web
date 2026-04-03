@@ -1,5 +1,94 @@
 {% extends 'base.html' %}
 {% block main %}
+    {% set stats = namespace(rule_total=0, input_total=0, output_total=0) %}
+    {% for item in data_list %}
+      {% set stats.rule_total = stats.rule_total + (item.rules|length) %}
+      {% if item.direction == 'INPUT' %}
+        {% set stats.input_total = stats.input_total + 1 %}
+      {% else %}
+        {% set stats.output_total = stats.output_total + 1 %}
+      {% endif %}
+    {% endfor %}
+    <style>
+      .template-card {
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+      }
+      .template-card .template-title {
+        line-height: 1.25;
+        letter-spacing: 0.01em;
+      }
+      .template-badge {
+        border-radius: 9999px;
+        padding: 0.16rem 0.56rem;
+        font-size: 0.74rem;
+        font-weight: 600;
+      }
+      .template-preview-box {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #f8fafc;
+        padding: 0.55rem 0.65rem;
+      }
+      .template-preview-line {
+        color: #334155;
+        font-size: 0.78rem;
+        line-height: 1.35;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .template-action {
+        border-radius: 8px;
+        padding: 0.28rem 0.62rem;
+        font-size: 0.82rem;
+        font-weight: 500;
+      }
+      .template-hero {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #eef2ff 100%);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+      }
+      .template-hero-sub {
+        color: #64748b;
+        font-size: 0.94rem;
+      }
+      .template-hero-chip {
+        border: 1px solid #dbeafe;
+        background: #eff6ff;
+        color: #1e40af;
+        border-radius: 999px;
+        padding: 0.2rem 0.7rem;
+        font-size: 0.74rem;
+        font-weight: 600;
+      }
+      .template-toolbar {
+        margin-top: 0.9rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.45rem;
+        border: 1px solid #dbe3ef;
+        background: #f8fafc;
+        border-radius: 12px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      }
+      .template-toolbar select {
+        height: 2.25rem;
+        border-radius: 10px;
+        border-color: #cbd5e1;
+        background: #ffffff;
+        color: #334155;
+        font-weight: 500;
+      }
+      .template-toolbar #add-template-btn {
+        height: 2.25rem;
+        border-radius: 10px;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.22);
+      }
+    </style>
     <!-- 主内容区 -->
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- 顶部导航栏 -->
@@ -57,18 +146,54 @@
       <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
         <div class="container mx-auto max-w-7xl">
           <!-- 页面标题和操作区 -->
-          <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-            <div>
-              <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">模板管理</h1>
-              <p class="text-secondary">管理防火墙规则模板，快速应用到多个主机</p>
-            </div>
-
-
-              <button id="add-template-btn" class="bg-primary text-white px-5 py-2 rounded-lg font-medium flex items-center btn-hover">
-                <i class="fa fa-plus mr-2"></i> 新建模板
-              </button>
+          <div class="template-hero p-5 mb-6">
+            <div class="flex flex-col gap-2">
+              <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark leading-tight">模板管理</h1>
+              <div>
+                <p class="template-hero-sub">管理防火墙规则模板，快速应用到多个主机</p>
+                <div class="flex items-center gap-2 mt-3">
+                  <span class="template-hero-chip">模板管理中心</span>
+                  <span class="template-hero-chip">批量应用</span>
+                </div>
+                <div class="template-toolbar">
+                  <select id="direction-filter" class="px-3 text-sm">
+                    <option value="ALL">全部方向</option>
+                    <option value="INPUT">仅入方向</option>
+                    <option value="OUTPUT">仅出方向</option>
+                  </select>
+                  <button id="add-template-btn" class="bg-primary text-white font-medium flex items-center btn-hover">
+                    <i class="fa fa-plus mr-2"></i> 新建模板
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+              <p class="text-xs text-gray-500 mb-1">模板总数</p>
+              <p class="text-2xl font-bold text-gray-900">{{ data_list|length }}</p>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+              <p class="text-xs text-gray-500 mb-1">规则总数</p>
+              <p class="text-2xl font-bold text-indigo-600">{{ stats.rule_total }}</p>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+              <p class="text-xs text-gray-500 mb-1">入方向模板</p>
+              <p class="text-2xl font-bold text-emerald-600">{{ stats.input_total }}</p>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+              <p class="text-xs text-gray-500 mb-1">出方向模板</p>
+              <p class="text-2xl font-bold text-amber-600">{{ stats.output_total }}</p>
+            </div>
+          </div>
+
+          <div class="mb-4 flex items-center justify-between text-sm">
+            <div id="template-visible-count" class="text-secondary">
+              当前显示 <span class="font-semibold text-dark">{{ data_list|length }}</span> 条模板
+            </div>
+          </div>
+
           <!-- 新增：搜索结果提示 -->
           {% if search_keyword %}
           <div class="mb-4 flex items-center text-sm text-secondary">
@@ -83,18 +208,18 @@
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {% for data in data_list %}
             <!-- 模板卡片 -->
-            <div class="bg-white rounded-xl card-shadow overflow-hidden hover:shadow-lg transition-shadow" data-template-id="{{ data.template_id }}">
+            <div class="template-card bg-white rounded-xl border border-gray-100 card-shadow overflow-hidden hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200" data-template-id="{{ data.template_id }}" data-direction="{{ data.direction }}">
               <div class="p-5 border-b border-gray-100">
                 <div class="flex justify-between items-start mb-3">
                   <div>
-                    <h3 class="font-semibold text-lg">{{ data.template_name }}</h3>
+                    <h3 class="template-title font-semibold text-lg text-slate-800">{{ data.template_name }}</h3>
                     <p class="text-sm text-secondary mt-1">{{ data.template_identifier }} </p>
                   </div>
                 </div>
 
                 <div class="flex flex-wrap gap-2 mb-4">
-                  <span class="template-tag bg-purple-100 text-purple-800">{{ data.rules|length }} 条规则</span>
-                  <span class="template-tag bg-green-100 text-green-800">
+                  <span class="template-tag template-badge bg-purple-100 text-purple-800">{{ data.rules|length }} 条规则</span>
+                  <span class="template-tag template-badge bg-green-100 text-green-800">
                     {% if data.direction == 'INPUT' %}入方向{% else %}出方向{% endif %}
                   </span>
                 </div>
@@ -105,9 +230,26 @@
                     <span>更新于 {{ data.updated_at }}</span>
                   </div>
                 </div>
+                <div class="mt-3 pt-3 border-t border-dashed border-gray-200">
+                  <p class="text-xs font-medium text-gray-500 mb-2">规则预览</p>
+                  <div class="template-preview-box">
+                    {% if data.rules %}
+                      {% for rule in data.rules[:2] %}
+                        <div class="template-preview-line mb-1">
+                          {{ rule.protocol|upper }} / {{ rule.port }} / {{ rule.auth_object }}
+                        </div>
+                      {% endfor %}
+                      {% if data.rules|length > 2 %}
+                        <div class="text-xs text-primary mt-1">还有 {{ data.rules|length - 2 }} 条规则...</div>
+                      {% endif %}
+                    {% else %}
+                      <div class="text-xs text-gray-400">暂无规则</div>
+                    {% endif %}
+                  </div>
+                </div>
               </div>
 
-              <div class="p-4 bg-gray-50 flex justify-between">
+              <div class="p-4 bg-gray-50 flex justify-between items-center border-t border-gray-100">
                 <!-- 查看详情按钮 - 添加data属性存储模板数据 -->
                 <button class="text-primary hover:text-primary/80 text-sm font-medium transition-colors view-detail-btn"
                         data-template-id="{{ data.template_id }}"
@@ -117,10 +259,13 @@
                   <i class="fa fa-eye mr-1"></i> 查看详情
                 </button>
                 <div class="flex gap-2">
-                  <button class="px-3 py-1 bg-red-500 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors delete-template-btn">
+                  <button class="template-action bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors copy-template-btn">
+                    <i class="fa fa-clone mr-1"></i> 复制
+                  </button>
+                  <button class="template-action bg-red-50 text-red-600 hover:bg-red-100 transition-colors delete-template-btn">
                     <i class="fa fa-trash mr-1"></i> 删除
                   </button>
-                  <button class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors apply-template-btn">
+                  <button class="template-action bg-primary text-white hover:bg-primary/90 transition-colors apply-template-btn">
                     <i class="fa fa-rocket mr-1"></i> 应用
                   </button>
                 </div>
@@ -304,6 +449,15 @@
             <!-- 主机列表将通过JS动态加载 -->
           </div>
         </div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium text-gray-700">应用前预检查</span>
+            <button id="run-precheck-btn" class="px-3 py-1 bg-amber-500 text-white rounded text-sm hover:bg-amber-600 transition-colors">
+              <i class="fa fa-stethoscope mr-1"></i> 执行预检查
+            </button>
+          </div>
+          <div id="precheck-result" class="text-xs text-gray-500">建议先执行预检查，确认主机连接与权限正常。</div>
+        </div>
       </div>
 
       <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
@@ -319,6 +473,8 @@
       加载主机列表中...
     </div>
   </div>
+
+  <div id="toast-container" class="fixed top-5 right-5 z-[300] space-y-2"></div>
 {% endblock main %}
 
 {% block script %}
@@ -335,18 +491,91 @@
     const directionSelectContainer = document.getElementById('direction-select-container');
     const rulesTableBody = document.getElementById('rules-table-body');
     const templateForm = document.getElementById('template-form');
+    const toastContainer = document.getElementById('toast-container');
+    const directionFilter = document.getElementById('direction-filter');
+    const runPrecheckBtn = document.getElementById('run-precheck-btn');
+    const precheckResult = document.getElementById('precheck-result');
 
     // 当前应用的模板ID
     let currentTemplateId = null;
+    let isSavingTemplate = false;
+    let isApplyingTemplate = false;
 
     // 模板表单字段
     const templateIdInput = document.getElementById('template-id');
     const templateNameInput = document.getElementById('template-name');
     const templateDescriptionInput = document.getElementById('template-description');
     const ruleDirectionSelect = document.getElementById('rule-direction');
+    const templateVisibleCount = document.getElementById('template-visible-count');
+
+    function showToast(message, type = 'error') {
+      const toast = document.createElement('div');
+      const palette = type === 'success'
+        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+        : 'bg-red-50 border-red-200 text-red-700';
+      const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+      toast.className = `max-w-sm px-4 py-3 rounded-lg border shadow-lg ${palette} flex items-start gap-2`;
+      toast.innerHTML = `
+        <i class="fa ${icon} mt-0.5"></i>
+        <span class="text-sm leading-5">${message}</span>
+      `;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-x-2', 'transition-all', 'duration-200');
+      }, 2200);
+      setTimeout(() => toast.remove(), 2500);
+    }
+
+    async function parseJsonResponse(response) {
+      const text = await response.text();
+      try {
+        return text ? JSON.parse(text) : {};
+      } catch (_) {
+        return { message: text || '服务器返回了无法解析的数据' };
+      }
+    }
+
+    function isValidPort(port) {
+      const value = (port || '').trim();
+      return /^(\d+|\d+[-:]\d+|\d+(,\d+)+|-1\/-1)$/.test(value);
+    }
+
+    function isValidAuthObject(value) {
+      const target = (value || '').trim();
+      if (!target) return false;
+      const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+      if (!cidrRegex.test(target)) return false;
+      const [ipPart, maskPart] = target.split('/');
+      const octets = ipPart.split('.').map(Number);
+      if (octets.some((num) => Number.isNaN(num) || num < 0 || num > 255)) return false;
+      if (maskPart !== undefined) {
+        const mask = Number(maskPart);
+        if (!Number.isInteger(mask) || mask < 0 || mask > 32) return false;
+      }
+      return true;
+    }
 
     // 所有模板数据 - 从Flask后端获取
     const allTemplates = {% if data_list %}{{ data_list|tojson }}{% else %}[]{% endif %};
+    const templateCards = document.querySelectorAll('.template-card');
+
+    function applyDirectionFilter() {
+      const selected = directionFilter ? directionFilter.value : 'ALL';
+      let visibleCount = 0;
+      templateCards.forEach((card) => {
+        const matched = selected === 'ALL' || card.getAttribute('data-direction') === selected;
+        card.classList.toggle('hidden', !matched);
+        if (matched) visibleCount += 1;
+      });
+      if (templateVisibleCount) {
+        templateVisibleCount.innerHTML = `当前显示 <span class="font-semibold text-dark">${visibleCount}</span> 条模板`;
+      }
+    }
+
+    if (directionFilter) {
+      directionFilter.addEventListener('change', applyDirectionFilter);
+      applyDirectionFilter();
+    }
     // 新增：搜索功能实现
     const searchForm = document.getElementById('search-form');
     const searchInput = document.querySelector('input[name="search"]');
@@ -421,30 +650,31 @@
 
     // 保存模板
     saveBtn.addEventListener('click', async () => {
+      if (isSavingTemplate) return;
       // 收集表单数据
       const templateData = {
         temp_id: templateIdInput.value || null, // 使用temp_id与后端保持一致
-        name: templateNameInput.value,
+        name: templateNameInput.value.trim(),
         direction: ruleDirectionSelect.value,
-        description: templateDescriptionInput.value,
+        description: templateDescriptionInput.value.trim(),
         rules: []
       };
 
       // 验证必填字段
       if (!templateData.name) {
-        alert('模板名称为必填项');
+        showToast('模板名称为必填项');
         return;
       }
 
       if (!templateData.direction) {
-        alert('请选择规则方向');
+        showToast('请选择规则方向');
         return;
       }
 
       // 收集规则列表数据
       const ruleRows = rulesTableBody.querySelectorAll('tr');
       if (ruleRows.length === 0) {
-        alert('请至少添加一条规则');
+        showToast('请至少添加一条规则');
         return;
       }
 
@@ -488,6 +718,9 @@
       });
 
       try {
+        isSavingTemplate = true;
+        saveBtn.disabled = true;
+        saveBtn.classList.add('opacity-70', 'cursor-not-allowed');
         // 确定API端点和请求方法
         const url = templateData.temp_id ? '/temp_edit' : '/temp_add';
         const method = 'POST';
@@ -501,18 +734,22 @@
           body: JSON.stringify(templateData)
         });
 
-        const result = await response.json();
+        const result = await parseJsonResponse(response);
 
         if (response.ok && result.success) {
-          alert(templateData.temp_id ? '模板更新成功！' : '模板保存成功！');
+          showToast(templateData.temp_id ? '模板更新成功' : '模板保存成功', 'success');
           closeTemplateModal();
           window.location.reload();
         } else {
-          alert(`操作失败: ${result.message || '服务器处理错误'}`);
+          showToast(`操作失败: ${result.message || '服务器处理错误'}`);
         }
       } catch (error) {
         console.error('操作模板时发生错误:', error);
-        alert('操作模板失败，请检查网络连接后重试');
+        showToast('操作模板失败，请检查网络连接后重试');
+      } finally {
+        isSavingTemplate = false;
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('opacity-70', 'cursor-not-allowed');
       }
     });
 
@@ -550,7 +787,7 @@
           fillTemplateDetail(templateData);
         } else {
           console.error('未找到模板数据，ID:', templateId);
-          alert('未找到模板数据');
+          showToast('未找到模板数据');
         }
       });
     });
@@ -687,7 +924,17 @@
 
       // 简单验证
       if (!port || !object) {
-        alert('端口和授权对象为必填项');
+        showToast('端口和授权对象为必填项');
+        return;
+      }
+
+      if (!isValidPort(port)) {
+        showToast('端口格式不正确，例如：80 / 80:90 / 80,443');
+        return;
+      }
+
+      if (!isValidAuthObject(object)) {
+        showToast('授权对象格式不正确，请输入合法 IP/CIDR');
         return;
       }
 
@@ -727,7 +974,7 @@
         <td class="px-4 py-3 whitespace-nowrap text-sm text-secondary">${protocol}</td>
         <td class="px-4 py-3 whitespace-nowrap text-sm text-secondary">${port}</td>
         <td class="px-4 py-3 text-sm text-secondary">${object}</td>
-        <td class="px-4 py-3 text-sm text-secondary">${desc || '-'}</td>
+        <td class="px-4 py-3 text-sm text-secondary">${descContent}</td>
         <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
           <button class="text-danger hover:text-red-700 transition-colors delete-rule">
             <i class="fa fa-trash"></i>
@@ -766,11 +1013,16 @@
     }
 
     // ========== 应用模板相关逻辑 ==========
+    function getSelectedHostIds() {
+      return Array.from(document.querySelectorAll('.host-checkbox:checked'))
+        .map(cb => parseInt(cb.getAttribute('data-host-id')));
+    }
+
     // 打开应用模板模态框
     document.querySelectorAll('.apply-template-btn').forEach(btn => {
       btn.addEventListener('click', async function() {
         // 获取模板信息
-        const templateCard = this.closest('.bg-white.rounded-xl');
+        const templateCard = this.closest('.template-card');
         currentTemplateId = templateCard.getAttribute('data-template-id');
         const templateName = templateCard.querySelector('h3').textContent;
         const templateDesc = `${templateCard.querySelector('.template-tag:first-child').textContent}`;
@@ -778,6 +1030,8 @@
         // 更新应用模态框中的模板信息
         document.getElementById('apply-template-name').textContent = templateName;
         document.getElementById('apply-template-desc').textContent = templateDesc;
+        precheckResult.className = 'text-xs text-gray-500';
+        precheckResult.textContent = '建议先执行预检查，确认主机连接与权限正常。';
 
         // 加载主机列表
         await loadHostsList();
@@ -883,22 +1137,22 @@
 
     // 确认应用模板
     document.getElementById('confirm-apply-btn').addEventListener('click', async () => {
+      if (isApplyingTemplate) return;
       // 收集选中的主机ID
-      const selectedHosts = Array.from(
-        document.querySelectorAll('.host-checkbox:checked')
-      ).map(cb => parseInt(cb.getAttribute('data-host-id')));
+      const selectedHosts = getSelectedHostIds();
 
       if (selectedHosts.length === 0) {
-        alert('请至少选择一台目标主机');
+        showToast('请至少选择一台目标主机');
         return;
       }
 
       if (!currentTemplateId) {
-        alert('未获取到模板信息，请重试');
+        showToast('未获取到模板信息，请重试');
         return;
       }
 
       try {
+        isApplyingTemplate = true;
         const response = await fetch('/temp_to_hosts', {
           method: 'POST',
           headers: {
@@ -911,26 +1165,107 @@
           })
         });
 
-        const result = await response.json();
+        const result = await parseJsonResponse(response);
 
         if (response.ok && result.success) {
-          alert('模板应用成功！');
+          showToast('模板应用成功', 'success');
           closeApplyModal();
         } else {
-          alert(`应用失败: ${result.message || '服务器处理错误'}`);
+          const failedHostText = Array.isArray(result.failed_hosts) && result.failed_hosts.length
+            ? `，失败主机：${result.failed_hosts.map(item => item.host_ip || item.host_id).join('、')}`
+            : '';
+          showToast(`应用失败: ${result.message || '服务器处理错误'}${failedHostText}`);
         }
       } catch (error) {
         console.error('应用模板失败:', error);
-        alert('应用模板失败，请检查网络连接后重试');
+        showToast('应用模板失败，请检查网络连接后重试');
+      } finally {
+        isApplyingTemplate = false;
+      }
+    });
+
+    runPrecheckBtn.addEventListener('click', async () => {
+      const selectedHosts = getSelectedHostIds();
+      if (selectedHosts.length === 0) {
+        showToast('请先选择主机后再执行预检查');
+        return;
+      }
+      if (!currentTemplateId) {
+        showToast('未获取到模板信息，请重新打开应用窗口');
+        return;
+      }
+      runPrecheckBtn.disabled = true;
+      runPrecheckBtn.classList.add('opacity-70', 'cursor-not-allowed');
+      precheckResult.className = 'text-xs text-gray-500';
+      precheckResult.textContent = '预检查执行中...';
+      try {
+        const response = await fetch('/temp_to_hosts_precheck', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrf_token')
+          },
+          body: JSON.stringify({
+            template_id: parseInt(currentTemplateId),
+            host_ids: selectedHosts
+          })
+        });
+        const result = await parseJsonResponse(response);
+        if (!(response.ok && result.success)) {
+          precheckResult.className = 'text-xs text-red-600';
+          precheckResult.textContent = `预检查失败：${result.message || '未知错误'}`;
+          return;
+        }
+        const payload = result.data || {};
+        const hostRows = (payload.hosts || []).slice(0, 5).map((item) => {
+          const icon = item.ok ? '✓' : '✗';
+          return `${icon} ${item.host_name} (${item.host_ip}) ${item.ok ? '通过' : item.message}`;
+        });
+        const moreText = (payload.hosts || []).length > 5 ? `；其余 ${payload.hosts.length - 5} 台请查看日志` : '';
+        const summary = `总计 ${payload.total_hosts} 台，通过 ${payload.passed_hosts} 台，失败 ${payload.failed_hosts} 台`;
+        precheckResult.className = payload.failed_hosts > 0 ? 'text-xs text-amber-700' : 'text-xs text-emerald-700';
+        precheckResult.textContent = `${summary}。${hostRows.join('；')}${moreText}`;
+      } catch (error) {
+        precheckResult.className = 'text-xs text-red-600';
+        precheckResult.textContent = `预检查失败：${error.message || '网络错误'}`;
+      } finally {
+        runPrecheckBtn.disabled = false;
+        runPrecheckBtn.classList.remove('opacity-70', 'cursor-not-allowed');
       }
     });
 
     // ========== 删除模板相关逻辑 ==========
+    document.querySelectorAll('.copy-template-btn').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        const templateCard = this.closest('.template-card');
+        const templateId = templateCard.getAttribute('data-template-id');
+        try {
+          const response = await fetch('/temp_copy', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrf_token')
+            },
+            body: JSON.stringify({ template_id: parseInt(templateId) })
+          });
+          const result = await parseJsonResponse(response);
+          if (response.ok && result.success) {
+            showToast('模板复制成功', 'success');
+            window.location.reload();
+          } else {
+            showToast(`模板复制失败: ${result.message || '服务器处理错误'}`);
+          }
+        } catch (error) {
+          showToast('模板复制失败，请稍后重试');
+        }
+      });
+    });
+
     // 为所有删除按钮绑定事件
     document.querySelectorAll('.delete-template-btn').forEach(btn => {
       btn.addEventListener('click', async function() {
         // 获取当前模板卡片和模板ID
-        const templateCard = this.closest('.bg-white.rounded-xl');
+        const templateCard = this.closest('.template-card');
         const templateId = templateCard.getAttribute('data-template-id');
         const templateName = templateCard.querySelector('h3').textContent;
 
@@ -948,18 +1283,18 @@
             }
           });
 
-          const result = await response.json();
+          const result = await parseJsonResponse(response);
 
           if (response.ok && result.success) {
-            alert('模板删除成功！');
+            showToast('模板删除成功', 'success');
             // 从页面中移除模板卡片
             templateCard.remove();
           } else {
-            alert(`删除失败: ${result.message || '服务器处理错误'}`);
+            showToast(`删除失败: ${result.message || '服务器处理错误'}`);
           }
         } catch (error) {
           console.error('删除模板时发生错误:', error);
-          alert('删除模板失败，请检查网络连接后重试');
+          showToast('删除模板失败，请检查网络连接后重试');
         }
       });
     });

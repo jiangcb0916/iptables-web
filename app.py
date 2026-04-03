@@ -498,6 +498,98 @@ def _validate_auth_object(auth_object):
     return None
 
 
+def _normalize_template_policy(policy_value):
+    text = (policy_value or '').strip().upper()
+    if text in ('允许', 'ACCEPT'):
+        return 'ACCEPT'
+    if text in ('拒绝', 'DROP'):
+        return 'DROP'
+    return None
+
+
+def _normalize_template_protocol(protocol_value):
+    text = (protocol_value or '').strip().lower()
+    if text in ('tcp', 'udp', 'icmp', 'all'):
+        return text
+    return None
+
+
+def _validate_template_rule(rule, index):
+    policy = _normalize_template_policy(rule.get('policy'))
+    if not policy:
+        return None, f'第{index}条规则授权策略无效'
+
+    protocol = _normalize_template_protocol(rule.get('protocol'))
+    if not protocol:
+        return None, f'第{index}条规则协议无效，仅支持 TCP/UDP/ICMP/ALL'
+
+    port = (rule.get('port') or '').strip()
+    if not port:
+        return None, f'第{index}条规则端口不能为空'
+
+    port_pattern = r'^(\d+|\d+[-:]\d+|\d+(,\d+)+|-1/-1)$'
+    if protocol in ('tcp', 'udp') and not re.fullmatch(port_pattern, port):
+        return None, f'第{index}条规则端口格式错误'
+
+    auth_object = (rule.get('auth_object') or '').strip()
+    auth_object_error = _validate_auth_object(auth_object)
+    if auth_object_error:
+        return None, f'第{index}条规则{auth_object_error}'
+
+    limit = (rule.get('limit') or '').strip()
+    if limit:
+        if not re.fullmatch(r'^\d+(kb/s)?$', limit):
+            return None, f'第{index}条规则限速格式错误'
+        if not limit.endswith('kb/s'):
+            limit = f'{limit}kb/s'
+
+    normalized = {
+        'rule_id': rule.get('rule_id'),
+        'policy': policy,
+        'protocol': protocol,
+        'port': port,
+        'auth_object': auth_object,
+        'description': (rule.get('description') or '').strip(),
+        'limit': limit
+    }
+    return normalized, None
+
+
+def _validate_template_payload(data, is_edit=False):
+    if not isinstance(data, dict):
+        return None, '无效的JSON数据'
+    if is_edit and not data.get('temp_id'):
+        return None, '缺少模板ID'
+
+    name = (data.get('name') or '').strip()
+    if not name:
+        return None, '模板名称不能为空'
+
+    direction = (data.get('direction') or '').strip().upper()
+    if direction not in ('INPUT', 'OUTPUT'):
+        return None, '规则方向无效，仅支持 INPUT/OUTPUT'
+
+    rules = data.get('rules')
+    if not isinstance(rules, list) or not rules:
+        return None, '请至少添加一条规则'
+
+    normalized_rules = []
+    for idx, rule in enumerate(rules, start=1):
+        normalized_rule, error_message = _validate_template_rule(rule, idx)
+        if error_message:
+            return None, error_message
+        normalized_rules.append(normalized_rule)
+
+    payload = {
+        'temp_id': data.get('temp_id'),
+        'name': name,
+        'description': (data.get('description') or '').strip(),
+        'direction': direction,
+        'rules': normalized_rules
+    }
+    return payload, None
+
+
 def _validate_host_payload(data, is_update=False):
     """
     校验主机新增/编辑请求参数，返回 (错误信息, 规范化ssh_port)。
@@ -709,6 +801,113 @@ def _delete_template_rules_on_host(host, direction, template_rules):
         run_cmd('iptables-save > /etc/iptables/rules.v4')
 
     return len(line_numbers_to_delete)
+
+
+def _get_hosts_by_ids(cursor, host_ids):
+    if not host_ids:
+        return []
+    normalized_ids = []
+    for host_id in host_ids:
+        if str(host_id).isdigit():
+            normalized_ids.append(int(host_id))
+    if not normalized_ids:
+        return []
+    placeholders = ','.join(['?'] * len(normalized_ids))
+    cursor.execute('''
+    SELECT id, host_name, host_identifier, ssh_port, username, ip_address, auth_method, password, private_key, operating_system
+    FROM hosts
+    WHERE id IN ({})
+    '''.format(placeholders), tuple(normalized_ids))
+    return cursor.fetchall()
+
+
+def _run_cmd_on_host(host, cmd):
+    if host['auth_method'] == 'password':
+        return pwd_shell_cmd(
+            hostname=host['ip_address'],
+            user=host['username'],
+            port=host['ssh_port'],
+            pwd=host['password'],
+            cmd=cmd
+        )
+    return sshkey_shell_cmd(
+        hostname=host['ip_address'],
+        user=host['username'],
+        port=host['ssh_port'],
+        private_key_str=host['private_key'],
+        cmd=cmd
+    )
+
+
+def _persist_iptables(host):
+    if host['operating_system'] in ('centos', 'redhat'):
+        _run_cmd_on_host(host, 'iptables-save > /etc/sysconfig/iptables')
+    elif host['operating_system'] in ('debian', 'ubuntu'):
+        _run_cmd_on_host(host, 'iptables-save > /etc/iptables/rules.v4')
+
+
+def _build_template_apply_payload(cursor, template_id):
+    cursor.execute('SELECT template_name, direction FROM templates WHERE id = ?', (template_id,))
+    template = cursor.fetchone()
+    if not template:
+        return None, None, None, '模板不存在'
+
+    cursor.execute('''
+    SELECT policy, protocol, port, auth_object, description, "limit"
+    FROM rules WHERE template_id = ?
+    ''', (template_id,))
+    rules = cursor.fetchall()
+    if not rules:
+        return template['template_name'], template['direction'], [], None
+
+    direction = template['direction']
+    cmd_list = []
+    for rule in rules:
+        if 'tcp' in rule['protocol'].lower() or 'udp' in rule['protocol'].lower():
+            if '-1/-1' not in rule['port']:
+                if '-' in rule['port']:
+                    new_port = rule['port'].replace("-", ":")
+                    if rule['limit'] == '':
+                        cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule['auth_object'], rule['protocol'], new_port, rule['policy'], rule['description'])
+                    else:
+                        cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                            direction, rule['auth_object'], rule['protocol'], new_port, rule['policy'], rule['limit'], random_name(), rule['description'])
+                    cmd_list.append(cmd)
+                elif ',' in rule['port']:
+                    if rule['limit'] == '':
+                        cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
+                            direction, rule['auth_object'], rule['protocol'], rule['port'], rule['policy'], rule['description'])
+                    else:
+                        cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment --comment "{}" '.format(
+                            direction, rule['auth_object'], rule['protocol'], rule['port'], rule['policy'], rule['limit'], random_name(), rule['description'])
+                    cmd_list.append(cmd)
+                else:
+                    if rule['limit'] == '':
+                        cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
+                            direction, rule['auth_object'], rule['protocol'], rule['port'], rule['policy'], rule['description'])
+                    else:
+                        cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
+                            direction, rule['auth_object'], rule['protocol'], rule['port'], rule['policy'], rule['limit'], random_name(), rule['description'])
+                    cmd_list.append(cmd)
+            else:
+                if rule['limit'] == '':
+                    cmd = 'iptables -A {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
+                        direction, rule['auth_object'], rule['protocol'], rule['policy'], rule['description'])
+                else:
+                    cmd = 'iptables -A {} -s {} -p {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}"'.format(
+                        direction, rule['auth_object'], rule['protocol'], rule['policy'], rule['limit'], random_name(), rule['description'])
+                cmd_list.append(cmd)
+        else:
+            if rule['limit'] == '':
+                cmd = 'iptables -A {}  -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
+                    direction, rule['auth_object'], rule['protocol'], rule['policy'], rule['description'])
+            else:
+                cmd = 'iptables -A {}  -s {} -p {}  -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}"'.format(
+                    direction, rule['auth_object'], rule['protocol'], rule['policy'], rule['limit'], random_name(), rule['description'])
+            cmd_list.append(cmd)
+
+    return template['template_name'], direction, cmd_list, None
 
 
 # 根路径路由：重定向到 /hosts?page=1
@@ -1956,83 +2155,73 @@ def templates_add():
     data = None
     try:
         data = request.get_json()
-        print(data)
+        validated_data, error_message = _validate_template_payload(data, is_edit=False)
+        if error_message:
+            return jsonify({'success': False, 'message': error_message}), 400
+
         db = get_db()
         cursor = db.cursor()
-        # 插入主机数据
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # 插入模板
         cursor.execute('''
         INSERT INTO templates 
         (template_name, template_identifier, direction,created_at, updated_at)
         VALUES (?, ?, ?, ?,?)
         ''', (
-            data['name'],
-            data['description'],
-            data['direction'],
-            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            validated_data['name'],
+            validated_data['description'],
+            validated_data['direction'],
+            now,
+            now
         ))
-        # 查询templat_id
-        cursor.execute('SELECT id FROM templates ORDER BY id DESC LIMIT 1;')
-        result = cursor.fetchone()
-        if result:
-            # 结果是元组，取第一个元素（即 ID）
-            template_id = result[0]
-        else:
-            # 表中没有数据时返回 None 或提示
-            template_id = 1
+        template_id = cursor.lastrowid
 
-        for rule in data['rules']:
-            if rule['policy'] == '允许':
-                policy = 'ACCEPT'
-            else:
-                policy = 'DROP'
+        for rule in validated_data['rules']:
             cursor.execute('''
             INSERT INTO rules 
             (template_id, policy, protocol, port, auth_object, description, created_at, updated_at, "limit")
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 template_id,
-                policy,
+                rule['policy'],
                 rule['protocol'],
                 rule['port'],
                 rule['auth_object'],
                 rule['description'],
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                now,
+                now,
                 rule['limit']
             ))
+        db.commit()
 
-            # 获取规则数量用于日志
-            rule_count = len(data['rules'])
-
-            db.commit()
-            # 【修复】记录成功日志
-            log_operation(
-                user_id=current_user.id,
-                username=current_user.username,
-                operation_type='添加',
-                operation_object='模板',
-                operation_summary=f"添加模板: {data['name']} (规则数: {rule_count})",
-                operation_details=json.dumps({
-                    "template_id": template_id,
-                    "template_name": data['name'],
-                    "direction": data['direction'],
-                    "description": data['description'],
-                    "rule_count": rule_count,
-                    "rules": [
-                        {
-                            "protocol": rule['protocol'],
-                            "port": rule['port'],
-                            "policy": "允许" if rule['policy'] == 'ACCEPT' else "拒绝",
-                            "source": rule['auth_object'],
-                            "description": rule['description'],
-                            "limit": rule['limit']
-                        } for rule in data['rules']
-                    ],
-                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                }),
-                success=1
-            )
+        rule_count = len(validated_data['rules'])
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='模板',
+            operation_summary=f"添加模板: {validated_data['name']} (规则数: {rule_count})",
+            operation_details=json.dumps({
+                "template_id": template_id,
+                "template_name": validated_data['name'],
+                "direction": validated_data['direction'],
+                "description": validated_data['description'],
+                "rule_count": rule_count,
+                "rules": [
+                    {
+                        "protocol": rule['protocol'],
+                        "port": rule['port'],
+                        "policy": "允许" if rule['policy'] == 'ACCEPT' else "拒绝",
+                        "source": rule['auth_object'],
+                        "description": rule['description'],
+                        "limit": rule['limit']
+                    } for rule in validated_data['rules']
+                ],
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
         return jsonify({'success': True, 'message': '模板添加成功'})
 
     except sqlite3.IntegrityError:
@@ -2197,75 +2386,76 @@ def templates_edit():
     original_template_name = None
     try:
         data = request.get_json()
+        validated_data, error_message = _validate_template_payload(data, is_edit=True)
+        if error_message:
+            return jsonify({'success': False, 'message': error_message}), 400
+
         db = get_db()
         cursor = db.cursor()
 
         # 【新增】获取原模板名称用于日志
-        cursor.execute('SELECT template_name FROM templates WHERE id = ?', (data['temp_id'],))
+        cursor.execute('SELECT template_name FROM templates WHERE id = ?', (validated_data['temp_id'],))
         template = cursor.fetchone()
         if not template:
             return jsonify({'success': False, 'message': '模板不存在'}), 404
         original_template_name = template['template_name']
 
         # 获取修改前后的规则数量
-        cursor.execute('SELECT COUNT(*) as old_count FROM rules WHERE template_id = ?', (data['temp_id'],))
+        cursor.execute('SELECT COUNT(*) as old_count FROM rules WHERE template_id = ?', (validated_data['temp_id'],))
         old_rule_count = cursor.fetchone()['old_count']
-        new_rule_count = len(data['rules'])
+        new_rule_count = len(validated_data['rules'])
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # 修改模板信息
         cursor.execute('''
         UPDATE  templates set template_name = ?, template_identifier = ?, direction = ?, updated_at =? WHERE id = ?;
         ''', (
-            data['name'],
-            data['description'],
-            data['direction'],
-            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            data['temp_id']
+            validated_data['name'],
+            validated_data['description'],
+            validated_data['direction'],
+            now,
+            validated_data['temp_id']
         ))
         # 先删除旧规则
-        cursor.execute('DELETE FROM rules WHERE template_id = ?', (data['temp_id'],))
+        cursor.execute('DELETE FROM rules WHERE template_id = ?', (validated_data['temp_id'],))
         rule_count = 0
 
-        for rule in data['rules']:
-            if rule['policy'] == '允许' or rule['policy'] == 'ACCEPT':
-                policy = 'ACCEPT'
-            else:
-                policy = 'DROP'
+        for rule in validated_data['rules']:
             # 添加新规则
             cursor.execute('''
             INSERT INTO rules 
             (template_id, policy, protocol, port, auth_object, description, created_at, updated_at, "limit")
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                data['temp_id'],
-                policy,
+                validated_data['temp_id'],
+                rule['policy'],
                 rule['protocol'],
                 rule['port'],
                 rule['auth_object'],
                 rule['description'],
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                now,
+                now,
                 rule.get('limit', '')  # 添加limit字段
             ))
             rule_count += 1
-            db.commit()
+        db.commit()
         # 【修复】记录成功日志
         log_operation(
             user_id=current_user.id,
             username=current_user.username,
             operation_type='编辑',
             operation_object='模板',
-            operation_summary=f"编辑模板: {original_template_name} -> {data['name']} (规则数: {old_rule_count}→{new_rule_count})",
+            operation_summary=f"编辑模板: {original_template_name} -> {validated_data['name']} (规则数: {old_rule_count}→{new_rule_count})",
             operation_details=json.dumps({
-                "template_id": data['temp_id'],
+                "template_id": validated_data['temp_id'],
                 "original": {
                     "name": original_template_name,
                     "rule_count": old_rule_count
                 },
                 "updated": {
-                    "name": data['name'],
-                    "description": data['description'],
-                    "direction": data['direction'],
+                    "name": validated_data['name'],
+                    "description": validated_data['description'],
+                    "direction": validated_data['direction'],
                     "rule_count": new_rule_count
                 },
                 "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -2283,14 +2473,14 @@ def templates_edit():
             operation_object='模板',
             operation_summary=f"编辑模板失败: {original_template_name or '未知模板'}",
             operation_details=json.dumps({
-                "template_id": data.get('temp_id'),
+                "template_id": data.get('temp_id') if isinstance(data, dict) else None,
                 "error": "模板名称已存在",
                 "error_type": "IntegrityError",
                 "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }),
             success=0
         )
-        return jsonify({'success': False, 'message': '模板名称不存在'}), 409
+        return jsonify({'success': False, 'message': '模板名称已存在'}), 409
     except Exception as e:
         # 【修复】记录失败日志
         log_operation(
@@ -2353,171 +2543,67 @@ def temp_host_api():
 @login_required
 @permission_required('iptab_add')
 def temp_to_hosts():
-    all_params = request.get_json()
-    template_id = all_params['template_id']
-    host_ids_list = all_params['host_ids']
-    # 获取模板的规则
+    all_params = request.get_json(silent=True) or {}
+    template_id = all_params.get('template_id')
+    host_ids_list = all_params.get('host_ids') or []
     try:
-        # 获取数据库连接
+        if not template_id:
+            return jsonify({'success': False, 'message': '缺少模板ID'}), 400
+        if not isinstance(host_ids_list, list) or len(host_ids_list) == 0:
+            return jsonify({'success': False, 'message': '请至少选择一台主机'}), 400
+
         db = get_db()
         cursor = db.cursor()
-        # 获取模板名称和主机名称列表
-        cursor.execute('SELECT template_name FROM templates WHERE id = ?', (template_id,))
-        template_name = cursor.fetchone()['template_name']
+        template_name, direction, cmd_list, build_error = _build_template_apply_payload(cursor, template_id)
+        if build_error:
+            return jsonify({'success': False, 'message': build_error}), 404
+        if not cmd_list:
+            return jsonify({'success': False, 'message': '模板无可应用规则'}), 400
 
-        # 修复：将整数ID转换为字符串后再拼接
-        host_ids_str = [str(id) for id in host_ids_list]
-        cursor.execute('SELECT id, host_name FROM hosts WHERE id IN ({})'.format(','.join(host_ids_str)))
-        host_names = {str(h['id']): h['host_name'] for h in cursor.fetchall()}
+        hosts = _get_hosts_by_ids(cursor, host_ids_list)
+        if not hosts:
+            return jsonify({'success': False, 'message': '未找到目标主机'}), 404
 
-        # 获取模板的方向
-        cursor.execute(''' select direction from templates  where id = {} ;'''.format(template_id))
-        direction_data = cursor.fetchone()
-        direction = direction_data[0]
-        # 查询所有主机数据
-        cursor.execute('''SELECT * FROM  rules
-        where template_id = {}
-        '''.format(template_id))
-        # 获取所有记录
-        temp_data = cursor.fetchall()
-        cmd_list = []
-        for rule in temp_data:
-            # 正常的tcp或udp规则
-            if 'tcp' in rule['protocol'].lower() or 'udp' in rule['protocol'].lower():
-                # 正常的端口
-                if '-1/-1' not in rule['port']:
-                    # 添加规则中的：正常端口中的范围端口
-                    if '-' in rule['port']:
-                        new_port = rule['port'].replace("-", ":")
-                        if rule['limit'] == '':
-                            cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                                direction, rule['auth_object'], rule['protocol'], new_port,
-                                rule['policy'], rule['description'])
-                        else:
-                            cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
-                                direction, rule['auth_object'], rule['protocol'], new_port,
-                                rule['policy'], rule['limit'], random_name(), rule['description'])
-                        cmd_list.append(cmd)
-                    # 添加规则中的: 正常端口中的多个端口
-                    elif ',' in rule['port']:
-                        if rule['limit'] == '':
-                            cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
-                                direction, rule['auth_object'], rule['protocol'],
-                                rule['port'],
-                                rule['policy'], rule['description'])
-                        else:
-                            cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment --comment "{}" '.format(
-                                direction, rule['auth_object'], rule['protocol'],
-                                rule['port'],
-                                rule['policy'], rule['limit'], random_name(), rule['description'])
-                        cmd_list.append(cmd)
-                    else:
-                        if rule['limit'] == '':
-                            cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                                direction, rule['auth_object'], rule['protocol'],
-                                rule['port'],
-                                rule['policy'], rule['description'])
-                        else:
-                            cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
-                                direction, rule['auth_object'], rule['protocol'],
-                                rule['port'],
-                                rule['policy'], rule['limit'], random_name(), rule['description'])
-                        cmd_list.append(cmd)
-                else:
-                    if rule['limit'] == '':
-                        # tcp 或udp的所有端口
-                        cmd = 'iptables -A {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule['auth_object'], rule['protocol'],
-                            rule['policy'], rule['description'])
-                    else:
-                        # tcp 或udp的所有端口
-                        cmd = 'iptables -A {} -s {} -p {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}"'.format(
-                            direction, rule['auth_object'], rule['protocol'],
-                            rule['policy'], rule['limit'], random_name(), rule['description'])
-                    cmd_list.append(cmd)
-            # ICMP 或 all 协议的规则
-            else:
-                if rule['limit'] == '':
-                    cmd = 'iptables -A {}  -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
-                        direction, rule['auth_object'], rule['protocol'],
-                        rule['policy'], rule['description'])
-                else:
-                    cmd = 'iptables -A {}  -s {} -p {}  -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}"'.format(
-                        direction, rule['auth_object'], rule['protocol'],
-                        rule['policy'], rule['limit'], random_name(), rule['description'])
-                cmd_list.append(cmd)
-        # 获取主机的信息
-        for host_id in host_ids_list:
-            # 查询所有主机数据
-            cursor.execute('''
-            SELECT ssh_port, username, ip_address, auth_method, password, private_key, operating_system
-            FROM hosts where id = {}
-            '''.format(host_id))
-            # 获取所有记录
-            # 1. 获取所有列名（从 cursor.description 中提取）
-            columns = [column[0] for column in cursor.description]
-            # 2. 将每行数据与列名配对，转换为字典
-            hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            hostname = hosts[0]['ip_address']
-            port = hosts[0]['ssh_port']
-            user = hosts[0]['username']
-            pwd = hosts[0]['password']
-            auth_method = hosts[0]['auth_method']
-            private_key = hosts[0]['private_key']
-            operating_system = hosts[0]['operating_system']
-            if auth_method == 'password':
+        failed_hosts = []
+        for host in hosts:
+            try:
                 for cmd in cmd_list:
-                    pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
-                                  cmd=cmd)
-                    if operating_system == 'centos' or operating_system == 'redhat':
-                        pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
-                                      cmd='iptables-save > /etc/sysconfig/iptables')
-                    elif operating_system == 'debian':
-                        pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
-                                      cmd='iptables-save > /etc/iptables/rules.v4')
-                    elif operating_system == 'ubuntu':
-                        pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
-                                      cmd='iptables-save > /etc/iptables/rules.v4')
-            else:
-                for cmd in cmd_list:
-                    sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
-                                     cmd=cmd)
-                    if operating_system == 'centos' or operating_system == 'redhat':
-                        sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
-                                         cmd='iptables-save > /etc/sysconfig/iptables')
-                    elif operating_system == 'debian':
-                        sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
-                                         cmd='iptables-save > /etc/iptables/rules.v4')
-                    elif operating_system == 'ubuntu':
-                        sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
-                                         cmd='iptables-save > /etc/iptables/rules.v4')
+                    _run_cmd_on_host(host, cmd)
+                _persist_iptables(host)
+            except Exception as host_error:
+                failed_hosts.append({
+                    'host_id': host['id'],
+                    'host_ip': host['ip_address'],
+                    'error': str(host_error)
+                })
 
-        # 【修复】记录成功日志
+        if failed_hosts:
+            return jsonify({
+                'success': False,
+                'message': '部分主机应用失败',
+                'failed_hosts': failed_hosts
+            }), 500
+
         log_operation(
             user_id=current_user.id,
             username=current_user.username,
             operation_type='应用',
             operation_object='模板',
-            operation_summary=f"应用模板到主机: {template_name} ({len(host_ids_list)}台主机)",
+            operation_summary=f"应用模板到主机: {template_name} ({len(hosts)}台主机)",
             operation_details=json.dumps({
                 "template_id": template_id,
                 "template_name": template_name,
                 "direction": direction,
                 "applied_hosts": [
-                    {"host_id": hid, "host_name": host_names.get(hid, "未知主机")}
-                    for hid in host_ids_list
+                    {"host_id": host['id'], "host_name": host['host_name'] or host['host_identifier']}
+                    for host in hosts
                 ],
                 "applied_rules": len(cmd_list),
                 "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }),
             success=1
         )
-        # 将规则添加到主机上
-        return jsonify({
-            'success': True,
-            'message': "成功"
-        })
-
+        return jsonify({'success': True, 'message': "成功"})
     except Exception as e:
         # 【修复】记录失败日志
         log_operation(
@@ -2540,6 +2626,133 @@ def temp_to_hosts():
             'success': False,
             'message': f"获取主机数据失败: {str(e)}"
         }), 500
+
+
+@app.route("/temp_to_hosts_precheck", methods=['POST'])
+@login_required
+@permission_required('iptab_add')
+def temp_to_hosts_precheck():
+    all_params = request.get_json(silent=True) or {}
+    template_id = all_params.get('template_id')
+    host_ids_list = all_params.get('host_ids') or []
+    try:
+        if not template_id:
+            return jsonify({'success': False, 'message': '缺少模板ID'}), 400
+        if not isinstance(host_ids_list, list) or len(host_ids_list) == 0:
+            return jsonify({'success': False, 'message': '请至少选择一台主机'}), 400
+
+        db = get_db()
+        cursor = db.cursor()
+        template_name, _, cmd_list, build_error = _build_template_apply_payload(cursor, template_id)
+        if build_error:
+            return jsonify({'success': False, 'message': build_error}), 404
+        hosts = _get_hosts_by_ids(cursor, host_ids_list)
+        if not hosts:
+            return jsonify({'success': False, 'message': '未找到目标主机'}), 404
+
+        check_results = []
+        for host in hosts:
+            host_item = {
+                'host_id': host['id'],
+                'host_name': host['host_name'] or host['host_identifier'],
+                'host_ip': host['ip_address'],
+                'ok': True,
+                'message': '连接与权限检查通过'
+            }
+            try:
+                _run_cmd_on_host(host, 'iptables -S >/dev/null 2>&1 || iptables -L >/dev/null 2>&1')
+            except Exception as host_error:
+                host_item['ok'] = False
+                host_item['message'] = str(host_error)
+            check_results.append(host_item)
+
+        passed_count = len([item for item in check_results if item['ok']])
+        return jsonify({
+            'success': True,
+            'message': '预检查完成',
+            'data': {
+                'template_id': template_id,
+                'template_name': template_name,
+                'rule_count': len(cmd_list),
+                'total_hosts': len(check_results),
+                'passed_hosts': passed_count,
+                'failed_hosts': len(check_results) - passed_count,
+                'hosts': check_results
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'预检查失败: {str(e)}'}), 500
+
+
+@app.route("/temp_copy", methods=['POST'])
+@login_required
+@permission_required('temp_add')
+def temp_copy():
+    payload = request.get_json(silent=True) or {}
+    template_id = payload.get('template_id')
+    if not template_id:
+        return jsonify({'success': False, 'message': '缺少模板ID'}), 400
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('SELECT template_name, template_identifier, direction FROM templates WHERE id = ?', (template_id,))
+        source_template = cursor.fetchone()
+        if not source_template:
+            return jsonify({'success': False, 'message': '模板不存在'}), 404
+
+        cursor.execute('''
+        SELECT policy, protocol, port, auth_object, description, "limit"
+        FROM rules WHERE template_id = ?
+        ''', (template_id,))
+        source_rules = cursor.fetchall()
+
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        copied_name = f"{source_template['template_name']}-副本"
+        copied_identifier = f"{source_template['template_identifier']}（复制于{datetime.now().strftime('%m-%d %H:%M')}）"
+        cursor.execute('''
+        INSERT INTO templates (template_name, template_identifier, direction, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ''', (copied_name, copied_identifier, source_template['direction'], now, now))
+        new_template_id = cursor.lastrowid
+
+        for rule in source_rules:
+            cursor.execute('''
+            INSERT INTO rules (template_id, policy, protocol, port, auth_object, description, created_at, updated_at, "limit")
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                new_template_id,
+                rule['policy'],
+                rule['protocol'],
+                rule['port'],
+                rule['auth_object'],
+                rule['description'],
+                now,
+                now,
+                rule['limit']
+            ))
+        db.commit()
+
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='复制',
+            operation_object='模板',
+            operation_summary=f"复制模板: {source_template['template_name']} -> {copied_name}",
+            operation_details=json.dumps({
+                'source_template_id': template_id,
+                'source_template_name': source_template['template_name'],
+                'new_template_id': new_template_id,
+                'new_template_name': copied_name,
+                'rule_count': len(source_rules),
+                'operation_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
+        return jsonify({'success': True, 'message': '模板复制成功'})
+    except sqlite3.IntegrityError:
+        return jsonify({'success': False, 'message': '模板复制失败，模板名称冲突'}), 409
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'模板复制失败: {str(e)}'}), 500
 
 
 # 系统设置
