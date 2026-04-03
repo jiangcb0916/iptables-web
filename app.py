@@ -9,6 +9,7 @@ import random
 from functools import wraps
 import sqlite3
 import re
+import ipaddress
 import paramiko
 from paramiko.client import AutoAddPolicy
 import math
@@ -215,9 +216,12 @@ def pwd_shell_cmd(hostname, port, user, pwd, cmd):
         # 读取输出（确保数据被完全读取）
         output = stdout.read().decode()
         error = stderr.read().decode()
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0:
+            raise RuntimeError(error.strip() or f"命令执行失败，exit_code={exit_code}")
         return output
     except Exception as e:
-        print(f"SSH 操作失败: {e}")
+        raise RuntimeError(f"SSH 操作失败: {str(e)}")
     finally:
         # 先关闭流对象（关键步骤）
         if stdin:
@@ -241,9 +245,13 @@ def sshkey_shell_cmd(hostname, port, user, private_key_str, cmd):
                     allow_agent=False)
         stdin, stdout, stderr = ssh.exec_command(cmd)
         output = stdout.read().decode()
+        error = stderr.read().decode()
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0:
+            raise RuntimeError(error.strip() or f"命令执行失败，exit_code={exit_code}")
         return output
     except Exception as e:
-        print(f"SSH 操作失败: {e}")
+        raise RuntimeError(f"SSH 操作失败: {str(e)}")
     finally:
         # 再关闭 SSH 连接
         if ssh:
@@ -324,6 +332,24 @@ def get_rule(iptables_output):
         else:
             print(f"无法匹配的规则: {line}")
     return data_list
+
+
+def _validate_auth_object(auth_object):
+    """
+    校验授权对象格式，支持 IPv4 和 CIDR。
+    返回 None 表示通过，返回字符串表示错误信息。
+    """
+    value = (auth_object or '').strip()
+    if not value:
+        return '授权对象不能为空'
+    try:
+        if '/' in value:
+            ipaddress.ip_network(value, strict=False)
+        else:
+            ipaddress.ip_address(value)
+    except ValueError:
+        return f'授权对象格式错误: {value}（示例: 172.16.0.0/16 或 192.168.1.10）'
+    return None
 
 
 def _get_rule_view_hosts(cursor):
@@ -493,6 +519,8 @@ def rules_in():
         columns = [column[0] for column in cursor.description]
         # 2. 将每行数据与列名配对，转换为字典
         hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        if not hosts:
+            return jsonify({'success': False, 'message': f'主机不存在: host_id={host_id}'}), 404
         hostname = hosts[0]['ip_address']
         port = hosts[0]['ssh_port']
         user = hosts[0]['username']
@@ -561,6 +589,9 @@ def rules_update():
     host_id = all_params['host_id']
     rule_id = all_params['rule_id']
     direction = all_params['direction']
+    auth_object_error = _validate_auth_object(all_params.get('auth_object'))
+    if auth_object_error:
+        return jsonify({'success': False, 'message': auth_object_error}), 400
     # 获取规则的具体数据
     try:
         # 获取数据库连接
@@ -769,6 +800,16 @@ def rules_add():
     host_id = all_params['host_id']
     rule_id = all_params['rule_id']
     direction = all_params['direction']
+    protocol = (all_params.get('protocol') or '').lower()
+    port = (all_params.get('port') or '').strip()
+    auth_object = (all_params.get('auth_object') or '').strip()
+
+    # 基础参数校验，避免明显非法请求进入SSH阶段
+    if protocol in ('tcp', 'udp') and not port:
+        return jsonify({'success': False, 'message': '端口不能为空'}), 400
+    auth_object_error = _validate_auth_object(auth_object)
+    if auth_object_error:
+        return jsonify({'success': False, 'message': auth_object_error}), 400
     # 获取规则的具体数据
     try:
         # 获取数据库连接
@@ -784,6 +825,8 @@ def rules_add():
         columns = [column[0] for column in cursor.description]
         # 2. 将每行数据与列名配对，转换为字典
         hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        if not hosts:
+            return jsonify({'success': False, 'message': f'主机不存在: host_id={host_id}'}), 404
         hostname = hosts[0]['ip_address']
         port = hosts[0]['ssh_port']
         user = hosts[0]['username']
@@ -985,7 +1028,7 @@ def rules_add():
             success=0
         )
         # 错误处理
-        return f"获取主机数据失败: {str(e)}", 500
+        return jsonify({'success': False, 'message': f"保存失败: {str(e)}"}), 500
 
 
 # 删除规则

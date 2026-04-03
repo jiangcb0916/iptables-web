@@ -299,6 +299,13 @@
       }, 3000);
     }
 
+    function showErrorToast(message) {
+      const toast = document.getElementById('error-toast');
+      const text = toast.querySelector('span');
+      text.textContent = message || '操作失败，请重试！';
+      showToast('error-toast');
+    }
+
     // 模态框相关元素
     const modal = document.getElementById('rule-modal');
     const addRuleBtn = document.getElementById('add-rule-btn');
@@ -417,6 +424,16 @@
           : ''
       };
 
+      // 前端基础校验，优先给出可读错误
+      if (!formData.auth_object || !formData.auth_object.trim()) {
+        showErrorToast('授权对象不能为空');
+        return;
+      }
+      if ((formData.protocol === 'tcp' || formData.protocol === 'udp') && (!formData.port || !formData.port.trim())) {
+        showErrorToast('TCP/UDP 规则端口不能为空');
+        return;
+      }
+
 
       // 根据状态决定请求URL（新增→/rules_add，编辑→/rules_update）
       const url = isEditing ? '/rules_update' : '/rules_add';
@@ -438,11 +455,26 @@
           closeModal();
           window.location.reload(); // 刷新页面显示新数据
         } else {
-          throw new Error(isEditing ? '更新失败' : '新增失败');
+          let message = isEditing ? '更新失败' : '新增失败';
+          const rawText = await response.text();
+          if (rawText) {
+            try {
+              const data = JSON.parse(rawText);
+              if (data && data.message) {
+                message = data.message;
+              } else {
+                message = rawText;
+              }
+            } catch (jsonError) {
+              // 非JSON响应（如Flask默认500页面），截断后展示首段关键信息
+              message = rawText.slice(0, 200);
+            }
+          }
+          throw new Error(message);
         }
       } catch (error) {
         console.error('请求失败:', error);
-        showToast('error-toast');
+        showErrorToast(error.message);
       }
     });
 
