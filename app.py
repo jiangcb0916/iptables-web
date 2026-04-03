@@ -10,6 +10,9 @@ from functools import wraps
 import sqlite3
 import re
 import ipaddress
+import os
+import base64
+import hashlib
 import paramiko
 from paramiko.client import AutoAddPolicy
 import math
@@ -17,6 +20,7 @@ from io import StringIO
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, g
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+from cryptography.fernet import Fernet
 import time
 import json
 from flask_apscheduler import APScheduler
@@ -129,6 +133,146 @@ def get_db():
     return db
 
 
+def _get_fernet():
+    """
+    获取主机凭据加密器。
+    优先读取环境变量 HOST_CRED_KEY；未配置时基于 app.secret_key 派生。
+    """
+    raw_key = os.getenv('HOST_CRED_KEY')
+    if raw_key:
+        key_bytes = raw_key.encode()
+    else:
+        digest = hashlib.sha256(app.secret_key.encode()).digest()
+        key_bytes = base64.urlsafe_b64encode(digest)
+    return Fernet(key_bytes)
+
+
+def encrypt_host_secret(value):
+    """加密主机认证敏感字段，兼容空值和已加密值。"""
+    if value is None:
+        return ''
+    text = str(value).strip()
+    if not text:
+        return ''
+    if text.startswith('enc:'):
+        return text
+    token = _get_fernet().encrypt(text.encode()).decode()
+    return f'enc:{token}'
+
+
+def decrypt_host_secret(value):
+    """解密主机认证敏感字段，兼容历史明文数据。"""
+    if value is None:
+        return ''
+    text = str(value)
+    if not text:
+        return ''
+    if not text.startswith('enc:'):
+        return text
+    token = text[4:].encode()
+    return _get_fernet().decrypt(token).decode()
+
+
+def ensure_hosts_extended_columns():
+    """
+    为 hosts 表补齐扩展字段（状态与检测时间），兼容已有数据库。
+    """
+    with app.app_context():
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            cursor.execute("PRAGMA table_info(hosts)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if not columns:
+                return
+            if 'status' not in columns:
+                cursor.execute("ALTER TABLE hosts ADD COLUMN status TEXT DEFAULT 'unknown'")
+            if 'last_checked_at' not in columns:
+                cursor.execute("ALTER TABLE hosts ADD COLUMN last_checked_at TEXT")
+            if 'last_check_error' not in columns:
+                cursor.execute("ALTER TABLE hosts ADD COLUMN last_check_error TEXT")
+            cursor.execute("UPDATE hosts SET status = 'unknown' WHERE status IS NULL OR status = ''")
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            app.logger.error(f"扩展hosts字段失败: {str(e)}")
+
+
+def refresh_host_statuses():
+    """
+    定时刷新主机连通状态（online/offline），避免列表页实时阻塞。
+    """
+    with app.app_context():
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            cursor.execute('''
+            SELECT id, ip_address, ssh_port, username, auth_method, password, private_key
+            FROM hosts
+            ''')
+            hosts = cursor.fetchall()
+            for host in hosts:
+                _check_and_update_host_status(cursor, host)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            app.logger.error(f"刷新主机状态失败: {str(e)}")
+
+
+def _check_and_update_host_status(cursor, host):
+    """
+    检测单台主机SSH连通性并更新状态字段，返回状态信息。
+    """
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    host_id = host['id']
+    try:
+        test_cmd = 'echo STATUS_OK'
+        if host['auth_method'] == 'password':
+            output = pwd_shell_cmd(
+                hostname=host['ip_address'],
+                port=host['ssh_port'],
+                user=host['username'],
+                pwd=host['password'],
+                cmd=test_cmd
+            )
+        else:
+            output = sshkey_shell_cmd(
+                hostname=host['ip_address'],
+                port=host['ssh_port'],
+                user=host['username'],
+                private_key_str=host['private_key'],
+                cmd=test_cmd
+            )
+        if 'STATUS_OK' in (output or ''):
+            status = 'online'
+            error_msg = ''
+        else:
+            status = 'offline'
+            error_msg = '命令返回异常'
+    except Exception as host_error:
+        status = 'offline'
+        error_msg = str(host_error)
+
+    cursor.execute(
+        "UPDATE hosts SET status = ?, last_checked_at = ?, last_check_error = ? WHERE id = ?",
+        (status, now, error_msg, host_id)
+    )
+    return {
+        'status': status,
+        'last_checked_at': now,
+        'last_check_error': error_msg
+    }
+
+
+ensure_hosts_extended_columns()
+scheduler.add_job(
+    id='refresh_host_statuses',
+    func=refresh_host_statuses,
+    trigger='interval',
+    minutes=5
+)
+
+
 def hash_user_password(plain_password):
     """
     统一用户密码哈希算法，避免依赖环境缺失scrypt导致登录失败。
@@ -208,6 +352,7 @@ def pwd_shell_cmd(hostname, port, user, pwd, cmd):
     stdout = None
     stderr = None
     try:
+        pwd = decrypt_host_secret(pwd)
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(hostname=hostname, port=port, username=user, password=pwd, timeout=5)
         # stdin, stdout, stderr = ssh.exec_command('iptables -nL IN_public_allow --line-number -t filter -v')
@@ -237,6 +382,7 @@ def pwd_shell_cmd(hostname, port, user, pwd, cmd):
 
 def sshkey_shell_cmd(hostname, port, user, private_key_str, cmd):
     try:
+        private_key_str = decrypt_host_secret(private_key_str)
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         key_file = StringIO(private_key_str)  # 模拟文件对象
         pkey = paramiko.RSAKey.from_private_key(key_file)  # 转换为RSA密钥对象
@@ -350,6 +496,110 @@ def _validate_auth_object(auth_object):
     except ValueError:
         return f'授权对象格式错误: {value}（示例: 172.16.0.0/16 或 192.168.1.10）'
     return None
+
+
+def _validate_host_payload(data, is_update=False):
+    """
+    校验主机新增/编辑请求参数，返回 (错误信息, 规范化ssh_port)。
+    """
+    if not isinstance(data, dict):
+        return '无效的JSON数据', None
+
+    required_fields = ['host_name', 'host_identifier', 'ip_address', 'operating_system', 'username']
+    for field in required_fields:
+        value = (data.get(field) or '').strip() if isinstance(data.get(field), str) else data.get(field)
+        if not value:
+            return f'缺少必填字段: {field}', None
+
+    ip_address_value = (data.get('ip_address') or '').strip()
+    try:
+        ipaddress.ip_address(ip_address_value)
+    except ValueError:
+        return f'IP地址格式错误: {ip_address_value}', None
+
+    try:
+        ssh_port = int(data.get('ssh_port', 22))
+        if ssh_port < 1 or ssh_port > 65535:
+            raise ValueError()
+    except (TypeError, ValueError):
+        return 'SSH端口必须是1-65535之间的整数', None
+
+    auth_method = (data.get('auth_method') or 'password').strip().lower()
+    if auth_method not in ('password', 'key'):
+        return '认证方式错误，仅支持 password 或 key', None
+
+    if not is_update:
+        password = (data.get('password') or '').strip() if isinstance(data.get('password'), str) else ''
+        private_key = (data.get('private_key') or '').strip() if isinstance(data.get('private_key'), str) else ''
+        if auth_method == 'password' and not password:
+            return '认证方式为密码时，密码不能为空', None
+        if auth_method == 'key' and not private_key:
+            return '认证方式为密钥时，SSH密钥不能为空', None
+
+    return None, ssh_port
+
+
+def _build_host_connection_payload(data):
+    """构建并校验主机连通性测试参数。"""
+    if not isinstance(data, dict):
+        return None, '无效的JSON数据'
+
+    host_id = data.get('id')
+    ip_address_value = (data.get('ip_address') or '').strip()
+    username = (data.get('username') or '').strip()
+    auth_method = (data.get('auth_method') or 'password').strip().lower()
+    password = (data.get('password') or '') if isinstance(data.get('password'), str) else ''
+    private_key = (data.get('private_key') or '') if isinstance(data.get('private_key'), str) else ''
+    ssh_port_raw = data.get('ssh_port', 22)
+
+    # 编辑场景下，允许复用数据库中的历史认证信息
+    if host_id and (not password and not private_key):
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+        SELECT ip_address, ssh_port, username, auth_method, password, private_key
+        FROM hosts WHERE id = ?
+        ''', (host_id,))
+        host = cursor.fetchone()
+        if host:
+            ip_address_value = ip_address_value or host['ip_address']
+            ssh_port_raw = ssh_port_raw or host['ssh_port']
+            username = username or host['username']
+            auth_method = auth_method or host['auth_method']
+            password = password or (host['password'] or '')
+            private_key = private_key or (host['private_key'] or '')
+
+    if not ip_address_value:
+        return None, 'IP地址不能为空'
+    try:
+        ipaddress.ip_address(ip_address_value)
+    except ValueError:
+        return None, f'IP地址格式错误: {ip_address_value}'
+
+    try:
+        ssh_port = int(ssh_port_raw)
+        if ssh_port < 1 or ssh_port > 65535:
+            raise ValueError()
+    except (TypeError, ValueError):
+        return None, 'SSH端口必须是1-65535之间的整数'
+
+    if not username:
+        return None, 'SSH用户名不能为空'
+    if auth_method not in ('password', 'key'):
+        return None, '认证方式错误，仅支持 password 或 key'
+    if auth_method == 'password' and not password:
+        return None, '认证方式为密码时，密码不能为空'
+    if auth_method == 'key' and not private_key:
+        return None, '认证方式为密钥时，SSH密钥不能为空'
+
+    return {
+        'ip_address': ip_address_value,
+        'ssh_port': ssh_port,
+        'username': username,
+        'auth_method': auth_method,
+        'password': password,
+        'private_key': private_key
+    }, None
 
 
 def _get_rule_view_hosts(cursor):
@@ -1146,7 +1396,7 @@ def hosts():
             # 带搜索条件的查询
             cursor.execute('''
             SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
-                   operating_system, created_at, ssh_port
+                   operating_system, created_at, ssh_port, status, last_checked_at, last_check_error
             FROM hosts 
             WHERE host_name LIKE ? OR host_identifier LIKE ? OR ip_address LIKE ?
             ORDER BY created_at DESC
@@ -1155,7 +1405,7 @@ def hosts():
             # 原有的无搜索条件查询
             cursor.execute('''
             SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
-                   operating_system, created_at, ssh_port
+                   operating_system, created_at, ssh_port, status, last_checked_at, last_check_error
             FROM hosts 
             ORDER BY created_at DESC
             ''')
@@ -1175,7 +1425,10 @@ def hosts():
                 'host_identifier': host['host_identifier'],
                 'ip_address': host['ip_address'],
                 'operating_system': host['operating_system'],
-                'created_at': host['created_at']
+                'created_at': host['created_at'],
+                'status': host['status'] if 'status' in host.keys() else 'unknown',
+                'last_checked_at': host['last_checked_at'] if 'last_checked_at' in host.keys() else '',
+                'last_check_error': host['last_check_error'] if 'last_check_error' in host.keys() else ''
             })
 
         # 计算总页数（考虑搜索结果）
@@ -1203,16 +1456,10 @@ def hosts():
 def add_host():
     data = None
     try:
-        # 【修改】提前获取并验证JSON数据
         data = request.get_json()
-        if data is None:
-            return jsonify({'success': False, 'message': '无效的JSON数据'}), 400
-
-        # 验证必填字段
-        required_fields = ['host_name', 'host_identifier', 'ip_address', 'operating_system']
-        for field in required_fields:
-            if field not in data or not data[field]:
-                return jsonify({'success': False, 'message': f'缺少必填字段: {field}'}), 400
+        error_message, ssh_port = _validate_host_payload(data, is_update=False)
+        if error_message:
+            return jsonify({'success': False, 'message': error_message}), 400
 
         db = get_db()
         cursor = db.cursor()
@@ -1228,11 +1475,11 @@ def add_host():
             data['host_identifier'],
             data['ip_address'],
             data['operating_system'],
-            data.get('ssh_port', 22),
+            ssh_port,
             data.get('username', ''),
             data.get('auth_method', 'password'),
-            data.get('password', ''),
-            data.get('private_key', ''),
+            encrypt_host_secret(data.get('password', '')),
+            encrypt_host_secret(data.get('private_key', '')),
             datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         ))
@@ -1271,7 +1518,7 @@ def add_host():
             }),
             success=0
         )
-        return jsonify({'success': False, 'message': '主机标识已存在'}), 409
+        return jsonify({'success': False, 'message': '主机标识已存在，请更换为唯一值（如 web-02）'}), 409
     except Exception as e:
         # 【修改】确保data已定义并提供默认值
         data = data or {}
@@ -1291,6 +1538,164 @@ def add_host():
             success=0
         )
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/host_test_connection', methods=['POST'])
+@login_required
+def host_test_connection():
+    """
+    测试主机SSH连通性，仅用于校验连接参数，不写入数据库。
+    """
+    test_start = time.time()
+    data = request.get_json() or {}
+    request_host_id = data.get('id')
+
+    if not (current_user.has_permission('hosts_add') or current_user.has_permission('hosts_edit')):
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='测试连接',
+            operation_object='主机',
+            operation_summary=f"测试主机连接失败: ID {request_host_id} (无权限)",
+            operation_details=json.dumps({
+                "host_id": request_host_id,
+                "error": "没有操作权限",
+                "elapsed_ms": int((time.time() - test_start) * 1000),
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
+        return jsonify({'success': False, 'message': '没有操作权限，请联系管理员获取权限'}), 403
+
+    conn_data, error_message = _build_host_connection_payload(data)
+    if error_message:
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='测试连接',
+            operation_object='主机',
+            operation_summary=f"测试主机连接失败: ID {request_host_id} (参数校验失败)",
+            operation_details=json.dumps({
+                "host_id": request_host_id,
+                "error": error_message,
+                "elapsed_ms": int((time.time() - test_start) * 1000),
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
+        return jsonify({'success': False, 'message': error_message}), 400
+
+    try:
+        test_cmd = 'echo CONNECTION_OK'
+        if conn_data['auth_method'] == 'password':
+            output = pwd_shell_cmd(
+                hostname=conn_data['ip_address'],
+                port=conn_data['ssh_port'],
+                user=conn_data['username'],
+                pwd=conn_data['password'],
+                cmd=test_cmd
+            )
+        else:
+            output = sshkey_shell_cmd(
+                hostname=conn_data['ip_address'],
+                port=conn_data['ssh_port'],
+                user=conn_data['username'],
+                private_key_str=conn_data['private_key'],
+                cmd=test_cmd
+            )
+        if 'CONNECTION_OK' not in (output or ''):
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='测试连接',
+                operation_object='主机',
+                operation_summary=f"测试主机连接失败: {conn_data['ip_address']}:{conn_data['ssh_port']} (返回异常)",
+                operation_details=json.dumps({
+                    "host_id": request_host_id,
+                    "host_ip": conn_data['ip_address'],
+                    "ssh_port": conn_data['ssh_port'],
+                    "username": conn_data['username'],
+                    "auth_method": conn_data['auth_method'],
+                    "error": "连接建立成功，但命令执行返回异常",
+                    "elapsed_ms": int((time.time() - test_start) * 1000),
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=0
+            )
+            return jsonify({'success': False, 'message': '连接建立成功，但命令执行返回异常'}), 500
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='测试连接',
+            operation_object='主机',
+            operation_summary=f"测试主机连接成功: {conn_data['ip_address']}:{conn_data['ssh_port']}",
+            operation_details=json.dumps({
+                "host_id": request_host_id,
+                "host_ip": conn_data['ip_address'],
+                "ssh_port": conn_data['ssh_port'],
+                "username": conn_data['username'],
+                "auth_method": conn_data['auth_method'],
+                "elapsed_ms": int((time.time() - test_start) * 1000),
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
+        return jsonify({'success': True, 'message': '主机连接测试成功'})
+    except Exception as e:
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='测试连接',
+            operation_object='主机',
+            operation_summary=f"测试主机连接失败: {conn_data['ip_address']}:{conn_data['ssh_port']}",
+            operation_details=json.dumps({
+                "host_id": request_host_id,
+                "host_ip": conn_data['ip_address'],
+                "ssh_port": conn_data['ssh_port'],
+                "username": conn_data['username'],
+                "auth_method": conn_data['auth_method'],
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "elapsed_ms": int((time.time() - test_start) * 1000),
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
+        return jsonify({'success': False, 'message': f'主机连接测试失败: {str(e)}'}), 500
+
+
+@app.route('/host_refresh_status', methods=['POST'])
+@login_required
+@permission_required('hosts_view')
+def host_refresh_status():
+    """
+    立即刷新单台主机状态，供主机管理页面手动触发。
+    """
+    payload = request.get_json(silent=True) or {}
+    host_id = payload.get('id') or request.args.get('id')
+    if not host_id:
+        return jsonify({'success': False, 'message': '缺少主机ID'}), 400
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+        SELECT id, ip_address, ssh_port, username, auth_method, password, private_key
+        FROM hosts WHERE id = ?
+        ''', (host_id,))
+        host = cursor.fetchone()
+        if not host:
+            return jsonify({'success': False, 'message': '主机不存在'}), 404
+
+        result = _check_and_update_host_status(cursor, host)
+        db.commit()
+        return jsonify({
+            'success': True,
+            'message': '主机状态已刷新',
+            'data': result
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'刷新状态失败: {str(e)}'}), 500
 
 
 # 删除主机
@@ -1378,9 +1783,15 @@ def del_host():
 @login_required
 def update_host():
     data = request.get_json()
+    if not isinstance(data, dict) or not data.get('id'):
+        return jsonify({'success': False, 'message': '缺少主机ID'}), 400
     host_id = data['id']
     original_host_name = None
     try:
+        error_message, ssh_port = _validate_host_payload(data, is_update=True)
+        if error_message:
+            return jsonify({'success': False, 'message': error_message}), 400
+
         db = get_db()
         cursor = db.cursor()
         # 【新增】获取主机原始信息用于日志
@@ -1392,11 +1803,18 @@ def update_host():
         original_ip = host['ip_address']
 
         # 不修改密码
-        if data['password'] is None and data['private_key'] == '':
+        password_value = data.get('password')
+        private_key_value = data.get('private_key')
+        keep_original_auth = (
+                (password_value is None or (isinstance(password_value, str) and not password_value.strip()))
+                and (private_key_value is None or (isinstance(private_key_value, str) and not private_key_value.strip()))
+        )
+
+        if keep_original_auth:
             cursor.execute(
                 'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, updated_at = ? WHERE id = ?;',
                 (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
-                 data['ssh_port'], data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+                 ssh_port, data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
             db.commit()
             if cursor.rowcount == 0:
                 return jsonify({'success': False, 'message': '主机不存在'}), 404
@@ -1406,7 +1824,8 @@ def update_host():
             cursor.execute(
                 'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, auth_method = ?, password = ?, private_key = ? ,updated_at = ? WHERE id = ?;',
                 (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
-                 data['ssh_port'], data['username'], data['auth_method'], data['password'], data['private_key'],
+                 ssh_port, data['username'], data['auth_method'],
+                 encrypt_host_secret(data['password']), encrypt_host_secret(data['private_key']),
                  datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
             db.commit()
         # 【修复】记录成功日志

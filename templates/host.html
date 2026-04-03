@@ -160,6 +160,7 @@
                 <tr>
                   <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">主机名称</th>
                   <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">IP地址</th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">状态</th>
                   <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">操作系统</th>
                   <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">创建时间</th>
                   <th scope="col" class="px-6 py-4 text-right text-xs font-semibold text-secondary uppercase tracking-wider">操作</th>
@@ -174,10 +175,13 @@
                     data-host-name="{{ host.host_name }}"
                     data-host-identifier="{{ host.host_identifier }}"
                     data-ip-address="{{ host.ip_address }}"
+                    data-status="{{ host.status|default('unknown') }}"
                     data-os="{{ host.operating_system }}"
                     data-ssh-port="{{ host.ssh_port|default(22) }}"
                     data-auth-username="{{ host.username|default('') }}"
-                    data-auth-method="{{ host.auth_method|default('password') }}">
+                    data-auth-method="{{ host.auth_method|default('password') }}"
+                    data-last-checked-at="{{ host.last_checked_at|default('') }}"
+                    data-last-check-error="{{ host.last_check_error|default('') }}">
                   <!-- 所有td都在tr内部 -->
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
@@ -190,9 +194,21 @@
                     </div>
                   </td>
                   <td class="host-ip px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.ip_address }}</td>
+                  <td class="host-status-cell px-6 py-4 whitespace-nowrap text-sm">
+                    {% if host.status == 'online' %}
+                      <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-success" title="最近检测: {{ host.last_checked_at|default('未知') }}">在线</span>
+                    {% elif host.status == 'offline' %}
+                      <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-danger" title="{{ host.last_check_error|default('连接失败') }}">离线</span>
+                    {% else %}
+                      <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">未知</span>
+                    {% endif %}
+                  </td>
                   <td class="host-operating px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.operating_system }}</td>
                   <td class="host-created px-6 py-4 whitespace-nowrap text-sm text-secondary">{{ host.created_at }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button class="text-info hover:text-primary mr-3 transition-colors refresh-status-btn">
+                      <i class="fa fa-refresh"></i> 刷新状态
+                    </button>
                     <button class="text-primary hover:text-primary/80 mr-3 transition-colors">
                       <i class="fa fa-fire"></i> 规则
                     </button>
@@ -254,13 +270,13 @@
           <input type="hidden" id="edit-id" value="">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label for="host-name" class="block text-sm font-medium text-gray-700 mb-1">主机类组 <span class="text-danger">*</span></label>
-              <input type="text" id="host-name" name="host-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：Web服务器">
+              <label for="host-name" class="block text-sm font-medium text-gray-700 mb-1">主机分组 <span class="text-danger">*</span></label>
+              <input type="text" id="host-name" name="host-name" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：Web组（可重复）">
             </div>
 
             <div>
-              <label for="host-id" class="block text-sm font-medium text-gray-700 mb-1">主机标识 <span class="text-danger">*</span></label>
-              <input type="text" id="host-id" name="host-id" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：web-server-01">
+              <label for="host-id" class="block text-sm font-medium text-gray-700 mb-1">主机标识（必须唯一） <span class="text-danger">*</span></label>
+              <input type="text" id="host-id" name="host-id" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：web-server-01（不可重复）">
             </div>
 
             <div>
@@ -320,6 +336,7 @@
 
       <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
         <button id="cancel-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
+        <button id="test-conn-btn" class="px-4 py-2 border border-primary text-primary rounded-md hover:bg-primary/10 transition-colors">测试连接</button>
         <button id="save-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">保存</button>
       </div>
     </div>
@@ -509,6 +526,7 @@ if (clearSearchBtn) {
   const addHostBtn = document.getElementById('add-host-btn');
   const closeModalBtn = document.getElementById('close-modal');
   const cancelBtn = document.getElementById('cancel-btn');
+  const testConnBtn = document.getElementById('test-conn-btn');
   const saveBtn = document.getElementById('save-btn');
   const modalTitle = document.getElementById('modal-title');
   const hostsTableBody = document.getElementById('hosts-table-body');
@@ -547,9 +565,13 @@ if (clearSearchBtn) {
   });
 
   // 显示提示消息并自动隐藏
-  function showToast(toastId) {
+  function showToast(toastId, message = '') {
     const toast = document.getElementById(toastId);
     if (!toast) return;
+    if (message) {
+      const text = toast.querySelector('span');
+      if (text) text.textContent = message;
+    }
 
     // 移除可能存在的show类，强制重绘
     toast.classList.remove('show');
@@ -564,19 +586,15 @@ if (clearSearchBtn) {
     }, 10);
   }
 
-// 保存主机 - 发送AJAX请求（同时支持新增和编辑）
-saveBtn.addEventListener('click', () => {
-  // 获取编辑ID（新增时为空，编辑时有值）
+function collectHostFormData() {
   const editId = document.getElementById('edit-id').value;
-
-  // 获取表单数据
-  const formData = {
-    id: editId, // 编辑时传递主机ID，新增时为空
+  return {
+    id: editId,
     host_name: document.getElementById('host-name').value,
     host_identifier: document.getElementById('host-id').value,
     ip_address: document.getElementById('ip-address').value,
     operating_system: document.getElementById('os-type').value,
-    ssh_port: document.getElementById('ssh-port').value || 26,
+    ssh_port: document.getElementById('ssh-port').value || 22,
     username: document.getElementById('auth-username').value,
     auth_method: document.getElementById('auth-method').value,
     password: document.getElementById('auth-method').value === 'password'
@@ -586,10 +604,113 @@ saveBtn.addEventListener('click', () => {
       ? document.getElementById('auth-key').value
       : null
   };
+}
+
+function updateStatusBadge(row, status, lastCheckedAt = '', errorMsg = '') {
+  const statusCell = row.querySelector('.host-status-cell');
+  if (!statusCell) return;
+  row.dataset.status = status || 'unknown';
+  row.dataset.lastCheckedAt = lastCheckedAt || '';
+  row.dataset.lastCheckError = errorMsg || '';
+
+  if (status === 'online') {
+    statusCell.innerHTML = `<span class="px-2 py-1 text-xs rounded-full bg-green-100 text-success" title="最近检测: ${lastCheckedAt || '未知'}">在线</span>`;
+  } else if (status === 'offline') {
+    statusCell.innerHTML = `<span class="px-2 py-1 text-xs rounded-full bg-red-100 text-danger" title="${errorMsg || '连接失败'}">离线</span>`;
+  } else {
+    statusCell.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">未知</span>';
+  }
+}
+
+document.querySelectorAll('.refresh-status-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const row = btn.closest('tr');
+    const hostId = row.dataset.id;
+    const oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 刷新中';
+    try {
+      const response = await fetch('/host_refresh_status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: hostId })
+      });
+      const rawText = await response.text();
+      let data = {};
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText);
+        } catch (jsonError) {
+          data = { success: false, message: rawText.slice(0, 200) };
+        }
+      }
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || '刷新状态失败');
+      }
+      const statusData = data.data || {};
+      updateStatusBadge(row, statusData.status, statusData.last_checked_at, statusData.last_check_error);
+      showToast('success-toast', data.message || '状态刷新成功');
+    } catch (error) {
+      console.error('刷新状态失败:', error);
+      showToast('error-toast', error.message || '刷新状态失败');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = oldHtml;
+    }
+  });
+});
+
+testConnBtn.addEventListener('click', async () => {
+  const formData = collectHostFormData();
+  testConnBtn.disabled = true;
+  const originalText = testConnBtn.textContent;
+  testConnBtn.textContent = '测试中...';
+  try {
+    const response = await fetch('/host_test_connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData)
+    });
+    const rawText = await response.text();
+    let data = {};
+    if (rawText) {
+      try {
+        data = JSON.parse(rawText);
+      } catch (jsonError) {
+        data = { success: false, message: rawText.slice(0, 200) };
+      }
+    }
+    if (response.ok && data.success) {
+      showToast('success-toast', data.message || '连接测试成功');
+    } else {
+      showToast('error-toast', data.message || '连接测试失败');
+    }
+  } catch (error) {
+    console.error('连接测试失败:', error);
+    showToast('error-toast', error.message || '连接测试失败');
+  } finally {
+    testConnBtn.disabled = false;
+    testConnBtn.textContent = originalText;
+  }
+});
+
+// 保存主机 - 发送AJAX请求（同时支持新增和编辑）
+saveBtn.addEventListener('click', () => {
+  const formData = collectHostFormData();
+  const editId = formData.id;
 
   // 简单验证
   if (!formData.host_name || !formData.host_identifier || !formData.ip_address || !formData.operating_system) {
-    alert('请填写必填字段');
+    showToast('error-toast', '请填写所有必填字段');
+    return;
+  }
+  if (!formData.username) {
+    showToast('error-toast', 'SSH用户名不能为空');
+    return;
+  }
+  if ((formData.auth_method === 'password' && !formData.password) ||
+      (formData.auth_method === 'key' && !formData.private_key)) {
+    showToast('error-toast', formData.auth_method === 'password' ? '密码不能为空' : 'SSH密钥不能为空');
     return;
   }
 
@@ -606,27 +727,36 @@ saveBtn.addEventListener('click', () => {
     },
     body: JSON.stringify(formData)
   })
-  .then(response => {
-    if (!response.ok) {
-      throw new Error('网络响应不正常');
+  .then(async response => {
+    const rawText = await response.text();
+    let data = {};
+    if (rawText) {
+      try {
+        data = JSON.parse(rawText);
+      } catch (jsonError) {
+        data = { success: false, message: rawText.slice(0, 200) };
+      }
     }
-    return response.json();
+    if (!response.ok) {
+      throw new Error(data.message || '网络响应不正常');
+    }
+    return data;
   })
   .then(data => {
     if (data.success) {
       // 显示成功提示
-      showToast('success-toast');
+      showToast('success-toast', data.message || '操作成功');
       // 刷新页面获取最新数据
       window.location.reload();
       // 关闭模态框
       closeModal();
     } else {
-      showToast('error-toast');
+      showToast('error-toast', data.message || '保存失败');
     }
   })
   .catch(error => {
     console.error('错误:', error);
-    showToast('error-toast');
+    showToast('error-toast', error.message || '保存失败');
   });
 });
 

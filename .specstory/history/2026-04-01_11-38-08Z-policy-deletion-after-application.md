@@ -5219,4 +5219,2533 @@ _**Agent (gpt-5.3-codex)**_
 
 我已经帮你加了后端校验（`app.py`）：
 - 在 `rules_add` 和 `rules_update` 前先校验授权对象格式（IPv4/CIDR）。
-- 格式错误
+- 格式错误会直接返回 400，例如：
+  - `授权对象格式错误: 172.16.0.0./16（示例: 172.16.0.0/16 或 192.168.1.10）`
+
+你现在改成 `172.16.0.0/16` 再保存即可。  
+如果还有失败，把新提示贴我，我继续排。
+
+---
+
+_**User**_
+
+这个项目数据是存放在哪
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+这个项目的数据主要在 **本地 SQLite 数据库文件**：
+
+- 数据库路径：`firewall_management.db`（项目根目录）
+- 在 `app.py` 里定义：`DATABASE = 'firewall_management.db'`
+
+应用里的主机、模板、规则、用户、角色、日志等业务数据都在这个库里。
+
+另外两类“数据”也会落地到本地：
+
+- 代码变更辅助记录：`.specstory/`（你的工作区里有）
+- 静态资源：`static/`（CSS、字体、图标等）
+
+如果你是 Docker 运行且没挂载卷，这个数据库会在容器文件系统内；重建容器可能丢数据。  
+需要的话我可以给你一套 Docker 挂载和自动备份方案。
+
+---
+
+_**User**_
+
+帮我看下主机管理这一块还有什么要升级的点没，已经样式的美化
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+我先做一轮“主机管理”专项评估：从功能、稳定性、安全性、交互样式三个维度看现状，再给你一份按优先级的升级清单。先快速过一遍 `host.html` 和对应后端接口。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "@app\\.route\\(\"/hosts|/host_add|/host_edit|/host_del|def hosts\\(|def host_add|def host_edit|def host_del"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "@app\\.route\\(\"/hosts|/host_add|/host_edit|/host_del|def hosts\\(|def host_add|def host_edit|def host_del",
+  "topFiles": [
+    {
+      "matchCount": 4,
+      "uri": "app.py"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 4
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Considering recommendations and upgrades**
+
+I need to provide recommendations and possibly include findings about their severity. The user hasn’t explicitly asked for a review, but they have mentioned checking upgrade points and style beautification, which likely means they’re looking for suggestions. I might need to read through the remaining HTML script to identify potential issues. It’s crucial to inspect areas around saving functions and ensure proper validation and user experience. Let’s dig deeper into the content, starting from line 420.</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html",
+  "pattern": "fetch\\('/host_add|fetch\\('/host_update|fetch\\(&#96;/host_del|validate|ip|ssh|auth"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html",
+  "pattern": "fetch\\('/host_add|fetch\\('/host_update|fetch\\(&#96;/host_del|validate|ip|ssh|auth",
+  "topFiles": [
+    {
+      "matchCount": 40,
+      "uri": "templates/host.html"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 40
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Evaluating code issues and improvements**
+
+I’m considering some code functionalities, like how the permission and login checks might still work together. However, the hosts query fetching everything before pagination seems inefficient. I’m thinking about SQL injection vulnerabilities in the format but noting that parameterized queries could help. Additionally, I’ve spotted bugs and features to enhance user experience, like improving validation alerts and security practices, as well as style improvements with CSS consolidation and unified spacing. It's all about refining the project!
+**Identifying deployment and bug issues**
+
+I’m noticing a 404 error for the static/app-ui.css file in the logs, likely due to a missing file in the deployed instance. It might be good to mention this concisely. My plan is to group related issues by priority levels like P0, P1, and P2. If the user is interested, I could ask whether they want to implement the top three tasks. I've also spotted a bug: the host add function defaults the ssh_port to 26, which should be noted.</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+看了一遍你当前“主机管理”前后端，我建议优先升级这些点（按优先级）：
+
+## 先修（影响稳定性/正确性）
+
+- `ssh_port` 默认值写成了 `26`，应为 `22`  
+  - 前端提交里是 `ssh_port: ... || 26`，这是明显 bug，会导致很多主机连不上。  
+- 新增/编辑主机缺少后端严格校验  
+  - 建议后端校验：IP 格式、端口范围、认证方式与字段匹配（密码模式必须有密码，密钥模式必须有私钥）。
+- 错误反馈不够可读  
+  - 目前很多地方只 toast“失败”，建议统一返回 `JSON {success,message}`，前端显示具体 `message`（你在规则页已经这样改过，主机页也建议同样做）。
+- 凭据明文存储风险  
+  - `hosts.password/private_key` 当前是明文，建议至少做可逆加密（如 Fernet）+ 密钥放环境变量。
+
+## 体验升级（主机管理业务流）
+
+- 新增“连接测试”按钮（保存前）  
+  - 测试 SSH 连通、认证、sudo/iptables 权限，能大幅减少“保存后才失败”。
+- 列表支持更多筛选  
+  - 按 OS、认证方式、端口筛选；并支持按创建时间/名称排序。
+- 增强编辑弹窗交互  
+  - 编辑时增加“保留原密码/私钥”开关，避免误覆盖为空。
+- 批量操作  
+  - 支持多选删除、批量测试连通、批量应用模板入口（你模板功能已经有，主机页可直接挂入口）。
+
+## 样式美化（你这块还能再抬一档）
+
+- 列表信息层级更清晰  
+  - 主机名加粗，IP/标识次级色；OS 改成彩色 badge（Ubuntu/CentOS 等颜色区分）。
+- 操作按钮统一  
+  - “规则/编辑/删除”做成统一 icon-button + tooltip，hover 态一致。
+- 弹窗视觉提升  
+  - 分区卡片化（基础信息/认证信息），必填星号和错误提示改为行内显示。
+- 空态与加载态  
+  - 无主机时给空态插图+引导按钮；列表加载时 skeleton，避免“白屏感”。
+
+## 我建议你下一步直接做的 3 个改动
+1. 修 `ssh_port` 默认值 `26 -> 22`（马上见效）  
+2. 给 `/host_add`、`/host_update` 补完整参数校验 + 统一错误 message  
+3. 主机页保存失败显示后端 message（和规则页一致）
+
+如果你同意，我可以直接把这 3 个先落地到代码里。
+
+---
+
+_**User**_
+
+可以
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Planning implementation tasks**
+
+I need to implement three items and plan for commentary updates every 30 seconds, which seems okay. I’ll edit app.py and host.html, inspecting the current host_update functionality for validation. It’s important to avoid breaking anything in the process. I’ll also consider adding a helper function to validate the host payload. Since I've already added ipaddress to the imports, I can reuse that. Now I just need to inspect the host_add/update code more thoroughly beyond the excerpt.</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+我就按这 3 点直接改：修默认 SSH 端口、补主机新增/编辑后端校验、并让主机页保存失败显示后端具体错误。先改后端，再改前端。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Patching app.py**
+
+I’m working on some updates for app.py. First, I'll add a validation function for the host payload right after the authentication validation. In the `add_host` function, I need to include that validation and normalize the `ssh_port`. For the `update_host`, I’ll ensure the request JSON is present and that the ID exists before normalization.
+
+I should also check for `password` and `private_key` values carefully to maintain robustness. This change is crucial for keeping the behavior consistent and ensuring old data is preserved even if certain fields are empty.
+**Updating authentication method validation**
+
+If the user changes the `auth_method` without providing credentials, it seems like this should be rejected. I’m considering adding a validation step to check if the `auth_method` has changed during an update. If it has, and the original credentials are still required, I might need to allow it under certain conditions.
+
+For the `add_host`, I’ll require a username and corresponding credentials, while in the update process, we might only need to validate essential fields like IP and ensure the username isn't empty. Time to patch this up!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Patching host.html**
+
+I need to patch host.html and add a showToast parameter, but I hope that existing calls won’t be affected. I’ll modify the code at function 549. I also want to change the default ssh_port in formData to 22. Adding some basic validation would be smart, maybe with regex for IP addresses, which I could keep simple. Lastly, I should handle fetching and parse the message from the response, whether it’s JSON or text. Let’s get this done!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Considering front-end validation**
+
+I'm thinking about possibly needing front-end validation for IP and port, even though it wasn't specifically requested. But alright, that could be a good addition. Next, I’m focusing on running py_compile and implementing lints to ensure everything is in order. It's important to keep the code clean and efficient! Let's make sure everything is working smoothly before moving forward.</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+后端和前端都改好了，我先跑语法与诊断检查，确认这三项改动可直接用。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: python3 -m py_compile "app.py"</summary>
+
+```bash
+python3 -m py_compile "app.py"
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints">
+<details>
+<summary>Tool use: **read_lints**</summary>
+
+
+Parameters:
+
+```json
+{
+  "paths": [
+    "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+    "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html"
+  ]
+}
+```
+Result:
+
+```json
+{
+  "linterErrorsByFile": [
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/app.py"
+    },
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html"
+    }
+  ]
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints"><details>
+<summary>Tool use: **read_lints**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: git diff -- "app.py" "templates/host.html"</summary>
+
+```bash
+git diff -- "app.py" "templates/host.html"
+```
+
+```
+diff --git a/app.py b/app.py
+index e5e8399..3d67e04 100644
+--- a/app.py
++++ b/app.py
+@@ -352,6 +352,47 @@ def _validate_auth_object(auth_object):
+     return None
+ 
+ 
++def _validate_host_payload(data, is_update=False):
++    """
++    校验主机新增/编辑请求参数，返回 (错误信息, 规范化ssh_port)。
++    """
++    if not isinstance(data, dict):
++        return '无效的JSON数据', None
++
++    required_fields = ['host_name', 'host_identifier', 'ip_address', 'operating_system', 'username']
++    for field in required_fields:
++        value = (data.get(field) or '').strip() if isinstance(data.get(field), str) else data.get(field)
++        if not value:
++            return f'缺少必填字段: {field}', None
++
++    ip_address_value = (data.get('ip_address') or '').strip()
++    try:
++        ipaddress.ip_address(ip_address_value)
++    except ValueError:
++        return f'IP地址格式错误: {ip_address_value}', None
++
++    try:
++        ssh_port = int(data.get('ssh_port', 22))
++        if ssh_port &lt; 1 or ssh_port &gt; 65535:
++            raise ValueError()
++    except (TypeError, ValueError):
++        return 'SSH端口必须是1-65535之间的整数', None
++
++    auth_method = (data.get('auth_method') or 'password').strip().lower()
++    if auth_method not in ('password', 'key'):
++        return '认证方式错误，仅支持 password 或 key', None
++
++    if not is_update:
++        password = (data.get('password') or '').strip() if isinstance(data.get('password'), str) else ''
++        private_key = (data.get('private_key') or '').strip() if isinstance(data.get('private_key'), str) else ''
++        if auth_method == 'password' and not password:
++            return '认证方式为密码时，密码不能为空', None
++        if auth_method == 'key' and not private_key:
++            return '认证方式为密钥时，SSH密钥不能为空', None
++
++    return None, ssh_port
++
++
+ def _get_rule_view_hosts(cursor):
+     """获取规则查看页面可选主机列表。"""
+     cursor.execute('''
+@@ -1203,16 +1244,10 @@ def hosts():
+ def add_host():
+     data = None
+     try:
+-        # 【修改】提前获取并验证JSON数据
+         data = request.get_json()
+-        if data is None:
+-            return jsonify({'success': False, 'message': '无效的JSON数据'}), 400
+-
+-        # 验证必填字段
+-        required_fields = ['host_name', 'host_identifier', 'ip_address', 'operating_system']
+-        for field in required_fields:
+-            if field not in data or not data[field]:
+-                return jsonify({'success': False, 'message': f'缺少必填字段: {field}'}), 400
++        error_message, ssh_port = _validate_host_payload(data, is_update=False)
++        if error_message:
++            return jsonify({'success': False, 'message': error_message}), 400
+ 
+         db = get_db()
+         cursor = db.cursor()
+@@ -1228,7 +1263,7 @@ def add_host():
+             data['host_identifier'],
+             data['ip_address'],
+             data['operating_system'],
+-            data.get('ssh_port', 22),
++            ssh_port,
+             data.get('username', ''),
+             data.get('auth_method', 'password'),
+             data.get('password', ''),
+@@ -1378,9 +1413,15 @@ def del_host():
+ @login_required
+ def update_host():
+     data = request.get_json()
++    if not isinstance(data, dict) or not data.get('id'):
++        return jsonify({'success': False, 'message': '缺少主机ID'}), 400
+     host_id = data['id']
+     original_host_name = None
+     try:
++        error_message, ssh_port = _validate_host_payload(data, is_update=True)
++        if error_message:
++            return jsonify({'success': False, 'message': error_message}), 400
++
+         db = get_db()
+         cursor = db.cursor()
+         # 【新增】获取主机原始信息用于日志
+@@ -1392,11 +1433,18 @@ def update_host():
+         original_ip = host['ip_address']
+ 
+         # 不修改密码
+-        if data['password'] is None and data['private_key'] == '':
++        password_value = data.get('password')
++        private_key_value = data.get('private_key')
++        keep_original_auth = (
++                (password_value is None or (isinstance(password_value, str) and not password_value.strip()))
++                and (private_key_value is None or (isinstance(private_key_value, str) and not private_key_value.strip()))
++        )
++
++        if keep_original_auth:
+             cursor.execute(
+                 'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, updated_at = ? WHERE id = ?;',
+                 (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
+-                 data['ssh_port'], data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
++                 ssh_port, data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+             db.commit()
+             if cursor.rowcount == 0:
+                 return jsonify({'success': False, 'message': '主机不存在'}), 404
+@@ -1406,7 +1454,7 @@ def update_host():
+             cursor.execute(
+                 'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, auth_method = ?, password = ?, private_key = ? ,updated_at = ? WHERE id = ?;',
+                 (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
+-                 data['ssh_port'], data['username'], data['auth_method'], data['password'], data['private_key'],
++                 ssh_port, data['username'], data['auth_method'], data['password'], data['private_key'],
+                  datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+             db.commit()
+         # 【修复】记录成功日志
+diff --git a/templates/host.html b/templates/host.html
+index 2adde64..17bc08c 100644
+--- a/templates/host.html
++++ b/templates/host.html
+@@ -547,9 +547,13 @@ if (clearSearchBtn) {
+   });
+ 
+   // 显示提示消息并自动隐藏
+-  function showToast(toastId) {
++  function showToast(toastId, message = '') {
+     const toast = document.getElementById(toastId);
+     if (!toast) return;
++    if (message) {
++      const text = toast.querySelector('span');
++      if (text) text.textContent = message;
++    }
+ 
+     // 移除可能存在的show类，强制重绘
+     toast.classList.remove('show');
+@@ -576,7 +580,7 @@ saveBtn.addEventListener('click', () =&gt; {
+     host_identifier: document.getElementById('host-id').value,
+     ip_address: document.getElementById('ip-address').value,
+     operating_system: document.getElementById('os-type').value,
+-    ssh_port: document.getElementById('ssh-port').value || 26,
++    ssh_port: document.getElementById('ssh-port').value || 22,
+     username: document.getElementById('auth-username').value,
+     auth_method: document.getElementById('auth-method').value,
+     password: document.getElementById('auth-method').value === 'password'
+@@ -589,7 +593,16 @@ saveBtn.addEventListener('click', () =&gt; {
+ 
+   // 简单验证
+   if (!formData.host_name || !formData.host_identifier || !formData.ip_address || !formData.operating_system) {
+-    alert('请填写必填字段');
++    showToast('error-toast', '请填写所有必填字段');
++    return;
++  }
++  if (!formData.username) {
++    showToast('error-toast', 'SSH用户名不能为空');
++    return;
++  }
++  if ((formData.auth_method === 'password' &amp;&amp; !formData.password) ||
++      (formData.auth_method === 'key' &amp;&amp; !formData.private_key)) {
++    showToast('error-toast', formData.auth_method === 'password' ? '密码不能为空' : 'SSH密钥不能为空');
+     return;
+   }
+ 
+@@ -606,27 +619,36 @@ saveBtn.addEventListener('click', () =&gt; {
+     },
+     body: JSON.stringify(formData)
+   })
+-  .then(response =&gt; {
++  .then(async response =&gt; {
++    const rawText = await response.text();
++    let data = {};
++    if (rawText) {
++      try {
++        data = JSON.parse(rawText);
++      } catch (jsonError) {
++        data = { success: false, message: rawText.slice(0, 200) };
++      }
++    }
+     if (!response.ok) {
+-      throw new Error('网络响应不正常');
++      throw new Error(data.message || '网络响应不正常');
+     }
+-    return response.json();
++    return data;
+   })
+   .then(data =&gt; {
+     if (data.success) {
+       // 显示成功提示
+-      showToast('success-toast');
++      showToast('success-toast', data.message || '操作成功');
+       // 刷新页面获取最新数据
+       window.location.reload();
+       // 关闭模态框
+       closeModal();
+     } else {
+-      showToast('error-toast');
++      showToast('error-toast', data.message || '保存失败');
+     }
+   })
+   .catch(error =&gt; {
+     console.error('错误:', error);
+-    showToast('error-toast');
++    showToast('error-toast', error.message || '保存失败');
+   });
+ });
+ 
+
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+I need to prepare a final response that's concise, making sure it's clear and to the point. There's a thought about restarting the server, which might help with performance or clear issues we're facing. It’s interesting how sometimes a simple restart can fix problems! I'll just focus on wrapping this up neatly so that everything is ready for when I get started again. Let’s keep it efficient!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+已按你确认的 3 点完成升级并落地代码了。
+
+### 这次改了什么
+
+- **修复 SSH 端口默认值**
+  - `templates/host.html` 中保存主机默认端口从 `26` 改为 `22`。
+
+- **补齐后端主机新增/编辑校验**
+  - `app.py` 新增 `_validate_host_payload()`，统一校验：
+    - 必填字段（含 `username`）
+    - IP 地址格式
+    - SSH 端口范围（1-65535）
+    - 认证方式合法性（`password` / `key`）
+    - 新增时按认证方式校验密码或密钥不能为空
+  - `host_add`、`host_update` 都接入了该校验。
+  - `host_update` 增强了“保持原认证信息”判断逻辑（空密码/空密钥不再误判）。
+
+- **主机页保存失败显示后端 message**
+  - `templates/host.html` 保存逻辑改为：
+    - 先读响应文本，再尝试 JSON 解析
+    - 非 2xx 时抛出后端返回的具体错误信息
+  - toast 支持自定义消息内容，失败时会显示具体原因（不再只是“失败”）。
+
+### 检查结果
+
+- `app.py` 语法检查通过（`python3 -m py_compile app.py`）
+- 本次相关文件无 lints 报错。
+
+---
+
+现在你可以直接去“主机管理”页验证：
+- 故意输错 IP 或端口，看是否有明确错误提示；
+- 新增主机不填用户名/密码/密钥，看是否提示到位；
+- 正常保存时提示是否正常。
+
+如果你愿意，我下一步可以再补一个“测试连接”按钮（保存前验证 SSH 账号是否可用）。
+
+---
+
+_**User**_
+
+同意
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+我开始加“测试连接”功能：后端新增一个主机连通性接口（只做 SSH 验证，不改数据），前端在主机弹窗里加“测试连接”按钮并显示结果。改完我会帮你做语法检查。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "class User|def has_permission|permission_required"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "class User|def has_permission|permission_required",
+  "topFiles": [
+    {
+      "matchCount": 29,
+      "uri": "app.py"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 29
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Considering patch application**
+
+I'm thinking about applying a patch, possibly using a helper function close to _validate_host_payload. My focus is on checking the port, but I’m not entirely sure if that’s necessary. I want to ensure I handle this correctly, so I’ll need to review my options before proceeding. It feels important to get this right for clarity and functionality in the debugging process. Let's figure out the best approach together!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Modifying host.html**
+
+I'm focusing on patching the host.html file to incorporate a button and its corresponding handler. I need to locate the modal footer lines and the JavaScript related to it. Let’s make sure I apply the changes in the right context so everything works smoothly. It’s important I get this right, as the button and its functionality are crucial for the user experience.</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Verifying script functionality**
+
+I need to check if the button exists, just in case the script loads correctly. It’s important to make sure everything is working as expected. I should also run some lints to verify that the code is clean, and then go ahead with the pycompile process. Making sure these things are done helps prevent issues later. Let’s get to it and ensure everything is in order!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: python3 -m py_compile "app.py"</summary>
+
+```bash
+python3 -m py_compile "app.py"
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints">
+<details>
+<summary>Tool use: **read_lints**</summary>
+
+
+Parameters:
+
+```json
+{
+  "paths": [
+    "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+    "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html"
+  ]
+}
+```
+Result:
+
+```json
+{
+  "linterErrorsByFile": [
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/app.py"
+    },
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html"
+    }
+  ]
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints"><details>
+<summary>Tool use: **read_lints**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: git diff -- "app.py" "templates/host.html"</summary>
+
+```bash
+git diff -- "app.py" "templates/host.html"
+```
+
+```
+diff --git a/app.py b/app.py
+index e5e8399..a19d521 100644
+--- a/app.py
++++ b/app.py
+@@ -352,6 +352,110 @@ def _validate_auth_object(auth_object):
+     return None
+ 
+ 
++def _validate_host_payload(data, is_update=False):
++    """
++    校验主机新增/编辑请求参数，返回 (错误信息, 规范化ssh_port)。
++    """
++    if not isinstance(data, dict):
++        return '无效的JSON数据', None
++
++    required_fields = ['host_name', 'host_identifier', 'ip_address', 'operating_system', 'username']
++    for field in required_fields:
++        value = (data.get(field) or '').strip() if isinstance(data.get(field), str) else data.get(field)
++        if not value:
++            return f'缺少必填字段: {field}', None
++
++    ip_address_value = (data.get('ip_address') or '').strip()
++    try:
++        ipaddress.ip_address(ip_address_value)
++    except ValueError:
++        return f'IP地址格式错误: {ip_address_value}', None
++
++    try:
++        ssh_port = int(data.get('ssh_port', 22))
++        if ssh_port &lt; 1 or ssh_port &gt; 65535:
++            raise ValueError()
++    except (TypeError, ValueError):
++        return 'SSH端口必须是1-65535之间的整数', None
++
++    auth_method = (data.get('auth_method') or 'password').strip().lower()
++    if auth_method not in ('password', 'key'):
++        return '认证方式错误，仅支持 password 或 key', None
++
++    if not is_update:
++        password = (data.get('password') or '').strip() if isinstance(data.get('password'), str) else ''
++        private_key = (data.get('private_key') or '').strip() if isinstance(data.get('private_key'), str) else ''
++        if auth_method == 'password' and not password:
++            return '认证方式为密码时，密码不能为空', None
++        if auth_method == 'key' and not private_key:
++            return '认证方式为密钥时，SSH密钥不能为空', None
++
++    return None, ssh_port
++
++
++def _build_host_connection_payload(data):
++    """构建并校验主机连通性测试参数。"""
++    if not isinstance(data, dict):
++        return None, '无效的JSON数据'
++
++    host_id = data.get('id')
++    ip_address_value = (data.get('ip_address') or '').strip()
++    username = (data.get('username') or '').strip()
++    auth_method = (data.get('auth_method') or 'password').strip().lower()
++    password = (data.get('password') or '') if isinstance(data.get('password'), str) else ''
++    private_key = (data.get('private_key') or '') if isinstance(data.get('private_key'), str) else ''
++    ssh_port_raw = data.get('ssh_port', 22)
++
++    # 编辑场景下，允许复用数据库中的历史认证信息
++    if host_id and (not password and not private_key):
++        db = get_db()
++        cursor = db.cursor()
++        cursor.execute('''
++        SELECT ip_address, ssh_port, username, auth_method, password, private_key
++        FROM hosts WHERE id = ?
++        ''', (host_id,))
++        host = cursor.fetchone()
++        if host:
++            ip_address_value = ip_address_value or host['ip_address']
++            ssh_port_raw = ssh_port_raw or host['ssh_port']
++            username = username or host['username']
++            auth_method = auth_method or host['auth_method']
++            password = password or (host['password'] or '')
++            private_key = private_key or (host['private_key'] or '')
++
++    if not ip_address_value:
++        return None, 'IP地址不能为空'
++    try:
++        ipaddress.ip_address(ip_address_value)
++    except ValueError:
++        return None, f'IP地址格式错误: {ip_address_value}'
++
++    try:
++        ssh_port = int(ssh_port_raw)
++        if ssh_port &lt; 1 or ssh_port &gt; 65535:
++            raise ValueError()
++    except (TypeError, ValueError):
++        return None, 'SSH端口必须是1-65535之间的整数'
++
++    if not username:
++        return None, 'SSH用户名不能为空'
++    if auth_method not in ('password', 'key'):
++        return None, '认证方式错误，仅支持 password 或 key'
++    if auth_method == 'password' and not password:
++        return None, '认证方式为密码时，密码不能为空'
++    if auth_method == 'key' and not private_key:
++        return None, '认证方式为密钥时，SSH密钥不能为空'
++
++    return {
++        'ip_address': ip_address_value,
++        'ssh_port': ssh_port,
++        'username': username,
++        'auth_method': auth_method,
++        'password': password,
++        'private_key': private_key
++    }, None
++
++
+ def _get_rule_view_hosts(cursor):
+     """获取规则查看页面可选主机列表。"""
+     cursor.execute('''
+@@ -1203,16 +1307,10 @@ def hosts():
+ def add_host():
+     data = None
+     try:
+-        # 【修改】提前获取并验证JSON数据
+         data = request.get_json()
+-        if data is None:
+-            return jsonify({'success': False, 'message': '无效的JSON数据'}), 400
+-
+-        # 验证必填字段
+-        required_fields = ['host_name', 'host_identifier', 'ip_address', 'operating_system']
+-        for field in required_fields:
+-            if field not in data or not data[field]:
+-                return jsonify({'success': False, 'message': f'缺少必填字段: {field}'}), 400
++        error_message, ssh_port = _validate_host_payload(data, is_update=False)
++        if error_message:
++            return jsonify({'success': False, 'message': error_message}), 400
+ 
+         db = get_db()
+         cursor = db.cursor()
+@@ -1228,7 +1326,7 @@ def add_host():
+             data['host_identifier'],
+             data['ip_address'],
+             data['operating_system'],
+-            data.get('ssh_port', 22),
++            ssh_port,
+             data.get('username', ''),
+             data.get('auth_method', 'password'),
+             data.get('password', ''),
+@@ -1293,6 +1391,45 @@ def add_host():
+         return jsonify({'success': False, 'message': str(e)}), 500
+ 
+ 
++@app.route('/host_test_connection', methods=['POST'])
++@login_required
++def host_test_connection():
++    """
++    测试主机SSH连通性，仅用于校验连接参数，不写入数据库。
++    """
++    if not (current_user.has_permission('hosts_add') or current_user.has_permission('hosts_edit')):
++        return jsonify({'success': False, 'message': '没有操作权限，请联系管理员获取权限'}), 403
++
++    data = request.get_json()
++    conn_data, error_message = _build_host_connection_payload(data)
++    if error_message:
++        return jsonify({'success': False, 'message': error_message}), 400
++
++    try:
++        test_cmd = 'echo CONNECTION_OK'
++        if conn_data['auth_method'] == 'password':
++            output = pwd_shell_cmd(
++                hostname=conn_data['ip_address'],
++                port=conn_data['ssh_port'],
++                user=conn_data['username'],
++                pwd=conn_data['password'],
++                cmd=test_cmd
++            )
++        else:
++            output = sshkey_shell_cmd(
++                hostname=conn_data['ip_address'],
++                port=conn_data['ssh_port'],
++                user=conn_data['username'],
++                private_key_str=conn_data['private_key'],
++                cmd=test_cmd
++            )
++        if 'CONNECTION_OK' not in (output or ''):
++            return jsonify({'success': False, 'message': '连接建立成功，但命令执行返回异常'}), 500
++        return jsonify({'success': True, 'message': '主机连接测试成功'})
++    except Exception as e:
++        return jsonify({'success': False, 'message': f'主机连接测试失败: {str(e)}'}), 500
++
++
+ # 删除主机
+ @app.route('/host_del', methods=['DELETE'])
+ @login_required
+@@ -1378,9 +1515,15 @@ def del_host():
+ @login_required
+ def update_host():
+     data = request.get_json()
++    if not isinstance(data, dict) or not data.get('id'):
++        return jsonify({'success': False, 'message': '缺少主机ID'}), 400
+     host_id = data['id']
+     original_host_name = None
+     try:
++        error_message, ssh_port = _validate_host_payload(data, is_update=True)
++        if error_message:
++            return jsonify({'success': False, 'message': error_message}), 400
++
+         db = get_db()
+         cursor = db.cursor()
+         # 【新增】获取主机原始信息用于日志
+@@ -1392,11 +1535,18 @@ def update_host():
+         original_ip = host['ip_address']
+ 
+         # 不修改密码
+-        if data['password'] is None and data['private_key'] == '':
++        password_value = data.get('password')
++        private_key_value = data.get('private_key')
++        keep_original_auth = (
++                (password_value is None or (isinstance(password_value, str) and not password_value.strip()))
++                and (private_key_value is None or (isinstance(private_key_value, str) and not private_key_value.strip()))
++        )
++
++        if keep_original_auth:
+             cursor.execute(
+                 'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, updated_at = ? WHERE id = ?;',
+                 (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
+-                 data['ssh_port'], data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
++                 ssh_port, data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+             db.commit()
+             if cursor.rowcount == 0:
+                 return jsonify({'success': False, 'message': '主机不存在'}), 404
+@@ -1406,7 +1556,7 @@ def update_host():
+             cursor.execute(
+                 'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, auth_method = ?, password = ?, private_key = ? ,updated_at = ? WHERE id = ?;',
+                 (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
+-                 data['ssh_port'], data['username'], data['auth_method'], data['password'], data['private_key'],
++                 ssh_port, data['username'], data['auth_method'], data['password'], data['private_key'],
+                  datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+             db.commit()
+         # 【修复】记录成功日志
+diff --git a/templates/host.html b/templates/host.html
+index 2adde64..cbe88ca 100644
+--- a/templates/host.html
++++ b/templates/host.html
+@@ -320,6 +320,7 @@
+ 
+       &lt;div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3"&gt;
+         &lt;button id="cancel-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors"&gt;取消&lt;/button&gt;
++        &lt;button id="test-conn-btn" class="px-4 py-2 border border-primary text-primary rounded-md hover:bg-primary/10 transition-colors"&gt;测试连接&lt;/button&gt;
+         &lt;button id="save-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"&gt;保存&lt;/button&gt;
+       &lt;/div&gt;
+     &lt;/div&gt;
+@@ -509,6 +510,7 @@ if (clearSearchBtn) {
+   const addHostBtn = document.getElementById('add-host-btn');
+   const closeModalBtn = document.getElementById('close-modal');
+   const cancelBtn = document.getElementById('cancel-btn');
++  const testConnBtn = document.getElementById('test-conn-btn');
+   const saveBtn = document.getElementById('save-btn');
+   const modalTitle = document.getElementById('modal-title');
+   const hostsTableBody = document.getElementById('hosts-table-body');
+@@ -547,9 +549,13 @@ if (clearSearchBtn) {
+   });
+ 
+   // 显示提示消息并自动隐藏
+-  function showToast(toastId) {
++  function showToast(toastId, message = '') {
+     const toast = document.getElementById(toastId);
+     if (!toast) return;
++    if (message) {
++      const text = toast.querySelector('span');
++      if (text) text.textContent = message;
++    }
+ 
+     // 移除可能存在的show类，强制重绘
+     toast.classList.remove('show');
+@@ -564,19 +570,15 @@ if (clearSearchBtn) {
+     }, 10);
+   }
+ 
+-// 保存主机 - 发送AJAX请求（同时支持新增和编辑）
+-saveBtn.addEventListener('click', () =&gt; {
+-  // 获取编辑ID（新增时为空，编辑时有值）
++function collectHostFormData() {
+   const editId = document.getElementById('edit-id').value;
+-
+-  // 获取表单数据
+-  const formData = {
+-    id: editId, // 编辑时传递主机ID，新增时为空
++  return {
++    id: editId,
+     host_name: document.getElementById('host-name').value,
+     host_identifier: document.getElementById('host-id').value,
+     ip_address: document.getElementById('ip-address').value,
+     operating_system: document.getElementById('os-type').value,
+-    ssh_port: document.getElementById('ssh-port').value || 26,
++    ssh_port: document.getElementById('ssh-port').value || 22,
+     username: document.getElementById('auth-username').value,
+     auth_method: document.getElementById('auth-method').value,
+     password: document.getElementById('auth-method').value === 'password'
+@@ -586,10 +588,59 @@ saveBtn.addEventListener('click', () =&gt; {
+       ? document.getElementById('auth-key').value
+       : null
+   };
++}
++
++testConnBtn.addEventListener('click', async () =&gt; {
++  const formData = collectHostFormData();
++  testConnBtn.disabled = true;
++  const originalText = testConnBtn.textContent;
++  testConnBtn.textContent = '测试中...';
++  try {
++    const response = await fetch('/host_test_connection', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify(formData)
++    });
++    const rawText = await response.text();
++    let data = {};
++    if (rawText) {
++      try {
++        data = JSON.parse(rawText);
++      } catch (jsonError) {
++        data = { success: false, message: rawText.slice(0, 200) };
++      }
++    }
++    if (response.ok &amp;&amp; data.success) {
++      showToast('success-toast', data.message || '连接测试成功');
++    } else {
++      showToast('error-toast', data.message || '连接测试失败');
++    }
++  } catch (error) {
++    console.error('连接测试失败:', error);
++    showToast('error-toast', error.message || '连接测试失败');
++  } finally {
++    testConnBtn.disabled = false;
++    testConnBtn.textContent = originalText;
++  }
++});
++
++// 保存主机 - 发送AJAX请求（同时支持新增和编辑）
++saveBtn.addEventListener('click', () =&gt; {
++  const formData = collectHostFormData();
++  const editId = formData.id;
+ 
+   // 简单验证
+   if (!formData.host_name || !formData.host_identifier || !formData.ip_address || !formData.operating_system) {
+-    alert('请填写必填字段');
++    showToast('error-toast', '请填写所有必填字段');
++    return;
++  }
++  if (!formData.username) {
++    showToast('error-toast', 'SSH用户名不能为空');
++    return;
++  }
++  if ((formData.auth_method === 'password' &amp;&amp; !formData.password) ||
++      (formData.auth_method === 'key' &amp;&amp; !formData.private_key)) {
++    showToast('error-toast', formData.auth_method === 'password' ? '密码不能为空' : 'SSH密钥不能为空');
+     return;
+   }
+ 
+@@ -606,27 +657,36 @@ saveBtn.addEventListener('click', () =&gt; {
+     },
+     body: JSON.stringify(formData)
+   })
+-  .then(response =&gt; {
++  .then(async response =&gt; {
++    const rawText = await response.text();
++    let data = {};
++    if (rawText) {
++      try {
++        data = JSON.parse(rawText);
++      } catch (jsonError) {
++        data = { success: false, message: rawText.slice(0, 200) };
++      }
++    }
+     if (!response.ok) {
+-      throw new Error('网络响应不正常');
++      throw new Error(data.message || '网络响应不正常');
+     }
+-    return response.json();
++    return data;
+   })
+   .then(data =&gt; {
+     if (data.success) {
+       // 显示成功提示
+-      showToast('success-toast');
++      showToast('success-toast', data.message || '操作成功');
+       // 刷新页面获取最新数据
+       window.location.reload();
+       // 关闭模态框
+       closeModal();
+     } else {
+-      showToast('error-toast');
++      showToast('error-toast', data.message || '保存失败');
+     }
+   })
+   .catch(error =&gt; {
+     console.error('错误:', error);
+-    showToast('error-toast');
++    showToast('error-toast', error.message || '保存失败');
+   });
+ });
+ 
+
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+已加上“测试连接”并把主机管理这块你同意的优化一并完成。
+
+### 新增功能
+- 在主机弹窗新增按钮：`测试连接`
+- 前端点击会调用新接口：`POST /host_test_connection`
+- 返回结果会直接用 toast 显示：
+  - 成功：`主机连接测试成功`
+  - 失败：显示具体失败原因（认证失败、端口错误、格式错误等）
+
+### 同步升级（主机管理）
+- 修复默认 SSH 端口：`26 -> 22`
+- 新增/编辑主机后端统一校验（`app.py`）：
+  - 必填字段、IP 格式、端口范围、认证方式
+  - 新增时按认证方式校验密码/密钥必填
+- 保存主机前端错误提示升级（`host.html`）：
+  - 不再只报“网络响应不正常”
+  - 会优先显示后端 `message`
+
+### 额外处理
+- 编辑场景测试连接时，如果你没重新输入密码/密钥，会尝试复用数据库里该主机已有认证信息进行测试（更符合实际使用）。
+
+### 你现在怎么用
+1. 重启服务（你是 `python3 app.py` 方式）  
+2. 打开主机管理 -> 添加/编辑主机弹窗  
+3. 先点“测试连接”，通过后再点“保存”
+
+如果你愿意，我下一步可以把“测试连接”结果（延迟、认证方式、失败类型）也写入操作日志，方便审计。
+
+---
+
+_**User**_
+
+可以
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Implementing logging updates**
+
+It seems the user is indicating approval with "可以" regarding my suggestion to add logging for test connection results. So, I'll go ahead and implement that, focusing on changes to app.py, possibly skipping frontend updates. I should examine where log_operation is called and consider adding this in the host_test_connection function. I'll also set it up to log success or failure with duration, making sure to compute the start time with time.time, which is already imported. I’ll patch this carefully!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+我就继续把“测试连接写入操作日志”落地：会记录成功/失败、目标主机、认证方式、耗时和错误类型（不记录密码/私钥）。现在直接改后端接口。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Implementing logging features**
+
+I need to add logging with duration and possibly for validation and permissions. I'll do this within the function. First, I want to patch the route with a start timestamp and base details, like the host ID if it's available, while ensuring I don't log any secrets. It’s important to log permission denials, but I’m debating if that's necessary. I should also log both successes and failures, especially for early error messages like a 400 status. Let's make sure to patch minimally.</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: python3 -m py_compile "app.py"</summary>
+
+```bash
+python3 -m py_compile "app.py"
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints">
+<details>
+<summary>Tool use: **read_lints**</summary>
+
+
+Parameters:
+
+```json
+{
+  "paths": [
+    "/Users/jiangcb/Desktop/安全/iptables-web/app.py"
+  ]
+}
+```
+Result:
+
+```json
+{
+  "linterErrorsByFile": [
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/app.py"
+    }
+  ]
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints"><details>
+<summary>Tool use: **read_lints**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "operation_type='测试连接'|elapsed_ms|host_test_connection"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "operation_type='测试连接'|elapsed_ms|host_test_connection",
+  "topFiles": [
+    {
+      "matchCount": 12,
+      "uri": "app.py"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 12
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+已完成，`测试连接`现在会写操作日志了。
+
+### 日志记录内容
+- 操作类型：`测试连接`
+- 操作对象：`主机`
+- 结果：成功 / 失败
+- 详情：
+  - `host_id`
+  - `host_ip`
+  - `ssh_port`
+  - `username`
+  - `auth_method`
+  - `elapsed_ms`（耗时毫秒）
+  - 失败时额外记录 `error` 与 `error_type`
+
+### 覆盖场景
+- 无权限调用
+- 参数校验失败
+- 连接成功
+- 连接成功但命令返回异常
+- 连接异常（认证失败、协商失败、超时等）
+
+并且我确认了：
+- `app.py` 语法通过
+- 无新增 lints 错误
+
+你现在去“主机管理 -> 测试连接”跑一遍，然后到“操作日志”筛选查看，就能看到完整记录。
+
+---
+
+_**User**_
+
+主机管理还有什么可以进行优化的吗
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Considering user request**
+
+I see that the user is looking for some suggestions. Based on the context, I think it's best to provide a concise, prioritized list without needing any additional tools. I can make sure to mention how we can implement these suggestions as needed. It feels good to keep things straightforward and focused on what the user really wants! This way, I can ensure I provide a useful and direct answer.</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+有，而且还能继续提升一截。按“收益/投入”给你排个优先级：
+
+## P0（建议优先做）
+
+- **主机连通状态缓存**
+  - 在主机列表增加“在线/离线/未知”状态，不每次都实时 SSH。
+  - 用定时任务每 1-5 分钟刷新一次状态，页面秒开。
+- **批量操作**
+  - 多选主机后支持：批量删除、批量测试连接、批量应用模板。
+- **编辑密码/密钥策略更清晰**
+  - 增加“保留原凭据”开关（默认开），避免误清空认证信息。
+
+## P1（稳定性/安全）
+
+- **凭据加密存储**
+  - `hosts.password` / `hosts.private_key` 改为加密存储（如 Fernet）。
+  - 密钥放环境变量，避免明文落库。
+- **输入防御再强化**
+  - `host_identifier` 增加格式规则（字母数字短横线），避免特殊字符问题。
+  - `username`、`host_name` 长度限制，避免脏数据。
+- **审计增强**
+  - 主机新增/编辑前后差异字段入日志（变更前后值），方便追溯。
+
+## P2（体验美化）
+
+- **主机列表可视化升级**
+  - OS badge（Ubuntu/CentOS 颜色区分）
+  - 状态点（绿色在线/红色离线）
+  - 认证方式小标签（密码/密钥）
+- **弹窗体验**
+  - 分步骤布局（基础信息 -> SSH信息 -> 测试连接）
+  - 失败提示改为字段级错误（输入框下方红字），减少反复尝试。
+- **搜索和筛选**
+  - 增加按 OS、认证方式、在线状态筛选；支持组合过滤。
+
+## P3（运维能力）
+
+- **导入/导出主机清单**
+  - CSV/JSON 批量导入主机，减少手工录入。
+- **连接超时与重试策略**
+  - 主机级可配置 SSH 超时（如 5s/10s）
+  - 测试连接支持 1 次重试，减少偶发抖动误报。
+- **接口分页优化**
+  - 现在主机分页是先全量查再切片，建议改 SQL `LIMIT/OFFSET`，规模上去更稳。
+
+---
+
+如果你要我直接动手，我建议下一步先做这 2 个，最划算：  
+1) 主机列表“在线状态” + 定时刷新；  
+2) 凭据加密存储（不改现有 UI，用后端透明处理）。
+
+---
+
+_**User**_
+
+可以
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Planning implementation steps**
+
+It looks like I need to implement two items since the user seems open to suggestions. I'm thinking of proceeding with online status and credential encryption. I'll need to make substantive edits and provide periodic updates. I should inspect the schema and migration constraints, as I noticed there's no schema.sql. I’ll consider dynamically altering the table on startup while ensuring columns are present. Implementing lightweight additions like host status columns and a scheduler job for refreshing statuses every 5 minutes seems important. For encryption storage, I might use an existing dependency and set up key management.
+**Choosing implementation strategy**
+
+The user mentioned they were open to suggestions, so I’m considering whether to implement just the online status feature initially. I had proposed two items but maybe sticking to the first one, online status and periodic refresh, is a safer bet. Encryption could be a next step since it might be extensive. I could manage both by adding a decrypt helper for the various instances of reading host credentials, or possibly encrypting them at rest in the database with custom functions. Implementing transparent decryption for commands receiving passwords could also streamline the process.
+**Implementing encryption helpers**
+
+I'm considering modifying `pwd_shell_cmd` to decrypt inputs with an encrypted marker prefix like 'enc:'. That way, I would only need to encrypt writes. I can implement a few helper functions using cryptography and base64. The idea is to get the crypto key from an environment variable or derive it from the app's secret key. When encrypting a secret, if it’s already marked as encrypted, I’ll return it as-is. For decryption, I’ll check the prefix and handle backward compatibility. Additionally, I'll ensure that when adding or updating credentials, they get stored encrypted, while ensuring the front end doesn’t expose encrypted values.
+**Planning host status implementation**
+
+I’m looking at how to edit the current system where the dataset doesn’t include passwords or private keys, which is fine for now. I want to add host status columns and set up a scheduler job. Since the scheduler exists, I think it would be best to initialize it before getting the database. I can create a function to ensure the host status columns are present during startup. This function will check for required columns and add them if they're missing. 
+
+Additionally, I need a job to refresh host statuses every five minutes and a function to test single host connections, simplifying the process by running a basic command. I’ll ensure this job doesn’t block the system for too long.
+**Configuring the scheduler**
+
+I’m planning to call `scheduler.add_job` for the refresh feature, as the existing scheduler was already started earlier in the code. I’ll add another job before starting it, patching near the scheduler configuration. The host list query should include status and last checked time, and I need to update the rendering template to reflect these fields, possibly adding a status column. 
+
+I might consider including a button for manual refresh, although it's optional. Additionally, I can use the existing `/host_test_connection` route to update host status when a test is run. It’s crucial to edit carefully since I’ll apply patches one file at a time and keep the commentary updated as I progress!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+我先一次性把后端能力补齐：`主机状态字段+定时刷新+凭据加密存储(兼容旧明文)`，然后再改主机列表展示状态。先改 `app.py`。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "scheduler\\.add_job|scheduler\\.start|def clean_expired_logs|@app\\.route\\(\"/hosts\""
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "scheduler\\.add_job|scheduler\\.start|def clean_expired_logs|@app\\.route\\(\"/hosts\"",
+  "topFiles": [
+    {
+      "matchCount": 4,
+      "uri": "app.py"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 4
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Improving scheduling logic**
+
+I need to set up my scheduling to ensure the call at module load happens after defining functions. The scheduler is already initiated near the top, so I can add the job later, perhaps just before the hash_user_password function, right after the refresh_host_statuses definition. Since everything is executed sequentially, it should work well to place it there. Let’s patch this for better organization!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Modifying encryption writes**
+
+I see that I need to modify the add_host and update_host sections to include encryption for the writes. I also want to ensure that the query handles the statuses appropriately. Right now, it seems like the query is not selecting the status fields, so I’ll need to patch it. Getting this right is crucial for maintaining the integrity and security of the data. Let’s figure out how to adjust the code to implement these changes effectively!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Considering patch implementation**
+
+I need to consider adding a patch that involves inserting values and encryption. It sounds technical, but it’s essential for ensuring data security. I should clarify the steps and make sure everything is secure before proceeding. It might be helpful to review the current system configuration and see how this patch will fit in. I really want to ensure that I get this right!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+I'm thinking about how to manage the patch update for the host by implementing encryption for the password and private key. This seems crucial for ensuring security, and I want to ensure that the encryption is robust enough to protect sensitive information. I'm also considering whether any additional measures are necessary to strengthen security further. This might involve examining the current protocols and making sure everything aligns with best practices. Let’s ensure this is done correctly!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+后端已经加上“状态刷新+凭据加密”，我再把主机列表补一个状态列（在线/离线/未知），这样升级结果页面可见。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Ensuring host updates**
+
+I need to make sure the host update adds logs without any sensitive data. Okay, I might need to adjust the `_build_host_connection_payload` to use the default `auth_method` and override it from the host. The default is 'password,' which is never falsy, so I wonder if I could incorrectly set it to blank. 
+
+It looks fine since the front end always sends `auth_method`. I also need to check the `encrypt_host_secret` for when data may be `None`. It seems there's a file issue with `app-ui.css` not being in the run directory. I should run some syntax checks and linters too!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: python3 -m py_compile "app.py"</summary>
+
+```bash
+python3 -m py_compile "app.py"
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints">
+<details>
+<summary>Tool use: **read_lints**</summary>
+
+
+Parameters:
+
+```json
+{
+  "paths": [
+    "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+    "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html"
+  ]
+}
+```
+Result:
+
+```json
+{
+  "linterErrorsByFile": [
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/app.py"
+    },
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html"
+    }
+  ]
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints"><details>
+<summary>Tool use: **read_lints**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web",
+  "pattern": "refresh_host_statuses|encrypt_host_secret|decrypt_host_secret|状态|在线|离线"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web",
+  "pattern": "refresh_host_statuses|encrypt_host_secret|decrypt_host_secret|状态|在线|离线",
+  "topFiles": [
+    {
+      "matchCount": 4,
+      "uri": "./templates/host.html"
+    },
+    {
+      "matchCount": 17,
+      "uri": "./app.py"
+    },
+    {
+      "matchCount": 13,
+      "uri": "./.specstory/history/2026-04-01_11-38-08Z-policy-deletion-after-application.md"
+    },
+    {
+      "matchCount": 7,
+      "uri": "./templates/rule.html"
+    },
+    {
+      "matchCount": 5,
+      "uri": "./templates/login.html"
+    },
+    {
+      "matchCount": 1,
+      "uri": "./templates/base.html"
+    },
+    {
+      "matchCount": 2,
+      "uri": "./templates/templates.html"
+    },
+    {
+      "matchCount": 14,
+      "uri": "./templates/systemseting.html"
+    },
+    {
+      "matchCount": 5,
+      "uri": "./templates/logs.html"
+    },
+    {
+      "matchCount": 1,
+      "uri": "./static/font-awesome-4.7.0/css/output.css"
+    },
+    {
+      "matchCount": 1,
+      "uri": "./docs/create_tables.py"
+    }
+  ],
+  "totalFiles": 11,
+  "totalMatches": 70
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: python3 -m py_compile "app.py"</summary>
+
+```bash
+python3 -m py_compile "app.py"
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+已继续完成你同意的两项优化，主机管理现在有了实用的“运维级”增强。
+
+### 这次新增/升级
+
+- **主机状态缓存（在线/离线/未知）**
+  - 给 `hosts` 表自动补了字段：`status`、`last_checked_at`、`last_check_error`（兼容老库）。
+  - 启动时会自动补列，并把空状态回填为 `unknown`。
+  - 新增定时任务 `refresh_host_statuses`，每 5 分钟批量检测主机 SSH 状态。
+  - 主机列表已新增“状态”列并显示徽标：
+    - 在线（绿）
+    - 离线（红，hover 可看错误）
+    - 未知（灰）
+
+- **主机凭据加密存储（兼容旧明文）**
+  - 新增：
+    - `encrypt_host_secret()`
+    - `decrypt_host_secret()`
+  - 主机新增/编辑写入时，`password` 和 `private_key` 自动加密（`enc:` 前缀）。
+  - 读取时自动解密，旧明文数据仍可兼容使用。
+  - 加密密钥来源：
+    - 优先环境变量 `HOST_CRED_KEY`
+    - 未配置时回退为基于 `app.secret_key` 派生（可用但建议尽快配置环境变量）。
+
+- **你之前要的功能都还在**
+  - 主机弹窗“测试连接”
+  - 保存失败显示后端具体错误
+  - 主机新增/编辑后端校验与默认端口修正
+
+### 你现在需要做
+
+- 重启服务让定时任务和新逻辑生效：
+  - `Ctrl + C`
+  - `python3 app.py`
+- 打开“主机管理”看状态列，首次可能是 `未知`，几分钟后会刷新。
+
+如果你愿意，我下一步可以把状态刷新改成“页面点一下立即刷新某台主机”按钮（比等 5 分钟更直观）。
+
+---
+
+_**User**_
+
+可以
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Working on UI enhancements**
+
+I'm planning to add a patch template button near the rules/edit/delete options, and I'm considering using the refresh icon from Font Awesome 4.7. I need to find an appropriate endpoint for the host test connection, possibly placing it nearby. Next, I'll check the tool calls related to reading snippets for the hosts_list row operations and look into scripts at the bottom to ensure event listeners are working smoothly.</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+我继续加“单台主机立即刷新状态”功能：后端提供刷新接口，前端在主机行加刷新按钮，点击后即时更新该行状态徽标。先改后端再接前端交互。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "refresh_host_statuses|host_test_connection|@app\\.route\\('/host_del'|def hosts\\("
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+  "pattern": "refresh_host_statuses|host_test_connection|@app\\.route\\('/host_del'|def hosts\\(",
+  "topFiles": [
+    {
+      "matchCount": 7,
+      "uri": "app.py"
+    }
+  ],
+  "totalFiles": 1,
+  "totalMatches": 7
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/app.py</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Patching host.html**
+
+I'm thinking about how to patch host.html by adding a button and JavaScript handlers. My plan involves creating a function to update the status badge and setting up a click handler. I need to locate the operations buttons within the document and add a class for the status cell. It seems straightforward, but I want to ensure everything is positioned correctly before moving on. Let's get this done!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: python3 -m py_compile "app.py"</summary>
+
+```bash
+python3 -m py_compile "app.py"
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints">
+<details>
+<summary>Tool use: **read_lints**</summary>
+
+
+Parameters:
+
+```json
+{
+  "paths": [
+    "/Users/jiangcb/Desktop/安全/iptables-web/app.py",
+    "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html"
+  ]
+}
+```
+Result:
+
+```json
+{
+  "linterErrorsByFile": [
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/app.py"
+    },
+    {
+      "relativeWorkspacePath": "/Users/jiangcb/Desktop/安全/iptables-web/templates/host.html"
+    }
+  ]
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="read_lints"><details>
+<summary>Tool use: **read_lints**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search">
+<details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+
+Parameters:
+
+```json
+{
+  "caseInsensitive": false,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web",
+  "pattern": "host_refresh_status|refresh-status-btn|updateStatusBadge"
+}
+```
+Additional data:
+
+```json
+{
+  "isPruned": true,
+  "outputMode": "content",
+  "path": "/Users/jiangcb/Desktop/安全/iptables-web",
+  "pattern": "host_refresh_status|refresh-status-btn|updateStatusBadge",
+  "topFiles": [
+    {
+      "matchCount": 5,
+      "uri": "./templates/host.html"
+    },
+    {
+      "matchCount": 2,
+      "uri": "./app.py"
+    }
+  ],
+  "totalFiles": 2,
+  "totalMatches": 7
+}
+```
+Status: **completed**
+
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="unknown" data-tool-name="ripgrep_raw_search"><details>
+<summary>Tool use: **ripgrep_raw_search**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+已加好“立即刷新某台主机状态”功能。
+
+### 新增内容
+
+- 后端新增接口：`POST /host_refresh_status`
+  - 入参：`{ id: 主机ID }`
+  - 权限：`hosts_view`
+  - 逻辑：实时检测该主机 SSH，并更新数据库 `status / last_checked_at / last_check_error`
+  - 返回：最新状态数据（在线/离线/错误信息）
+
+- 前端主机列表新增按钮：`刷新状态`
+  - 每行一个按钮（带 loading 状态）
+  - 刷新成功后**不整页刷新**，直接更新该行状态徽标
+  - 失败时显示具体错误 toast
+
+### 现有状态能力汇总
+
+- 定时刷新：每 5 分钟全量更新一次状态
+- 手动刷新：可对单台主机立刻刷新
+- 列表展示：在线/离线/未知 + 提示信息
+
+### 使用方式
+
+在“主机管理”列表每行点击 `刷新状态` 即可。  
+如果没看到按钮，重启服务并强刷浏览器缓存（`Ctrl/Cmd + Shift + R`）。
+
+---
+
+_**User**_
+
+现在有个问题，添加主机类组，不同的无法进行添加第二种
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+我先查一下数据库里 `hosts` 表的唯一约束和你刚才新增失败时的后端日志，确认是“字段唯一冲突”还是“前端校验拦截”，然后直接修。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/jiangcb/.cursor/projects/Users-jiangcb-Desktop-iptables-web/terminals/3.txt</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: python3 - <<'PY'
+import sqlite3
+conn=sqlite3.connect('firewall_management.db')
+cur=conn.cursor()
+cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'")
+print(cur.fetchone()[0])
+cur.execute("PRAGMA index_list('hosts')")
+rows=cur.fetchall()
+print('index_list:', rows)
+for r in rows:
+    name=r[1]
+    cur.execute(f"PRAGMA index_info('{name}')")
+    print(name, cur.fetchall())
+conn.close()
+PY</summary>
+
+```bash
+python3 - <<'PY'
+import sqlite3
+conn=sqlite3.connect('firewall_management.db')
+cur=conn.cursor()
+cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='hosts'")
+print(cur.fetchone()[0])
+cur.execute("PRAGMA index_list('hosts')")
+rows=cur.fetchall()
+print('index_list:', rows)
+for r in rows:
+    name=r[1]
+    cur.execute(f"PRAGMA index_info('{name}')")
+    print(name, cur.fetchall())
+conn.close()
+PY
+```
+
+```
+CREATE TABLE hosts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            host_name TEXT NOT NULL,           -- 主机名称
+            host_identifier TEXT UNIQUE NOT NULL, -- 主机标识，唯一
+            ip_address TEXT NOT NULL,          -- IP地址
+            operating_system TEXT,             -- 操作系统
+            ssh_port INTEGER DEFAULT 22,       -- SSH端口，默认22
+            username TEXT NOT NULL,            -- 用户名
+            auth_method TEXT NOT NULL,         -- 认证方式：password或key
+            password TEXT,                     -- 密码，当auth_method为password时使用
+            private_key TEXT,                  -- 私钥，当auth_method为key时使用
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        , status TEXT DEFAULT 'unknown', last_checked_at TEXT, last_check_error TEXT)
+index_list: [(0, 'sqlite_autoindex_hosts_1', 1, 'u', 0)]
+sqlite_autoindex_hosts_1 [(0, 2, 'host_identifier')]
+
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2">
+<details><summary>Tool use: **run_terminal_command_v2** • Run command: python3 - <<'PY'
+import sqlite3
+conn=sqlite3.connect('firewall_management.db')
+conn.row_factory=sqlite3.Row
+cur=conn.cursor()
+cur.execute("SELECT id, host_name, host_identifier, ip_address FROM hosts ORDER BY id DESC LIMIT 20")
+for r in cur.fetchall():
+    print(dict(r))
+conn.close()
+PY</summary>
+
+```bash
+python3 - <<'PY'
+import sqlite3
+conn=sqlite3.connect('firewall_management.db')
+conn.row_factory=sqlite3.Row
+cur=conn.cursor()
+cur.execute("SELECT id, host_name, host_identifier, ip_address FROM hosts ORDER BY id DESC LIMIT 20")
+for r in cur.fetchall():
+    print(dict(r))
+conn.close()
+PY
+```
+
+```
+{'id': 43, 'host_name': '测试', 'host_identifier': '测试', 'ip_address': '172.16.80.131'}
+
+```
+</details>
+</tool-use>
+
+<tool-use data-tool-type="shell" data-tool-name="run_terminal_command_v2"><details>
+<summary>Tool use: **run_terminal_command_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (gpt-5.3-codex)**_
+
+我查了你当前库结构，问题点基本明确了：
+
+- `hosts` 表里 **唯一约束在 `host_identifier`**（主机标识）  
+- `host_name`（你界面里“主机类组”）**不是唯一**，可以重复
+
+也就是说，你“第二种加不进去”通常是因为：
+1) 第二条的 `主机标识` 跟已有的一样（会被拦）  
+2) 或者没填 `SSH用户名/密码(或密钥)`（我们现在加了必填校验）
+
+你当前库里只有一条：
+- `host_name=测试`
+- `host_identifier=测试`
+
+所以再新增时，`host_identifier` 不能再写 `测试`，要换成比如 `测试-2`。
+
+---
+
+如果你希望“同一类组下可以录多台主机”，建议这样用：
+- `主机类组`：可以相同（如都写 `Web组`）
+- `主机标识`：每台主机唯一（如 `web-01`、`web-02`）
+
+如果你想，我可以再帮你把前端文案改得更清楚（把“主机类组”改成“主机分组”，并在“主机标识”下加“必须唯一”提示），避免误解。
+
+---
+
+_**User**_
+
+可以
+
+---
+
+_**Agent (gpt-5.3-codex)**_
+
+<think><details><summary>Thought Process</summary>
+**Implementing copy changes**
+
+I need to implement the copy changes the user requested. They mentioned I can modify the labels, so I will make those edits in host.html. I'll also think about updating the backend error message that currently says "主机标识已存在." Adding a提示 in the placeholder might be helpful. I’ll patch the host.html labels and validation message, ensuring the backend's message about duplicates is clear. Afterward, I'll send the progress and use applypatch. I'll check if linting or py_compile is necessary for app.py, but I'll compile it anyway. Let’s get started!</details></think>
+
+_**Agent (gpt-5.3-codex)**_
+
+我直接帮你把文案改清楚：把“主机类组”改成“主机分组”，并明确“主机标识必须唯一”，同时后端冲突提示也改成更直观。
+
+_**Agent (gpt-5.3-codex)**_
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2">
+
+<details><summary>Tool use: **edit_file_v2** • Edit file: /Users/jiangcb/Desktop/安全/iptables-web/templates/host.html</summary>
+
+</details>
+
+</tool-use>
+
+<tool-use data-tool-type="write" data-tool-name="edit_file_v2"><details>
+<summary>Tool use: **edit_file_v2**</summary>
+
+</details></tool-use>
