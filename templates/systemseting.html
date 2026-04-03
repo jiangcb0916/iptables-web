@@ -75,39 +75,6 @@
 
           <!-- 1. 基本设置内容（默认显示） -->
           <div class="tab-content" id="basic-content">
-            <!-- 系统信息卡片 -->
-            <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
-              <div class="px-6 py-5 border-b border-gray-100">
-                <h2 class="text-lg font-semibold">系统信息</h2>
-              </div>
-              <div class="p-6">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div class="bg-gray-50 p-4 rounded-lg">
-                    <div class="text-sm text-secondary mb-1">系统版本</div>
-                    <div class="font-medium">v1.0.0</div>
-                  </div>
-                  <div class="bg-gray-50 p-4 rounded-lg">
-                    <div class="text-sm text-secondary mb-1">最后更新</div>
-                    <div class="font-medium">2025-09-16</div>
-                  </div>
-                  <div class="bg-gray-50 p-4 rounded-lg">
-                    <div class="text-sm text-secondary mb-1">许可状态</div>
-                    <div class="font-medium text-success">已激活</div>
-                  </div>
-                </div>
-                <div class="mt-6">
-                  <a
-                    href="https://gitee.com/shiya_liu/iptables-web/releases"
-                    class="ml-4 text-primary hover:text-primary/80 text-sm font-medium transition-colors inline-flex items-center"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <i class="fa fa-info-circle mr-1"></i> 查看最新版本
-                  </a>
-                </div>
-              </div>
-            </div>
-
             <!-- 系统配置卡片 -->
             <div class="bg-white rounded-xl card-shadow overflow-hidden mb-6">
               <div class="px-6 py-5 border-b border-gray-100">
@@ -249,6 +216,20 @@
                       <option value="inactive">已禁用</option>
                     </select>
                   </div>
+                  <div class="w-full md:w-52">
+                    <select id="user-role-filter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                      <option value="all">全部角色</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="mb-4 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <span class="text-sm text-gray-600">已选择 <span id="selected-user-count" class="font-semibold text-dark">0</span> 位用户</span>
+                  <div class="flex items-center gap-2">
+                    <button id="batch-enable-user-btn" class="px-3 py-1.5 text-xs border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-md hover:bg-emerald-100 transition-colors disabled:opacity-40" disabled>批量启用</button>
+                    <button id="batch-disable-user-btn" class="px-3 py-1.5 text-xs border border-amber-200 bg-amber-50 text-amber-700 rounded-md hover:bg-amber-100 transition-colors disabled:opacity-40" disabled>批量禁用</button>
+                    <button id="batch-delete-user-btn" class="px-3 py-1.5 text-xs border border-red-200 bg-red-50 text-red-700 rounded-md hover:bg-red-100 transition-colors disabled:opacity-40" disabled>批量删除</button>
+                  </div>
                 </div>
 
                 <!-- 用户列表表格 -->
@@ -256,6 +237,9 @@
                   <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                       <tr>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <input type="checkbox" id="select-all-users" class="rounded border-gray-300 text-primary focus:ring-primary">
+                        </th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户名</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邮箱</th>
@@ -267,7 +251,12 @@
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
                     {% for user in user_list %}
-                      <tr>
+                      <tr data-user-id="{{ user.id }}" data-username="{{ user.username|lower }}" data-email="{{ user.email|lower }}" data-status="{{ user.status }}" data-roles="{{ user.roles|lower }}">
+                        <td class="px-4 py-4">
+                          <input type="checkbox" class="user-row-checkbox rounded border-gray-300 text-primary focus:ring-primary {{ 'opacity-40 cursor-not-allowed' if 'admin' in user.roles else '' }}"
+                                 data-id="{{ user.id }}"
+                                 {{ 'disabled' if 'admin' in user.roles else '' }}>
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ user.id }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <div class="flex items-center">
@@ -337,11 +326,38 @@
               </div>
 
               <div class="p-6">
+                <div class="flex flex-col md:flex-row gap-4 mb-6">
+                  <div class="flex-1">
+                    <div class="relative">
+                      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fa fa-search text-gray-400"></i>
+                      </div>
+                      <input type="text" id="role-search" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" placeholder="搜索角色名称/描述...">
+                    </div>
+                  </div>
+                  <div class="w-full md:w-48">
+                    <select id="role-user-count-filter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                      <option value="all">全部关联用户</option>
+                      <option value="0">无关联用户</option>
+                      <option value="1">至少1位用户</option>
+                      <option value="5">至少5位用户</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="mb-4 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <span class="text-sm text-gray-600">已选择 <span id="selected-role-count" class="font-semibold text-dark">0</span> 个角色</span>
+                  <button id="batch-delete-role-btn" class="px-3 py-1.5 text-xs border border-red-200 bg-red-50 text-red-700 rounded-md hover:bg-red-100 transition-colors disabled:opacity-40" disabled>批量删除角色</button>
+                </div>
+
                 <!-- 角色列表表格 -->
                 <div class="overflow-x-auto">
                   <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                       <tr>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <input type="checkbox" id="select-all-roles" class="rounded border-gray-300 text-primary focus:ring-primary">
+                        </th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色名称</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">描述</th>
@@ -353,7 +369,12 @@
                     <tbody class="bg-white divide-y divide-gray-200">
                       <!-- 角色1 -->
                       {% for role in role_list %}
-                      <tr>
+                      <tr data-role-id="{{ role.id }}" data-role-name="{{ role.role_name|lower }}" data-role-desc="{{ (role.role_description or '')|lower }}" data-user-count="{{ role.user_count }}">
+                        <td class="px-4 py-4">
+                          <input type="checkbox" class="role-row-checkbox rounded border-gray-300 text-primary focus:ring-primary {{ 'opacity-40 cursor-not-allowed' if role.id == 1 else '' }}"
+                                 data-id="{{ role.id }}"
+                                 {{ 'disabled' if role.id == 1 else '' }}>
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ role.id }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <div class="text-sm font-medium text-gray-900">{{ role.role_name }}</div>
@@ -421,34 +442,6 @@
         <button id="cancel-permission-btn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 transition-colors">取消</button>
         <button id="save-permission-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors">保存权限</button>
       </div>
-    </div>
-  </div>
-
-  <!-- 角色列表表格 -->
-  <div id="role-content" class="tab-content">
-    <div class="flex justify-between items-center mb-6">
-      <h2 class="text-xl font-bold text-gray-900">角色管理</h2>
-      <button id="add-role-btn" class="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary/90 transition-colors">
-        <i class="fa fa-plus mr-1"></i> 添加角色
-      </button>
-    </div>
-
-    <div class="bg-white shadow-md rounded-lg overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">序号</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">角色名称</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">描述</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">权限数量</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">创建时间</th>
-            <th scope="col" class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
-          </tr>
-        </thead>
-        <tbody id="roles-table-body" class="bg-white divide-y divide-gray-200">
-          <!-- 角色列表将动态渲染 -->
-        </tbody>
-      </table>
     </div>
   </div>
   <!-- 确认操作模态框 -->
@@ -553,6 +546,9 @@
 
   // 密码策略全局变量（默认中等策略）
   let passwordStrategy = "medium";
+  // 由筛选/批量模块注册的刷新函数（先提供空实现防止未定义调用）
+  window.refreshUserSelectAllState = window.refreshUserSelectAllState || function() {};
+  window.refreshRoleSelectAllState = window.refreshRoleSelectAllState || function() {};
 
 
   // ================================================
@@ -768,6 +764,162 @@
 
     // 绑定用户状态切换按钮事件
     bindToggleUserStatusButtons();
+
+    // 初始化筛选与批量操作
+    initUserFilters();
+    initUserBatchActions();
+  }
+
+  function initUserFilters() {
+    const searchInput = document.getElementById('user-search');
+    const statusFilter = document.getElementById('status-filter');
+    const roleFilter = document.getElementById('user-role-filter');
+    const rows = Array.from(document.querySelectorAll('#user-content tbody tr'));
+
+    if (!rows.length) return;
+
+    if (roleFilter) {
+      const roleSet = new Set();
+      rows.forEach(row => {
+        const roles = (row.getAttribute('data-roles') || '').split(',').map(item => item.trim()).filter(Boolean);
+        roles.forEach(role => roleSet.add(role));
+      });
+      Array.from(roleSet).sort().forEach(role => {
+        const option = document.createElement('option');
+        option.value = role;
+        option.textContent = role;
+        roleFilter.appendChild(option);
+      });
+    }
+
+    function applyUserFilters() {
+      const keyword = (searchInput?.value || '').trim().toLowerCase();
+      const status = statusFilter?.value || 'all';
+      const role = roleFilter?.value || 'all';
+
+      rows.forEach(row => {
+        const username = row.getAttribute('data-username') || '';
+        const email = row.getAttribute('data-email') || '';
+        const rowStatus = row.getAttribute('data-status') || '';
+        const rowRoles = row.getAttribute('data-roles') || '';
+
+        const matchedKeyword = !keyword || username.includes(keyword) || email.includes(keyword);
+        const matchedStatus = status === 'all' || rowStatus === status;
+        const matchedRole = role === 'all' || rowRoles.includes(role);
+        row.classList.toggle('hidden', !(matchedKeyword && matchedStatus && matchedRole));
+      });
+      refreshUserSelectAllState();
+    }
+
+    searchInput?.addEventListener('input', applyUserFilters);
+    statusFilter?.addEventListener('change', applyUserFilters);
+    roleFilter?.addEventListener('change', applyUserFilters);
+  }
+
+  function initUserBatchActions() {
+    const selectAll = document.getElementById('select-all-users');
+    const checkboxes = Array.from(document.querySelectorAll('.user-row-checkbox'));
+    const selectedCount = document.getElementById('selected-user-count');
+    const enableBtn = document.getElementById('batch-enable-user-btn');
+    const disableBtn = document.getElementById('batch-disable-user-btn');
+    const deleteBtn = document.getElementById('batch-delete-user-btn');
+
+    if (!checkboxes.length) return;
+
+    function visibleEnabledCheckboxes() {
+      return checkboxes.filter(cb => !cb.disabled && !cb.closest('tr').classList.contains('hidden'));
+    }
+
+    function selectedIds() {
+      return checkboxes.filter(cb => cb.checked && !cb.disabled).map(cb => Number(cb.getAttribute('data-id')));
+    }
+
+    function refreshBatchUserState() {
+      const ids = selectedIds();
+      if (selectedCount) selectedCount.textContent = String(ids.length);
+      [enableBtn, disableBtn, deleteBtn].forEach(btn => {
+        if (!btn) return;
+        btn.disabled = ids.length === 0;
+      });
+      refreshUserSelectAllState();
+    }
+
+    function refreshUserSelectAllStateInternal() {
+      const visible = visibleEnabledCheckboxes();
+      if (!selectAll) return;
+      if (!visible.length) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+        return;
+      }
+      const checkedCount = visible.filter(cb => cb.checked).length;
+      selectAll.checked = checkedCount > 0 && checkedCount === visible.length;
+      selectAll.indeterminate = checkedCount > 0 && checkedCount < visible.length;
+    }
+
+    window.refreshUserSelectAllState = refreshUserSelectAllStateInternal;
+
+    selectAll?.addEventListener('change', function() {
+      visibleEnabledCheckboxes().forEach(cb => { cb.checked = this.checked; });
+      refreshBatchUserState();
+    });
+
+    checkboxes.forEach(cb => cb.addEventListener('change', refreshBatchUserState));
+    refreshBatchUserState();
+
+    async function batchUpdateStatus(targetStatus) {
+      const ids = selectedIds();
+      if (!ids.length) return;
+      let successCount = 0;
+      for (const id of ids) {
+        try {
+          const response = await fetch('/user_edit', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCookie('csrf_token')
+            },
+            body: JSON.stringify({ id, status: targetStatus })
+          });
+          const result = await response.json();
+          if (response.ok && result.success) successCount += 1;
+        } catch (_) {
+        }
+      }
+      if (successCount > 0) {
+        showSuccessToast(`批量处理完成：成功 ${successCount}/${ids.length}`);
+        window.location.reload();
+      } else {
+        showErrorToast('批量处理失败，请检查权限或重试');
+      }
+    }
+
+    enableBtn?.addEventListener('click', () => batchUpdateStatus('active'));
+    disableBtn?.addEventListener('click', () => batchUpdateStatus('inactive'));
+
+    deleteBtn?.addEventListener('click', async () => {
+      const ids = selectedIds();
+      if (!ids.length) return;
+      if (!confirm(`确定批量删除 ${ids.length} 位用户吗？`)) return;
+      let successCount = 0;
+      for (const id of ids) {
+        try {
+          const response = await fetch(`/user_del?id=${id}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCookie('csrf_token') }
+          });
+          const result = await response.json();
+          if (response.ok && result.success) successCount += 1;
+        } catch (_) {
+        }
+      }
+      if (successCount > 0) {
+        showSuccessToast(`批量删除完成：成功 ${successCount}/${ids.length}`);
+        window.location.reload();
+      } else {
+        showErrorToast('批量删除失败，请检查权限或重试');
+      }
+    });
   }
 
   /**
@@ -1119,6 +1271,136 @@
 
     // 绑定权限分配模态框保存按钮事件
     document.getElementById('save-permission-btn').addEventListener('click', saveRolePermissions);
+
+    // 初始化筛选与批量删除
+    initRoleFilters();
+    initRoleBatchActions();
+  }
+
+  function initRoleFilters() {
+    const roleSearch = document.getElementById('role-search');
+    const countFilter = document.getElementById('role-user-count-filter');
+    if (!roleSearch || !countFilter) return;
+
+    function applyRoleFilters() {
+      const rows = Array.from(document.querySelectorAll('#role-content tbody tr'));
+      const keyword = (roleSearch?.value || '').trim().toLowerCase();
+      const countRule = countFilter?.value || 'all';
+
+      rows.forEach(row => {
+        const name = row.getAttribute('data-role-name') || '';
+        const desc = row.getAttribute('data-role-desc') || '';
+        const userCount = Number(row.getAttribute('data-user-count') || '0');
+        const matchedKeyword = !keyword || name.includes(keyword) || desc.includes(keyword);
+
+        let matchedCount = true;
+        if (countRule === '0') matchedCount = userCount === 0;
+        if (countRule === '1') matchedCount = userCount >= 1;
+        if (countRule === '5') matchedCount = userCount >= 5;
+
+        row.classList.toggle('hidden', !(matchedKeyword && matchedCount));
+      });
+      refreshRoleSelectAllState();
+    }
+
+    if (!roleSearch.dataset.bound) {
+      roleSearch.addEventListener('input', applyRoleFilters);
+      roleSearch.dataset.bound = '1';
+    }
+    if (!countFilter.dataset.bound) {
+      countFilter.addEventListener('change', applyRoleFilters);
+      countFilter.dataset.bound = '1';
+    }
+    window.applyRoleFilters = applyRoleFilters;
+    applyRoleFilters();
+  }
+
+  function initRoleBatchActions() {
+    const selectAll = document.getElementById('select-all-roles');
+    const selectedCount = document.getElementById('selected-role-count');
+    const batchDeleteBtn = document.getElementById('batch-delete-role-btn');
+    const roleContent = document.getElementById('role-content');
+
+    if (!selectAll || !selectedCount || !batchDeleteBtn || !roleContent) return;
+
+    function visibleEnabledCheckboxes() {
+      return Array.from(document.querySelectorAll('.role-row-checkbox'))
+        .filter(cb => !cb.disabled && !cb.closest('tr').classList.contains('hidden'));
+    }
+
+    function selectedIds() {
+      return Array.from(document.querySelectorAll('.role-row-checkbox'))
+        .filter(cb => cb.checked && !cb.disabled)
+        .map(cb => Number(cb.getAttribute('data-id')));
+    }
+
+    function refreshRoleBatchState() {
+      const ids = selectedIds();
+      if (selectedCount) selectedCount.textContent = String(ids.length);
+      if (batchDeleteBtn) batchDeleteBtn.disabled = ids.length === 0;
+      refreshRoleSelectAllState();
+    }
+
+    function refreshRoleSelectAllStateInternal() {
+      const visible = visibleEnabledCheckboxes();
+      if (!selectAll) return;
+      if (!visible.length) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+        return;
+      }
+      const checkedCount = visible.filter(cb => cb.checked).length;
+      selectAll.checked = checkedCount > 0 && checkedCount === visible.length;
+      selectAll.indeterminate = checkedCount > 0 && checkedCount < visible.length;
+    }
+
+    window.refreshRoleSelectAllState = refreshRoleSelectAllStateInternal;
+
+    if (!selectAll.dataset.bound) {
+      selectAll.addEventListener('change', function() {
+        visibleEnabledCheckboxes().forEach(cb => { cb.checked = this.checked; });
+        refreshRoleBatchState();
+      });
+      selectAll.dataset.bound = '1';
+    }
+
+    if (!roleContent.dataset.batchBound) {
+      roleContent.addEventListener('change', (event) => {
+        if (event.target && event.target.classList.contains('role-row-checkbox')) {
+          refreshRoleBatchState();
+        }
+      });
+      roleContent.dataset.batchBound = '1';
+    }
+    refreshRoleBatchState();
+
+    if (batchDeleteBtn.dataset.bound) {
+      return;
+    }
+    batchDeleteBtn.dataset.bound = '1';
+    batchDeleteBtn.addEventListener('click', async () => {
+      const ids = selectedIds();
+      if (!ids.length) return;
+      if (!confirm(`确定批量删除 ${ids.length} 个角色吗？`)) return;
+      let successCount = 0;
+      for (const id of ids) {
+        try {
+          const response = await fetch(`/role_del?id=${id}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCookie('csrf_token') }
+          });
+          const result = await response.json();
+          if (response.ok && result.success) successCount += 1;
+        } catch (_) {
+        }
+      }
+      if (successCount > 0) {
+        showSuccessToast(`批量删除完成：成功 ${successCount}/${ids.length}`);
+        loadRoles();
+      } else {
+        showErrorToast('批量删除失败，请检查角色是否被占用');
+      }
+    });
   }
 
   /**
@@ -1152,7 +1434,15 @@
     roles.forEach((role, index) => {
       const row = document.createElement('tr');
       row.className = 'hover:bg-gray-50 transition-colors';
+      row.setAttribute('data-role-id', String(role.id));
+      row.setAttribute('data-role-name', (role.role_name || '').toLowerCase());
+      row.setAttribute('data-role-desc', (role.role_description || '').toLowerCase());
+      row.setAttribute('data-user-count', String(role.user_count || 0));
       row.innerHTML = `
+        <td class="px-4 py-4">
+          <input type="checkbox" class="role-row-checkbox rounded border-gray-300 text-primary focus:ring-primary ${role.id === 1 ? 'opacity-40 cursor-not-allowed' : ''}"
+                 data-id="${role.id}" ${role.id === 1 ? 'disabled' : ''}>
+        </td>
         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${index + 1}</td>
         <td class="px-6 py-4 whitespace-nowrap">
           <div class="text-sm font-medium text-gray-900">${role.role_name}</div>
@@ -1179,6 +1469,10 @@
 
     // 绑定行内按钮事件
     bindRoleActionButtons();
+    initRoleBatchActions();
+    if (window.applyRoleFilters) {
+      window.applyRoleFilters();
+    }
   }
 
   /**

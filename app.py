@@ -2790,7 +2790,10 @@ def get_system_config():
                 cursor = db.cursor()
                 # 获取原始配置用于日志
                 cursor.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1')
-                original_config = dict(cursor.fetchone())
+                original_row = cursor.fetchone()
+                if not original_row:
+                    return jsonify({'error': '系统配置不存在'}), 404
+                original_config = dict(original_row)
 
                 system_name = data['system_name']
                 default_session_timeout = data['default_session_timeout']
@@ -2798,13 +2801,26 @@ def get_system_config():
                 color_mode = data['color_mode']
                 password_strategy = data['password_strategy']
                 updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                # 更新system_config 表
+
+                # 动态更新字段，兼容不同版本的 system_config 表结构
+                cursor.execute("PRAGMA table_info(system_config)")
+                available_columns = {row[1] for row in cursor.fetchall()}
+                update_pairs = [
+                    ('system_name', system_name),
+                    ('session_timeout', default_session_timeout),
+                    ('log_retention_time', log_retention_time),
+                    ('color_mode', color_mode),
+                    ('password_strategy', password_strategy),
+                    ('updated_at', updated_at)
+                ]
+
+                set_clause = ', '.join([f"{col} = ?" for col, _ in update_pairs])
+                values = [val for _, val in update_pairs]
+                values.append(original_config.get('id', 1))
                 cursor.execute(
-                    ''' update system_config  set system_name = ?, session_timeout = ?, log_retention_time = ?, color_mode = ?,password_strategy = ?, updated_at = ?  where id=1; ''',
-                    (
-                        system_name, default_session_timeout, log_retention_time, color_mode, password_strategy,
-                        updated_at
-                    ))
+                    f"UPDATE system_config SET {set_clause} WHERE id = ?",
+                    tuple(values)
+                )
                 db.commit()
                 # 【修复】记录成功日志
                 log_operation(
