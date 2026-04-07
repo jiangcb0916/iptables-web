@@ -11,17 +11,23 @@ import sqlite3
 import re
 import ipaddress
 import os
+import shlex
 import base64
 import hashlib
+import secrets
+import hmac
 import csv
 import paramiko
 from paramiko.client import AutoAddPolicy
+from paramiko.ssh_exception import PasswordRequiredException, SSHException
 import math
 from io import StringIO
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, g, Response
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 import time
 import json
 from flask_apscheduler import APScheduler
@@ -90,6 +96,56 @@ def clean_expired_logs():
             app.logger.error(f"清理过期日志失败: {str(e)}")
 
 
+def clean_expired_ssh_key_records():
+    """
+    清理过期 SSH 密钥配置记录及本地密钥文件。
+    通过环境变量 SSH_KEY_RECORD_RETENTION_DAYS 控制保留天数，默认 30 天。
+    设置为 0 或负数表示不自动清理。
+    """
+    with app.app_context():
+        db = get_db()
+        try:
+            retention_days = int(os.getenv('SSH_KEY_RECORD_RETENTION_DAYS', '30'))
+            if retention_days <= 0:
+                return
+
+            expire_date = (datetime.now() - timedelta(days=retention_days)).strftime('%Y-%m-%d %H:%M:%S')
+            cursor = db.cursor()
+            cursor.execute('''
+            SELECT id, private_key_path, public_key_path
+            FROM ssh_key_setup_records
+            WHERE created_at < ?
+            ''', (expire_date,))
+            rows = cursor.fetchall()
+            if not rows:
+                return
+
+            deleted_file_count = 0
+            for row in rows:
+                for file_path in [row['private_key_path'], row['public_key_path']]:
+                    if not file_path:
+                        continue
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            deleted_file_count += 1
+                    except Exception as file_error:
+                        app.logger.warning(f"清理过期SSH密钥文件失败: {file_path}, {str(file_error)}")
+
+            row_ids = [row['id'] for row in rows]
+            placeholders = ','.join(['?'] * len(row_ids))
+            cursor.execute(f'DELETE FROM ssh_key_setup_records WHERE id IN ({placeholders})', row_ids)
+            deleted_records = cursor.rowcount
+            db.commit()
+
+            app.logger.info(
+                f"清理过期SSH密钥记录成功，删除记录 {deleted_records} 条，删除文件 {deleted_file_count} 个"
+            )
+        except Exception as e:
+            db.rollback()
+            app.logger.error(f"清理过期SSH密钥记录失败: {str(e)}")
+
+
 # 正确配置调度器（无需创建新的app实例）
 scheduler.init_app(app)
 scheduler.add_job(
@@ -98,6 +154,13 @@ scheduler.add_job(
     trigger='cron',
     hour=2,
     minute=0
+)
+scheduler.add_job(
+    id='clean_expired_ssh_key_records',
+    func=clean_expired_ssh_key_records,
+    trigger='cron',
+    hour=3,
+    minute=30
 )
 scheduler.start()
 
@@ -124,6 +187,54 @@ def permission_required(permission_code):
         return decorated_function
 
     return decorator
+
+
+def permission_required_any(permission_codes):
+    """权限检查：满足任一权限即可访问。"""
+    code_list = permission_codes if isinstance(permission_codes, (list, tuple, set)) else [permission_codes]
+
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return redirect(url_for('login'))
+            if not any(current_user.has_permission(code) for code in code_list):
+                return jsonify({
+                    'success': False,
+                    'message': '没有操作权限，请联系管理员获取权限'
+                }), 403
+            return f(*args, **kwargs)
+
+        return decorated_function
+
+    return decorator
+
+
+def get_csrf_token():
+    token = session.get('csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['csrf_token'] = token
+    return token
+
+
+@app.context_processor
+def inject_csrf_token():
+    return {'csrf_token': get_csrf_token}
+
+
+def validate_csrf_request():
+    """
+    校验 AJAX 请求的 CSRF Token。
+    优先读取 X-CSRF-Token 头；兼容 JSON body 中 csrf_token 字段。
+    """
+    expected = session.get('csrf_token')
+    supplied = request.headers.get('X-CSRF-Token')
+    if not supplied and request.is_json:
+        payload = request.get_json(silent=True) or {}
+        supplied = payload.get('csrf_token')
+    if not expected or not supplied or not hmac.compare_digest(str(expected), str(supplied)):
+        raise RuntimeError('CSRF校验失败，请刷新页面后重试')
 
 
 def get_db():
@@ -199,6 +310,127 @@ def ensure_hosts_extended_columns():
             app.logger.error(f"扩展hosts字段失败: {str(e)}")
 
 
+def ensure_ssh_key_setup_records_table():
+    """确保 SSH 密钥配置记录表存在。"""
+    with app.app_context():
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ssh_key_setup_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                host_ip TEXT NOT NULL,
+                ssh_port INTEGER NOT NULL,
+                target_username TEXT NOT NULL,
+                key_type TEXT NOT NULL,
+                private_key TEXT,
+                public_key TEXT,
+                private_key_path TEXT,
+                public_key_path TEXT,
+                setup_status TEXT NOT NULL DEFAULT 'success',
+                error_message TEXT,
+                operator_user_id INTEGER,
+                operator_username TEXT,
+                created_at TEXT NOT NULL
+            )
+            ''')
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            app.logger.error(f"初始化 ssh_key_setup_records 表失败: {str(e)}")
+
+
+def ensure_ssh_key_setup_records_columns():
+    """为 SSH 密钥记录表补齐扩展字段。"""
+    with app.app_context():
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            cursor.execute("PRAGMA table_info(ssh_key_setup_records)")
+            columns = {row[1] for row in cursor.fetchall()}
+            if not columns:
+                return
+            if 'revoke_status' not in columns:
+                cursor.execute("ALTER TABLE ssh_key_setup_records ADD COLUMN revoke_status TEXT DEFAULT 'active'")
+            if 'revoke_message' not in columns:
+                cursor.execute("ALTER TABLE ssh_key_setup_records ADD COLUMN revoke_message TEXT")
+            if 'revoked_at' not in columns:
+                cursor.execute("ALTER TABLE ssh_key_setup_records ADD COLUMN revoked_at TEXT")
+            cursor.execute(
+                "UPDATE ssh_key_setup_records SET revoke_status = 'active' "
+                "WHERE revoke_status IS NULL OR revoke_status = ''"
+            )
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            app.logger.error(f"扩展 ssh_key_setup_records 字段失败: {str(e)}")
+
+
+def ensure_ssh_key_manage_permission():
+    """
+    新增 ssh_key_manage 权限，并迁移给已有 hosts_add 权限的角色（兼容升级）。
+    """
+    with app.app_context():
+        db = get_db()
+        try:
+            cursor = db.cursor()
+            cursor.execute('SELECT id FROM permissions WHERE code = ?', ('ssh_key_manage',))
+            permission = cursor.fetchone()
+            if permission:
+                ssh_key_manage_id = permission['id']
+            else:
+                cursor.execute(
+                    'INSERT INTO permissions (name, code, description) VALUES (?, ?, ?)',
+                    ('管理SSH密钥', 'ssh_key_manage', '配置、查看和删除目标主机SSH密钥')
+                )
+                ssh_key_manage_id = cursor.lastrowid
+
+            cursor.execute('SELECT id FROM permissions WHERE code = ?', ('hosts_add',))
+            hosts_add_permission = cursor.fetchone()
+            if hosts_add_permission:
+                cursor.execute('''
+                SELECT DISTINCT role_id
+                FROM role_permissions
+                WHERE permission_id = ?
+                ''', (hosts_add_permission['id'],))
+                role_rows = cursor.fetchall()
+                for role_row in role_rows:
+                    role_id = role_row['role_id']
+                    cursor.execute('''
+                    INSERT OR IGNORE INTO role_permissions (role_id, permission_id)
+                    VALUES (?, ?)
+                    ''', (role_id, ssh_key_manage_id))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            app.logger.error(f"初始化 ssh_key_manage 权限失败: {str(e)}")
+
+
+def save_ssh_key_setup_record(host_ip, ssh_port, target_username, key_type,
+                              private_key='', public_key='',
+                              private_key_path='', public_key_path='',
+                              setup_status='success', error_message=''):
+    """写入 SSH 密钥配置记录，便于回看和复用。"""
+    db = get_db()
+    cursor = db.cursor()
+    encrypted_private_key = encrypt_host_secret(private_key) if private_key else ''
+    cursor.execute('''
+    INSERT INTO ssh_key_setup_records
+    (host_ip, ssh_port, target_username, key_type, private_key, public_key,
+     private_key_path, public_key_path, setup_status, error_message,
+     operator_user_id, operator_username, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        host_ip, ssh_port, target_username, key_type,
+        encrypted_private_key, public_key, private_key_path, public_key_path,
+        setup_status, error_message,
+        current_user.id if current_user and current_user.is_authenticated else None,
+        current_user.username if current_user and current_user.is_authenticated else '',
+        datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ))
+    db.commit()
+
+
 def refresh_host_statuses():
     """
     定时刷新主机连通状态（online/offline），避免列表页实时阻塞。
@@ -266,6 +498,9 @@ def _check_and_update_host_status(cursor, host):
 
 
 ensure_hosts_extended_columns()
+ensure_ssh_key_setup_records_table()
+ensure_ssh_key_setup_records_columns()
+ensure_ssh_key_manage_permission()
 scheduler.add_job(
     id='refresh_host_statuses',
     func=refresh_host_statuses,
@@ -381,12 +616,238 @@ def pwd_shell_cmd(hostname, port, user, pwd, cmd):
             ssh.close()
 
 
+def normalize_private_key(private_key_str):
+    """规范化私钥文本，兼容前端/数据库中的转义换行与Windows换行。"""
+    if not isinstance(private_key_str, str):
+        return ''
+
+    key_text = private_key_str.strip().replace('\r\n', '\n')
+    # 部分场景会把换行存成字面量 \n（例如 JSON 转义后再次存储）
+    if '\\n' in key_text and '\n' not in key_text:
+        key_text = key_text.replace('\\n', '\n')
+    return key_text
+
+
+def load_private_key(private_key_str):
+    """
+    自动识别并加载多种 SSH 私钥格式。
+    支持 RSA / ED25519 / ECDSA / DSA。
+    """
+    key_text = normalize_private_key(private_key_str)
+    if not key_text:
+        raise RuntimeError('SSH私钥为空')
+
+    # 用户误贴公钥时提前给出明确提示
+    if key_text.startswith(('ssh-rsa ', 'ssh-ed25519 ', 'ecdsa-sha2-')):
+        raise RuntimeError('检测到的是公钥内容，请粘贴私钥（通常以 -----BEGIN ... PRIVATE KEY----- 开头）')
+
+    key_loaders = [
+        paramiko.RSAKey,
+        paramiko.Ed25519Key,
+        paramiko.ECDSAKey,
+        paramiko.DSSKey
+    ]
+
+    for key_cls in key_loaders:
+        key_file = StringIO(key_text)
+        try:
+            return key_cls.from_private_key(key_file)
+        except PasswordRequiredException:
+            raise RuntimeError('当前私钥已加密口令（passphrase），请提供未加密私钥或扩展系统支持 passphrase')
+        except SSHException:
+            continue
+        except Exception:
+            continue
+
+    raise RuntimeError('不支持的私钥格式或私钥内容无效，请确认粘贴的是完整私钥。')
+
+
+def generate_ssh_key_pair(key_type='ed25519', key_comment='iptables-web'):
+    """
+    生成 SSH 密钥对（无 passphrase）。
+    返回: private_key_str, public_key_str
+    """
+    key_type = (key_type or 'ed25519').strip().lower()
+    if key_type not in ('ed25519', 'rsa'):
+        raise RuntimeError('仅支持 ed25519 或 rsa 密钥类型')
+
+    if key_type == 'rsa':
+        private_key_obj = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        private_key_str = private_key_obj.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode()
+    else:
+        private_key_obj = ed25519.Ed25519PrivateKey.generate()
+        private_key_str = private_key_obj.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.OpenSSH,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode()
+
+    public_key_core = private_key_obj.public_key().public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH
+    ).decode()
+    public_key_str = f"{public_key_core} {key_comment}".strip()
+    return private_key_str, public_key_str
+
+
+def save_generated_key_files(host_ip, key_type, private_key_str, public_key_str):
+    """
+    保存生成的密钥文件到 data/ssh_keys 目录，便于审计与备份。
+    """
+    safe_host = re.sub(r'[^a-zA-Z0-9_.-]', '_', host_ip or 'host')
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    key_dir = os.path.join(app.root_path, 'data', 'ssh_keys')
+    os.makedirs(key_dir, exist_ok=True)
+
+    basename = f"{safe_host}_{key_type}_{timestamp}"
+    private_path = os.path.join(key_dir, f"{basename}")
+    public_path = os.path.join(key_dir, f"{basename}.pub")
+
+    with open(private_path, 'w', encoding='utf-8') as f:
+        f.write(private_key_str)
+    with open(public_path, 'w', encoding='utf-8') as f:
+        f.write(public_key_str + '\n')
+
+    os.chmod(private_path, 0o600)
+    os.chmod(public_path, 0o644)
+    return private_path, public_path
+
+
+def install_public_key_with_password(hostname, port, user, password, public_key_str):
+    """
+    使用密码认证登录目标主机并安装公钥到 authorized_keys。
+    """
+    ssh_client = paramiko.SSHClient()
+    stdin = None
+    stdout = None
+    stderr = None
+    try:
+        ssh_client.set_missing_host_key_policy(AutoAddPolicy())
+        ssh_client.connect(
+            hostname=hostname,
+            port=port,
+            username=user,
+            password=password,
+            timeout=8,
+            look_for_keys=False,
+            allow_agent=False
+        )
+        quoted_pubkey = shlex.quote(public_key_str.strip())
+        cmd = (
+            "mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
+            "touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && "
+            f"(grep -qxF {quoted_pubkey} ~/.ssh/authorized_keys || echo {quoted_pubkey} >> ~/.ssh/authorized_keys)"
+        )
+        stdin, stdout, stderr = ssh_client.exec_command(cmd)
+        output = stdout.read().decode()
+        error = stderr.read().decode()
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0:
+            raise RuntimeError(error.strip() or output.strip() or f'公钥安装失败，exit_code={exit_code}')
+    except Exception as e:
+        raise RuntimeError(f'安装公钥失败: {str(e)}')
+    finally:
+        if stdin:
+            stdin.close()
+        if stdout:
+            stdout.close()
+        if stderr:
+            stderr.close()
+        ssh_client.close()
+
+
+def verify_key_authentication(hostname, port, user, private_key_str):
+    """
+    验证密钥认证是否可用。
+    """
+    ssh_client = paramiko.SSHClient()
+    stdin = None
+    stdout = None
+    stderr = None
+    try:
+        ssh_client.set_missing_host_key_policy(AutoAddPolicy())
+        pkey = load_private_key(private_key_str)
+        ssh_client.connect(
+            hostname=hostname,
+            port=port,
+            username=user,
+            pkey=pkey,
+            timeout=8,
+            look_for_keys=False,
+            allow_agent=False
+        )
+        stdin, stdout, stderr = ssh_client.exec_command('echo SSH_KEY_OK')
+        output = stdout.read().decode()
+        error = stderr.read().decode()
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0 or 'SSH_KEY_OK' not in (output or ''):
+            raise RuntimeError(error.strip() or '密钥认证验证失败')
+    except Exception as e:
+        raise RuntimeError(f'密钥认证验证失败: {str(e)}')
+    finally:
+        if stdin:
+            stdin.close()
+        if stdout:
+            stdout.close()
+        if stderr:
+            stderr.close()
+        ssh_client.close()
+
+
+def remove_public_key_with_private_key(hostname, port, user, private_key_str, public_key_str):
+    """使用当前私钥登录目标主机并移除 authorized_keys 中对应公钥。"""
+    ssh_client = paramiko.SSHClient()
+    stdin = None
+    stdout = None
+    stderr = None
+    try:
+        ssh_client.set_missing_host_key_policy(AutoAddPolicy())
+        pkey = load_private_key(private_key_str)
+        ssh_client.connect(
+            hostname=hostname,
+            port=port,
+            username=user,
+            pkey=pkey,
+            timeout=8,
+            look_for_keys=False,
+            allow_agent=False
+        )
+        quoted_pubkey = shlex.quote((public_key_str or '').strip())
+        if not quoted_pubkey or quoted_pubkey == "''":
+            raise RuntimeError('记录中缺少公钥内容，无法删除目标主机公钥')
+
+        cmd = (
+            "mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && "
+            f"awk -v key={quoted_pubkey} '$0 != key' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp && "
+            "mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys"
+        )
+        stdin, stdout, stderr = ssh_client.exec_command(cmd)
+        output = stdout.read().decode()
+        error = stderr.read().decode()
+        exit_code = stdout.channel.recv_exit_status()
+        if exit_code != 0:
+            raise RuntimeError(error.strip() or output.strip() or f'删除目标主机公钥失败，exit_code={exit_code}')
+    except Exception as e:
+        raise RuntimeError(f'删除目标主机公钥失败: {str(e)}')
+    finally:
+        if stdin:
+            stdin.close()
+        if stdout:
+            stdout.close()
+        if stderr:
+            stderr.close()
+        ssh_client.close()
+
+
 def sshkey_shell_cmd(hostname, port, user, private_key_str, cmd):
     try:
         private_key_str = decrypt_host_secret(private_key_str)
         ssh.set_missing_host_key_policy(AutoAddPolicy())
-        key_file = StringIO(private_key_str)  # 模拟文件对象
-        pkey = paramiko.RSAKey.from_private_key(key_file)  # 转换为RSA密钥对象
+        pkey = load_private_key(private_key_str)
         ssh.connect(hostname=hostname, port=port, username=user, pkey=pkey, timeout=5,
                     look_for_keys=False,
                     allow_agent=False)
@@ -2074,6 +2535,435 @@ def update_host():
             success=0
         )
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route("/ssh_key_guide", methods=['GET'])
+@login_required
+def ssh_key_guide():
+    return render_template("ssh_key_guide.html")
+
+
+@app.route("/ssh_key_setup", methods=['POST'])
+@login_required
+@permission_required_any(['ssh_key_manage', 'hosts_add'])
+def ssh_key_setup():
+    try:
+        validate_csrf_request()
+    except Exception as csrf_error:
+        return jsonify({'success': False, 'message': str(csrf_error)}), 403
+
+    data = request.get_json(silent=True) or {}
+    host_ip = (data.get('host_ip') or '').strip()
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    key_type = (data.get('key_type') or 'ed25519').strip().lower()
+    ssh_port = data.get('ssh_port', 22)
+
+    if not host_ip:
+        return jsonify({'success': False, 'message': '目标主机IP不能为空'}), 400
+    if not username:
+        return jsonify({'success': False, 'message': 'SSH用户名不能为空'}), 400
+    if not password:
+        return jsonify({'success': False, 'message': '请先输入目标主机密码（用于自动安装公钥）'}), 400
+    if key_type not in ('ed25519', 'rsa'):
+        return jsonify({'success': False, 'message': '密钥类型仅支持 ed25519 或 rsa'}), 400
+    try:
+        ssh_port = int(ssh_port)
+        if ssh_port < 1 or ssh_port > 65535:
+            raise ValueError
+    except ValueError:
+        return jsonify({'success': False, 'message': 'SSH端口必须是 1-65535 的整数'}), 400
+
+    try:
+        comment = f"iptables-web-{username}@{host_ip}"
+        private_key_str, public_key_str = generate_ssh_key_pair(key_type=key_type, key_comment=comment)
+        private_path, public_path = save_generated_key_files(
+            host_ip=host_ip,
+            key_type=key_type,
+            private_key_str=private_key_str,
+            public_key_str=public_key_str
+        )
+        install_public_key_with_password(
+            hostname=host_ip,
+            port=ssh_port,
+            user=username,
+            password=password,
+            public_key_str=public_key_str
+        )
+        verify_key_authentication(
+            hostname=host_ip,
+            port=ssh_port,
+            user=username,
+            private_key_str=private_key_str
+        )
+        save_ssh_key_setup_record(
+            host_ip=host_ip,
+            ssh_port=ssh_port,
+            target_username=username,
+            key_type=key_type,
+            private_key=private_key_str,
+            public_key=public_key_str,
+            private_key_path=private_path,
+            public_key_path=public_path,
+            setup_status='success',
+            error_message=''
+        )
+
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='新增',
+            operation_object='SSH密钥',
+            operation_summary=f"一键配置主机SSH密钥成功: {host_ip}",
+            operation_details=json.dumps({
+                "host_ip": host_ip,
+                "ssh_port": ssh_port,
+                "target_username": username,
+                "key_type": key_type,
+                "private_key_path": private_path,
+                "public_key_path": public_path,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'SSH密钥已自动配置并验证成功，可直接复制私钥到主机添加页面',
+            'data': {
+                'host_ip': host_ip,
+                'ssh_port': ssh_port,
+                'username': username,
+                'key_type': key_type,
+                'private_key': private_key_str,
+                'public_key': public_key_str,
+                'private_key_path': private_path,
+                'public_key_path': public_path
+            }
+        })
+    except Exception as e:
+        try:
+            save_ssh_key_setup_record(
+                host_ip=host_ip,
+                ssh_port=ssh_port,
+                target_username=username,
+                key_type=key_type,
+                private_key='',
+                public_key='',
+                private_key_path='',
+                public_key_path='',
+                setup_status='failed',
+                error_message=str(e)
+            )
+        except Exception as record_error:
+            app.logger.error(f"写入 SSH 密钥配置失败记录失败: {str(record_error)}")
+
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='新增',
+            operation_object='SSH密钥',
+            operation_summary=f"一键配置主机SSH密钥失败: {host_ip}",
+            operation_details=json.dumps({
+                "host_ip": host_ip,
+                "ssh_port": ssh_port,
+                "target_username": username,
+                "key_type": key_type,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=0
+        )
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route("/ssh_key_setup_records", methods=['GET'])
+@login_required
+@permission_required_any(['ssh_key_manage', 'hosts_add'])
+def ssh_key_setup_records():
+    limit = request.args.get('limit', 20)
+    keyword = (request.args.get('keyword') or '').strip()
+    status = (request.args.get('status') or 'all').strip().lower()
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 100))
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        where_clauses = []
+        query_params = []
+
+        if keyword:
+            where_clauses.append('(host_ip LIKE ? OR target_username LIKE ? OR key_type LIKE ?)')
+            keyword_like = f'%{keyword}%'
+            query_params.extend([keyword_like, keyword_like, keyword_like])
+
+        if status == 'active':
+            where_clauses.append("setup_status = 'success' AND (revoke_status IS NULL OR revoke_status = '' OR revoke_status = 'active')")
+        elif status == 'revoked':
+            where_clauses.append("revoke_status = 'revoked'")
+        elif status == 'setup_failed':
+            where_clauses.append("setup_status != 'success'")
+        elif status == 'revoke_failed':
+            where_clauses.append("revoke_status = 'failed'")
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ''
+
+        count_sql = f"SELECT COUNT(*) AS total FROM ssh_key_setup_records {where_sql}"
+        cursor.execute(count_sql, tuple(query_params))
+        total = cursor.fetchone()['total']
+
+        data_sql = f'''
+        SELECT id, host_ip, ssh_port, target_username, key_type, private_key, public_key,
+               private_key_path, public_key_path, setup_status, error_message,
+               operator_user_id, operator_username, created_at,
+               revoke_status, revoke_message, revoked_at
+        FROM ssh_key_setup_records
+        {where_sql}
+        ORDER BY id DESC
+        LIMIT ?
+        '''
+        cursor.execute(data_sql, tuple(query_params + [limit]))
+        rows = cursor.fetchall()
+        records = []
+        for row in rows:
+            records.append({
+                'id': row['id'],
+                'host_ip': row['host_ip'],
+                'ssh_port': row['ssh_port'],
+                'target_username': row['target_username'],
+                'key_type': row['key_type'],
+                'has_private_key': bool(row['private_key']),
+                'public_key': row['public_key'] or '',
+                'private_key_path': row['private_key_path'] or '',
+                'public_key_path': row['public_key_path'] or '',
+                'setup_status': row['setup_status'] or 'success',
+                'error_message': row['error_message'] or '',
+                'operator_user_id': row['operator_user_id'],
+                'operator_username': row['operator_username'] or '',
+                'created_at': row['created_at'] or '',
+                'revoke_status': row['revoke_status'] or 'active',
+                'revoke_message': row['revoke_message'] or '',
+                'revoked_at': row['revoked_at'] or ''
+            })
+        return jsonify({
+            'success': True,
+            'data': records,
+            'meta': {
+                'total': total,
+                'keyword': keyword,
+                'status': status
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取配置记录失败: {str(e)}'}), 500
+
+
+@app.route("/ssh_key_setup_record/<int:record_id>", methods=['DELETE'])
+@login_required
+@permission_required_any(['ssh_key_manage', 'hosts_add'])
+def delete_ssh_key_setup_record(record_id):
+    try:
+        validate_csrf_request()
+    except Exception as csrf_error:
+        return jsonify({'success': False, 'message': str(csrf_error)}), 403
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+        SELECT id, host_ip, ssh_port, target_username, key_type, private_key_path, public_key_path, setup_status, revoke_status
+        FROM ssh_key_setup_records
+        WHERE id = ?
+        ''', (record_id,))
+        record = cursor.fetchone()
+        if not record:
+            return jsonify({'success': False, 'message': '配置记录不存在'}), 404
+        if record['setup_status'] == 'success' and (record['revoke_status'] or 'active') != 'revoked':
+            return jsonify({
+                'success': False,
+                'message': '请先执行“删除目标主机密钥”，再删除配置记录'
+            }), 409
+
+        cursor.execute('DELETE FROM ssh_key_setup_records WHERE id = ?', (record_id,))
+        db.commit()
+
+        removed_files = []
+        remove_errors = []
+        for file_path in [record['private_key_path'], record['public_key_path']]:
+            if not file_path:
+                continue
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    removed_files.append(file_path)
+            except Exception as file_error:
+                remove_errors.append(f"{file_path}: {str(file_error)}")
+
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='SSH密钥',
+            operation_summary=f"删除SSH密钥配置记录: #{record_id}",
+            operation_details=json.dumps({
+                "record_id": record_id,
+                "host_ip": record['host_ip'],
+                "ssh_port": record['ssh_port'],
+                "target_username": record['target_username'],
+                "key_type": record['key_type'],
+                "setup_status": record['setup_status'],
+                "removed_files": removed_files,
+                "remove_errors": remove_errors,
+                "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }),
+            success=1
+        )
+
+        message = '配置记录删除成功'
+        if remove_errors:
+            message += '（部分本地密钥文件删除失败）'
+        return jsonify({
+            'success': True,
+            'message': message,
+            'data': {
+                'record_id': record_id,
+                'removed_files': removed_files,
+                'remove_errors': remove_errors
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'删除配置记录失败: {str(e)}'}), 500
+
+
+@app.route("/ssh_key_setup_record/<int:record_id>/remove_target_key", methods=['POST'])
+@login_required
+@permission_required_any(['ssh_key_manage', 'hosts_add'])
+def remove_target_key_by_record(record_id):
+    try:
+        validate_csrf_request()
+    except Exception as csrf_error:
+        return jsonify({'success': False, 'message': str(csrf_error)}), 403
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+        SELECT id, host_ip, ssh_port, target_username, private_key, public_key, revoke_status
+        FROM ssh_key_setup_records
+        WHERE id = ?
+        ''', (record_id,))
+        record = cursor.fetchone()
+        if not record:
+            return jsonify({'success': False, 'message': '配置记录不存在'}), 404
+        if record['revoke_status'] == 'revoked':
+            return jsonify({'success': False, 'message': '该记录对应的目标主机公钥已删除'}), 409
+        if not record['private_key'] or not record['public_key']:
+            return jsonify({'success': False, 'message': '记录缺少私钥或公钥信息，无法执行删除'}), 400
+
+        private_key_plain = decrypt_host_secret(record['private_key'])
+        remove_public_key_with_private_key(
+            hostname=record['host_ip'],
+            port=record['ssh_port'],
+            user=record['target_username'],
+            private_key_str=private_key_plain,
+            public_key_str=record['public_key']
+        )
+
+        revoked_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute('''
+        UPDATE ssh_key_setup_records
+        SET revoke_status = ?, revoke_message = ?, revoked_at = ?
+        WHERE id = ?
+        ''', ('revoked', '目标主机公钥已删除', revoked_at, record_id))
+        db.commit()
+
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='SSH密钥',
+            operation_summary=f"删除目标主机公钥成功: 记录#{record_id}",
+            operation_details=json.dumps({
+                "record_id": record_id,
+                "host_ip": record['host_ip'],
+                "ssh_port": record['ssh_port'],
+                "target_username": record['target_username'],
+                "operation_time": revoked_at
+            }),
+            success=1
+        )
+        return jsonify({
+            'success': True,
+            'message': '目标主机公钥已删除',
+            'data': {'record_id': record_id, 'revoked_at': revoked_at}
+        })
+    except Exception as e:
+        try:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute(
+                'UPDATE ssh_key_setup_records SET revoke_status = ?, revoke_message = ? WHERE id = ?',
+                ('failed', str(e), record_id)
+            )
+            db.commit()
+        except Exception:
+            pass
+        return jsonify({'success': False, 'message': f'删除目标主机公钥失败: {str(e)}'}), 500
+
+
+@app.route("/ssh_key_setup_record/<int:record_id>/private_key", methods=['POST'])
+@login_required
+@permission_required_any(['ssh_key_manage', 'hosts_add'])
+def get_private_key_by_record(record_id):
+    try:
+        validate_csrf_request()
+    except Exception as csrf_error:
+        return jsonify({'success': False, 'message': str(csrf_error)}), 403
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+        SELECT id, setup_status, revoke_status, private_key, public_key,
+               private_key_path, public_key_path, host_ip, ssh_port, target_username, key_type, created_at
+        FROM ssh_key_setup_records
+        WHERE id = ?
+        ''', (record_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': '配置记录不存在'}), 404
+        if row['setup_status'] != 'success':
+            return jsonify({'success': False, 'message': '该记录配置失败，不支持查看私钥'}), 400
+        if row['revoke_status'] == 'revoked':
+            return jsonify({'success': False, 'message': '该记录已删除目标主机公钥，禁止再次查看私钥'}), 403
+        if not row['private_key']:
+            return jsonify({'success': False, 'message': '该记录缺少私钥信息'}), 400
+
+        private_key = decrypt_host_secret(row['private_key'])
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': row['id'],
+                'host_ip': row['host_ip'],
+                'ssh_port': row['ssh_port'],
+                'target_username': row['target_username'],
+                'key_type': row['key_type'],
+                'private_key': private_key,
+                'public_key': row['public_key'] or '',
+                'private_key_path': row['private_key_path'] or '',
+                'public_key_path': row['public_key_path'] or '',
+                'created_at': row['created_at'] or '',
+                'setup_status': row['setup_status'] or 'success',
+                'revoke_status': row['revoke_status'] or 'active'
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取私钥失败: {str(e)}'}), 500
 
 
 # 查看模板
