@@ -362,6 +362,39 @@
       "operation_details": "{\"record_id\": 1, \"host_ip\": \"172.16.80.132\", \"ssh_port\": 22, \"target_username\": \"root\", \"key_type\": \"ed25519\", \"setup_status\": \"success\", \"removed_files\": [\"/Users/jiangcb/Desktop/\\u5b89\\u5168/iptables-web/data/ssh_keys/172.16.80.132_ed25519_20260409165614\", \"/Users/jiangcb/Desktop/\\u5b89\\u5168/iptables-web/data/ssh_keys/172.16.80.132_ed25519_20260409165614.pub\"], \"remove_errors\": [], \"operation_time\": \"2026-04-09 16:58:29\"}",
       "success": 1,
       "operation_time": "2026-04-09 16:58:29"
+    },
+    {
+      "id": 34,
+      "user_id": 1,
+      "username": "admin",
+      "operation_type": "添加",
+      "operation_object": "主机",
+      "operation_summary": "添加了主机: 测试 (172.16.80.132)",
+      "operation_details": "{\"host_name\": \"\\u6d4b\\u8bd5\", \"ip_address\": \"172.16.80.132\", \"operating_system\": \"centos\", \"ssh_port\": \"22\", \"auth_method\": \"password\"}",
+      "success": 1,
+      "operation_time": "2026-04-09 17:46:21"
+    },
+    {
+      "id": 35,
+      "user_id": 1,
+      "username": "admin",
+      "operation_type": "删除",
+      "operation_object": "防火墙规则",
+      "operation_summary": "删除防火墙规则: ID 1 (方向: INPUT)",
+      "operation_details": "{\"host_id\": \"1\", \"host_ip\": \"172.16.80.132\", \"rule_id\": \"1\", \"direction\": \"INPUT\", \"operating_system\": \"centos\", \"operation_time\": \"2026-04-09 18:17:30\"}",
+      "success": 1,
+      "operation_time": "2026-04-09 18:17:30"
+    },
+    {
+      "id": 36,
+      "user_id": 1,
+      "username": "admin",
+      "operation_type": "删除",
+      "operation_object": "防火墙规则",
+      "operation_summary": "删除防火墙规则: ID 1 (方向: INPUT)",
+      "operation_details": "{\"host_id\": \"1\", \"host_ip\": \"172.16.80.132\", \"rule_id\": \"1\", \"direction\": \"INPUT\", \"operating_system\": \"centos\", \"operation_time\": \"2026-04-09 18:24:22\"}",
+      "success": 1,
+      "operation_time": "2026-04-09 18:24:22"
     }
   ]
 }

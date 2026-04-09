@@ -1,0 +1,2221 @@
+{
+  "items": [
+    {
+      "id": 1,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:07:54",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 6
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 10
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 9
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 16
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 37
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 125
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:08:09",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 4
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 16
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 9
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 6
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 10
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:16:33",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 8
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 8
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 3
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 6
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:16:55",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "closed",
+          "response_ms": 2001
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 5
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 12
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 5
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 3
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:17:40",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 3
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 4
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 2
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 3
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 3
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:18:00",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 4
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 4
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 2
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 3
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 2
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 4
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:19:25",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 4
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 7
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 5
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 13
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 7
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:20:43",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 19
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 13
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 13
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 12
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 103
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 39
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:20:53",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 5
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 8
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 9
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 98
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 10
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 4
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:21:24",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 15
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 8
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 6
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 3
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:23:21",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 10
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 12
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 7
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 4
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:23:25",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 10
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 12
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 3
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 18
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 8
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:23:55",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 8
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 10
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 4
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 9
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 5
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:24:10",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "closed",
+          "response_ms": 2001
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 24
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 78
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 14
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 21
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 10
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 15
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 23
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 33
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:24:29",
+      "results": [
+        {
+          "port": 21,
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 23
+        },
+        {
+          "port": 22,
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 11
+        },
+        {
+          "port": 23,
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 25,
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 80,
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 3
+        },
+        {
+          "port": 443,
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 3306,
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 3389,
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 8080,
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 7
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "protocol": "udp",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:28:44",
+      "results": [
+        {
+          "port": 21,
+          "protocol": "udp",
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 22,
+          "protocol": "udp",
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 23,
+          "protocol": "udp",
+          "service": "Telnet",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 25,
+          "protocol": "udp",
+          "service": "SMTP",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 80,
+          "protocol": "udp",
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 2000
+        },
+        {
+          "port": 443,
+          "protocol": "udp",
+          "service": "HTTPS",
+          "status": "open",
+          "response_ms": 2000
+        },
+        {
+          "port": 3306,
+          "protocol": "udp",
+          "service": "MySQL",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 3389,
+          "protocol": "udp",
+          "service": "RDP",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 8080,
+          "protocol": "udp",
+          "service": "HTTP-Alt",
+          "status": "open",
+          "response_ms": 2001
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "protocol": "tcp",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:30:00",
+      "results": [
+        {
+          "port": 1000,
+          "protocol": "tcp",
+          "service": "Port 1000",
+          "status": "closed",
+          "response_ms": 19
+        },
+        {
+          "port": 1001,
+          "protocol": "tcp",
+          "service": "Port 1001",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 1002,
+          "protocol": "tcp",
+          "service": "Port 1002",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1003,
+          "protocol": "tcp",
+          "service": "Port 1003",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 1004,
+          "protocol": "tcp",
+          "service": "Port 1004",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1005,
+          "protocol": "tcp",
+          "service": "Port 1005",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1006,
+          "protocol": "tcp",
+          "service": "Port 1006",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1007,
+          "protocol": "tcp",
+          "service": "Port 1007",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1008,
+          "protocol": "tcp",
+          "service": "Port 1008",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1009,
+          "protocol": "tcp",
+          "service": "Port 1009",
+          "status": "closed",
+          "response_ms": 22
+        },
+        {
+          "port": 1010,
+          "protocol": "tcp",
+          "service": "Port 1010",
+          "status": "closed",
+          "response_ms": 26
+        },
+        {
+          "port": 1011,
+          "protocol": "tcp",
+          "service": "Port 1011",
+          "status": "closed",
+          "response_ms": 19
+        },
+        {
+          "port": 1012,
+          "protocol": "tcp",
+          "service": "Port 1012",
+          "status": "closed",
+          "response_ms": 23
+        },
+        {
+          "port": 1013,
+          "protocol": "tcp",
+          "service": "Port 1013",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1014,
+          "protocol": "tcp",
+          "service": "Port 1014",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1015,
+          "protocol": "tcp",
+          "service": "Port 1015",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1016,
+          "protocol": "tcp",
+          "service": "Port 1016",
+          "status": "closed",
+          "response_ms": 11
+        },
+        {
+          "port": 1017,
+          "protocol": "tcp",
+          "service": "Port 1017",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1018,
+          "protocol": "tcp",
+          "service": "Port 1018",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1019,
+          "protocol": "tcp",
+          "service": "Port 1019",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1020,
+          "protocol": "tcp",
+          "service": "Port 1020",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1021,
+          "protocol": "tcp",
+          "service": "Port 1021",
+          "status": "closed",
+          "response_ms": 12
+        },
+        {
+          "port": 1022,
+          "protocol": "tcp",
+          "service": "Port 1022",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1023,
+          "protocol": "tcp",
+          "service": "Port 1023",
+          "status": "closed",
+          "response_ms": 101
+        },
+        {
+          "port": 1024,
+          "protocol": "tcp",
+          "service": "Port 1024",
+          "status": "closed",
+          "response_ms": 26
+        },
+        {
+          "port": 1025,
+          "protocol": "tcp",
+          "service": "Port 1025",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 1026,
+          "protocol": "tcp",
+          "service": "Port 1026",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 1027,
+          "protocol": "tcp",
+          "service": "Port 1027",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1028,
+          "protocol": "tcp",
+          "service": "Port 1028",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1029,
+          "protocol": "tcp",
+          "service": "Port 1029",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 1030,
+          "protocol": "tcp",
+          "service": "Port 1030",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1031,
+          "protocol": "tcp",
+          "service": "Port 1031",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1032,
+          "protocol": "tcp",
+          "service": "Port 1032",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1033,
+          "protocol": "tcp",
+          "service": "Port 1033",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1034,
+          "protocol": "tcp",
+          "service": "Port 1034",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 1035,
+          "protocol": "tcp",
+          "service": "Port 1035",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1036,
+          "protocol": "tcp",
+          "service": "Port 1036",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1037,
+          "protocol": "tcp",
+          "service": "Port 1037",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1038,
+          "protocol": "tcp",
+          "service": "Port 1038",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1039,
+          "protocol": "tcp",
+          "service": "Port 1039",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1040,
+          "protocol": "tcp",
+          "service": "Port 1040",
+          "status": "closed",
+          "response_ms": 11
+        },
+        {
+          "port": 1041,
+          "protocol": "tcp",
+          "service": "Port 1041",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1042,
+          "protocol": "tcp",
+          "service": "Port 1042",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1043,
+          "protocol": "tcp",
+          "service": "Port 1043",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1044,
+          "protocol": "tcp",
+          "service": "Port 1044",
+          "status": "closed",
+          "response_ms": 12
+        },
+        {
+          "port": 1045,
+          "protocol": "tcp",
+          "service": "Port 1045",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1046,
+          "protocol": "tcp",
+          "service": "Port 1046",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1047,
+          "protocol": "tcp",
+          "service": "Port 1047",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1048,
+          "protocol": "tcp",
+          "service": "Port 1048",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1049,
+          "protocol": "tcp",
+          "service": "Port 1049",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1050,
+          "protocol": "tcp",
+          "service": "Port 1050",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1051,
+          "protocol": "tcp",
+          "service": "Port 1051",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1052,
+          "protocol": "tcp",
+          "service": "Port 1052",
+          "status": "closed",
+          "response_ms": 11
+        },
+        {
+          "port": 1053,
+          "protocol": "tcp",
+          "service": "Port 1053",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 1054,
+          "protocol": "tcp",
+          "service": "Port 1054",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1055,
+          "protocol": "tcp",
+          "service": "Port 1055",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1056,
+          "protocol": "tcp",
+          "service": "Port 1056",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1057,
+          "protocol": "tcp",
+          "service": "Port 1057",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1058,
+          "protocol": "tcp",
+          "service": "Port 1058",
+          "status": "closed",
+          "response_ms": 16
+        },
+        {
+          "port": 1059,
+          "protocol": "tcp",
+          "service": "Port 1059",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1060,
+          "protocol": "tcp",
+          "service": "Port 1060",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1061,
+          "protocol": "tcp",
+          "service": "Port 1061",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1062,
+          "protocol": "tcp",
+          "service": "Port 1062",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1063,
+          "protocol": "tcp",
+          "service": "Port 1063",
+          "status": "closed",
+          "response_ms": 10
+        },
+        {
+          "port": 1064,
+          "protocol": "tcp",
+          "service": "Port 1064",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1065,
+          "protocol": "tcp",
+          "service": "Port 1065",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 1066,
+          "protocol": "tcp",
+          "service": "Port 1066",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1067,
+          "protocol": "tcp",
+          "service": "Port 1067",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 1068,
+          "protocol": "tcp",
+          "service": "Port 1068",
+          "status": "closed",
+          "response_ms": 11
+        },
+        {
+          "port": 1069,
+          "protocol": "tcp",
+          "service": "Port 1069",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1070,
+          "protocol": "tcp",
+          "service": "Port 1070",
+          "status": "closed",
+          "response_ms": 12
+        },
+        {
+          "port": 1071,
+          "protocol": "tcp",
+          "service": "Port 1071",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1072,
+          "protocol": "tcp",
+          "service": "Port 1072",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1073,
+          "protocol": "tcp",
+          "service": "Port 1073",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1074,
+          "protocol": "tcp",
+          "service": "Port 1074",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1075,
+          "protocol": "tcp",
+          "service": "Port 1075",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1076,
+          "protocol": "tcp",
+          "service": "Port 1076",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1077,
+          "protocol": "tcp",
+          "service": "Port 1077",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1078,
+          "protocol": "tcp",
+          "service": "Port 1078",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1079,
+          "protocol": "tcp",
+          "service": "Port 1079",
+          "status": "closed",
+          "response_ms": 9
+        },
+        {
+          "port": 1080,
+          "protocol": "tcp",
+          "service": "Port 1080",
+          "status": "closed",
+          "response_ms": 17
+        },
+        {
+          "port": 1081,
+          "protocol": "tcp",
+          "service": "Port 1081",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 1082,
+          "protocol": "tcp",
+          "service": "Port 1082",
+          "status": "closed",
+          "response_ms": 113
+        },
+        {
+          "port": 1083,
+          "protocol": "tcp",
+          "service": "Port 1083",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1084,
+          "protocol": "tcp",
+          "service": "Port 1084",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1085,
+          "protocol": "tcp",
+          "service": "Port 1085",
+          "status": "closed",
+          "response_ms": 10
+        },
+        {
+          "port": 1086,
+          "protocol": "tcp",
+          "service": "Port 1086",
+          "status": "closed",
+          "response_ms": 23
+        },
+        {
+          "port": 1087,
+          "protocol": "tcp",
+          "service": "Port 1087",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 1088,
+          "protocol": "tcp",
+          "service": "Port 1088",
+          "status": "closed",
+          "response_ms": 48
+        },
+        {
+          "port": 1089,
+          "protocol": "tcp",
+          "service": "Port 1089",
+          "status": "closed",
+          "response_ms": 38
+        },
+        {
+          "port": 1090,
+          "protocol": "tcp",
+          "service": "Port 1090",
+          "status": "closed",
+          "response_ms": 22
+        },
+        {
+          "port": 1091,
+          "protocol": "tcp",
+          "service": "Port 1091",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1092,
+          "protocol": "tcp",
+          "service": "Port 1092",
+          "status": "closed",
+          "response_ms": 10
+        },
+        {
+          "port": 1093,
+          "protocol": "tcp",
+          "service": "Port 1093",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1094,
+          "protocol": "tcp",
+          "service": "Port 1094",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 1095,
+          "protocol": "tcp",
+          "service": "Port 1095",
+          "status": "closed",
+          "response_ms": 8
+        },
+        {
+          "port": 1096,
+          "protocol": "tcp",
+          "service": "Port 1096",
+          "status": "closed",
+          "response_ms": 11
+        },
+        {
+          "port": 1097,
+          "protocol": "tcp",
+          "service": "Port 1097",
+          "status": "closed",
+          "response_ms": 11
+        },
+        {
+          "port": 1098,
+          "protocol": "tcp",
+          "service": "Port 1098",
+          "status": "closed",
+          "response_ms": 4
+        },
+        {
+          "port": 1099,
+          "protocol": "tcp",
+          "service": "Port 1099",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 1100,
+          "protocol": "tcp",
+          "service": "Port 1100",
+          "status": "closed",
+          "response_ms": 4
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "protocol": "udp",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:32:05",
+      "results": [
+        {
+          "port": 21,
+          "protocol": "udp",
+          "service": "UDP 21",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 22,
+          "protocol": "udp",
+          "service": "UDP 22",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 23,
+          "protocol": "udp",
+          "service": "UDP 23",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 25,
+          "protocol": "udp",
+          "service": "UDP 25",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 80,
+          "protocol": "udp",
+          "service": "UDP 80",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 443,
+          "protocol": "udp",
+          "service": "UDP 443",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 3306,
+          "protocol": "udp",
+          "service": "UDP 3306",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 3389,
+          "protocol": "udp",
+          "service": "UDP 3389",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 8080,
+          "protocol": "udp",
+          "service": "UDP 8080",
+          "status": "open",
+          "response_ms": 2001
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "protocol": "tcp",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:33:06",
+      "results": [
+        {
+          "port": 21,
+          "protocol": "tcp",
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 4
+        },
+        {
+          "port": 22,
+          "protocol": "tcp",
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 5
+        },
+        {
+          "port": 23,
+          "protocol": "tcp",
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 19
+        },
+        {
+          "port": 25,
+          "protocol": "tcp",
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 9
+        },
+        {
+          "port": 80,
+          "protocol": "tcp",
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 10
+        },
+        {
+          "port": 443,
+          "protocol": "tcp",
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 9
+        },
+        {
+          "port": 3306,
+          "protocol": "tcp",
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 11
+        },
+        {
+          "port": 3389,
+          "protocol": "tcp",
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 11
+        },
+        {
+          "port": 8080,
+          "protocol": "tcp",
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 3
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "protocol": "udp",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:33:38",
+      "results": [
+        {
+          "port": 53,
+          "protocol": "udp",
+          "service": "DNS",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 67,
+          "protocol": "udp",
+          "service": "DHCP-Server",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 68,
+          "protocol": "udp",
+          "service": "DHCP-Client",
+          "status": "open",
+          "response_ms": 2000
+        },
+        {
+          "port": 69,
+          "protocol": "udp",
+          "service": "TFTP",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 123,
+          "protocol": "udp",
+          "service": "NTP",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 137,
+          "protocol": "udp",
+          "service": "NetBIOS-NS",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 138,
+          "protocol": "udp",
+          "service": "NetBIOS-DGM",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 161,
+          "protocol": "udp",
+          "service": "SNMP",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 162,
+          "protocol": "udp",
+          "service": "SNMP-Trap",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 500,
+          "protocol": "udp",
+          "service": "ISAKMP",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 514,
+          "protocol": "udp",
+          "service": "Syslog",
+          "status": "open",
+          "response_ms": 2001
+        },
+        {
+          "port": 1900,
+          "protocol": "udp",
+          "service": "SSDP",
+          "status": "open",
+          "response_ms": 2001
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "protocol": "tcp",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:34:49",
+      "results": [
+        {
+          "port": 21,
+          "protocol": "tcp",
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 17
+        },
+        {
+          "port": 22,
+          "protocol": "tcp",
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 20
+        },
+        {
+          "port": 23,
+          "protocol": "tcp",
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 16
+        },
+        {
+          "port": 25,
+          "protocol": "tcp",
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 12
+        },
+        {
+          "port": 80,
+          "protocol": "tcp",
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 13
+        },
+        {
+          "port": 443,
+          "protocol": "tcp",
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 6
+        },
+        {
+          "port": 3306,
+          "protocol": "tcp",
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 19
+        },
+        {
+          "port": 3389,
+          "protocol": "tcp",
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 3
+        },
+        {
+          "port": 8080,
+          "protocol": "tcp",
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 12
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "protocol": "tcp",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:37:23",
+      "results": [
+        {
+          "port": 21,
+          "protocol": "tcp",
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 7
+        },
+        {
+          "port": 22,
+          "protocol": "tcp",
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 17
+        },
+        {
+          "port": 23,
+          "protocol": "tcp",
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 90
+        },
+        {
+          "port": 25,
+          "protocol": "tcp",
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 7
+        },
+        {
+          "port": 80,
+          "protocol": "tcp",
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 9
+        },
+        {
+          "port": 443,
+          "protocol": "tcp",
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 10
+        },
+        {
+          "port": 3306,
+          "protocol": "tcp",
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 15
+        },
+        {
+          "port": 3389,
+          "protocol": "tcp",
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 12
+        },
+        {
+          "port": 8080,
+          "protocol": "tcp",
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 10
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "host_id": 1,
+      "host_ip": "172.16.80.132",
+      "protocol": "tcp",
+      "ping_ok": true,
+      "ping_message": "主机可达",
+      "checked_at": "2026-04-09 18:38:23",
+      "results": [
+        {
+          "port": 21,
+          "protocol": "tcp",
+          "service": "FTP",
+          "status": "open",
+          "response_ms": 11
+        },
+        {
+          "port": 22,
+          "protocol": "tcp",
+          "service": "SSH",
+          "status": "open",
+          "response_ms": 6
+        },
+        {
+          "port": 23,
+          "protocol": "tcp",
+          "service": "Telnet",
+          "status": "closed",
+          "response_ms": 21
+        },
+        {
+          "port": 25,
+          "protocol": "tcp",
+          "service": "SMTP",
+          "status": "closed",
+          "response_ms": 10
+        },
+        {
+          "port": 80,
+          "protocol": "tcp",
+          "service": "HTTP",
+          "status": "open",
+          "response_ms": 6
+        },
+        {
+          "port": 443,
+          "protocol": "tcp",
+          "service": "HTTPS",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 3306,
+          "protocol": "tcp",
+          "service": "MySQL",
+          "status": "closed",
+          "response_ms": 9
+        },
+        {
+          "port": 3389,
+          "protocol": "tcp",
+          "service": "RDP",
+          "status": "closed",
+          "response_ms": 5
+        },
+        {
+          "port": 8080,
+          "protocol": "tcp",
+          "service": "HTTP-Alt",
+          "status": "closed",
+          "response_ms": 6
+        }
+      ]
+    }
+  ]
+}

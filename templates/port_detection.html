@@ -1,0 +1,704 @@
+{% extends 'base.html' %}
+{% block main %}
+<div class="flex-1 flex flex-col overflow-hidden">
+  <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+    <div class="flex items-center justify-between h-16 px-6">
+      <div class="text-lg font-semibold text-dark">端口检测与规则添加</div>
+      <button class="text-gray-500 hover:text-gray-700 relative" onclick="window.location.href='/logout'">
+        <span class="flex items-center">
+          <i class="fa fa-sign-out text-xl mr-1"></i>
+          <span class="text-sm">退出登录</span>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+    <div class="container mx-auto max-w-7xl space-y-6">
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="text-base font-semibold text-dark mb-4">检测目标</h2>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">系统内主机</label>
+            <select id="host-id-select" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+              <option value="">不选择（使用自定义目标）</option>
+              {% for host in host_options %}
+              <option value="{{ host.id }}" data-ip="{{ host.ip_address }}">{{ host.host_name }} ({{ host.ip_address }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">目标主机（IP/域名）</label>
+            <input id="target-input" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="如 172.16.80.132 或 example.com">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">协议</label>
+            <select id="protocol-select" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+              <option value="tcp" selected>TCP</option>
+              <option value="udp">UDP（规则可配置）</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">端口列表/范围</label>
+            <input id="ports-input" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" value="{{ default_ports }}" placeholder="如 22,80,443,1000-1010">
+          </div>
+        </div>
+        <div class="mt-4 flex items-center gap-3">
+          <button id="scan-btn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90">开始检测</button>
+          <span id="preset-ports-hint" class="text-xs text-gray-500">预置端口：22/80/443/3389/23/21/25/3306/8080，可自定义输入。</span>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h2 class="text-base font-semibold text-dark">检测结果</h2>
+            <p id="scan-status" class="text-xs text-gray-500 mt-1">尚未开始检测</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="batch-close-btn" class="px-3 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700 disabled:opacity-40" disabled>
+              关闭选中端口
+            </button>
+            <button id="batch-edit-btn" class="px-3 py-2 border border-primary text-primary rounded-md text-sm hover:bg-blue-50 disabled:opacity-40" disabled>
+              批量编辑规则
+            </button>
+          </div>
+        </div>
+        <div class="mb-3 flex flex-wrap items-center gap-3">
+          <input id="result-search-input" type="text" class="w-full md:w-80 px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="搜索端口/服务/协议/状态">
+          <select id="page-size-select" class="px-3 py-2 border border-gray-300 rounded-md text-sm">
+            <option value="10">每页 10 条</option>
+            <option value="20" selected>每页 20 条</option>
+            <option value="50">每页 50 条</option>
+            <option value="100">每页 100 条</option>
+          </select>
+          <span id="result-total-text" class="text-xs text-gray-500">共 0 条</span>
+        </div>
+        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase">
+                  <input id="select-all-open" type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary">
+                </th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase">端口</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase">协议</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase">服务</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase">状态</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase">响应时间</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase">操作</th>
+              </tr>
+            </thead>
+            <tbody id="scan-result-body" class="bg-white divide-y divide-gray-200">
+              <tr><td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">请先执行端口检测</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div id="page-info-text" class="text-xs text-gray-500">第 1 页 / 共 1 页</div>
+          <div class="flex items-center gap-2">
+            <button id="prev-page-btn" class="px-3 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-40" disabled>上一页</button>
+            <div id="page-number-list" class="flex items-center gap-1"></div>
+            <button id="next-page-btn" class="px-3 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-40" disabled>下一页</button>
+            <div class="flex items-center gap-1 ml-1">
+              <input id="jump-page-input" type="number" min="1" class="w-16 px-2 py-1.5 border border-gray-300 rounded text-xs" placeholder="页码">
+              <button id="jump-page-btn" class="px-2 py-1.5 border border-gray-300 rounded text-xs hover:bg-gray-50">跳转</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="rule-dialog" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-xl w-full max-w-xl transform transition-all scale-95">
+    <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+      <h3 id="dialog-title" class="text-base font-semibold text-dark">编辑规则</h3>
+      <button id="close-rule-dialog" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button>
+    </div>
+    <div class="px-5 py-4 space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">方向</label>
+          <select id="rule-direction" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+            <option value="INPUT" selected>入站 (INPUT)</option>
+            <option value="OUTPUT">出站 (OUTPUT)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">动作</label>
+          <select id="rule-action" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+            <option value="allow">允许 (ACCEPT)</option>
+            <option value="deny" selected>拒绝 (DROP)</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">协议</label>
+          <select id="rule-protocol" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+            <option value="tcp" selected>tcp</option>
+            <option value="udp">udp</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">端口（支持逗号/范围）</label>
+          <input id="rule-ports" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="22,80,443">
+        </div>
+      </div>
+      <div>
+        <label id="scope-label" class="block text-sm text-gray-700 mb-1">源IP地址</label>
+        <input id="rule-scope" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" value="0.0.0.0/0" placeholder="单IP / CIDR / 0.0.0.0/0">
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">目标网卡（可选）</label>
+          <input id="rule-interface" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="如 eth0">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">备注</label>
+          <input id="rule-comment" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="规则描述">
+        </div>
+      </div>
+      <p class="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
+        安全提醒：执行 iptables 需要 root 或 sudo NOPASSWD 权限。
+      </p>
+      <div id="rule-status" class="hidden text-sm px-3 py-2 rounded-md"></div>
+    </div>
+    <div class="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+      <button id="cancel-rule-dialog" class="px-4 py-2 border border-gray-300 rounded-md text-sm">取消</button>
+      <button id="confirm-rule-btn" class="px-4 py-2 bg-primary text-white rounded-md text-sm">确认添加规则</button>
+    </div>
+  </div>
+</div>
+{% endblock main %}
+
+{% block script %}
+<script>
+  const hostSelect = document.getElementById('host-id-select');
+  const targetInput = document.getElementById('target-input');
+  const protocolSelect = document.getElementById('protocol-select');
+  const portsInput = document.getElementById('ports-input');
+  const presetPortsHint = document.getElementById('preset-ports-hint');
+  const scanBtn = document.getElementById('scan-btn');
+  const scanStatus = document.getElementById('scan-status');
+  const resultBody = document.getElementById('scan-result-body');
+  const selectAllOpen = document.getElementById('select-all-open');
+  const batchCloseBtn = document.getElementById('batch-close-btn');
+  const batchEditBtn = document.getElementById('batch-edit-btn');
+  const resultSearchInput = document.getElementById('result-search-input');
+  const pageSizeSelect = document.getElementById('page-size-select');
+  const resultTotalText = document.getElementById('result-total-text');
+  const pageInfoText = document.getElementById('page-info-text');
+  const prevPageBtn = document.getElementById('prev-page-btn');
+  const nextPageBtn = document.getElementById('next-page-btn');
+  const pageNumberList = document.getElementById('page-number-list');
+  const jumpPageInput = document.getElementById('jump-page-input');
+  const jumpPageBtn = document.getElementById('jump-page-btn');
+
+  const ruleDialog = document.getElementById('rule-dialog');
+  const dialogPanel = ruleDialog.querySelector('div');
+  const dialogTitle = document.getElementById('dialog-title');
+  const closeRuleDialog = document.getElementById('close-rule-dialog');
+  const cancelRuleDialog = document.getElementById('cancel-rule-dialog');
+  const confirmRuleBtn = document.getElementById('confirm-rule-btn');
+  const ruleStatus = document.getElementById('rule-status');
+  const ruleDirection = document.getElementById('rule-direction');
+  const ruleAction = document.getElementById('rule-action');
+  const ruleProtocol = document.getElementById('rule-protocol');
+  const rulePorts = document.getElementById('rule-ports');
+  const ruleScope = document.getElementById('rule-scope');
+  const ruleInterface = document.getElementById('rule-interface');
+  const ruleComment = document.getElementById('rule-comment');
+  const scopeLabel = document.getElementById('scope-label');
+
+  let latestScan = { host_id: '', target: '', ports: [] };
+  let filteredRows = [];
+  let currentPage = 1;
+  let pageSize = 20;
+  let dialogMode = 'single';
+  let pendingPorts = [];
+  const defaultTcpPorts = '{{ default_ports }}';
+  const defaultUdpPorts = '53,67,68,69,123,137,138,161,162,500,514,1900';
+
+  function escapeHtml(raw) {
+    return String(raw || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function setScanStatus(message, isError = false) {
+    scanStatus.textContent = message || '';
+    scanStatus.className = isError ? 'text-xs text-red-600 mt-1' : 'text-xs text-gray-500 mt-1';
+  }
+
+  function setRuleStatus(message, isError = false) {
+    if (!message) {
+      ruleStatus.className = 'hidden text-sm px-3 py-2 rounded-md';
+      ruleStatus.textContent = '';
+      return;
+    }
+    ruleStatus.className = isError
+      ? 'text-sm px-3 py-2 rounded-md bg-red-50 text-red-700 border border-red-100'
+      : 'text-sm px-3 py-2 rounded-md bg-blue-50 text-blue-700 border border-blue-100';
+    ruleStatus.textContent = message;
+  }
+
+  function updatePresetHint(protocol) {
+    if (!presetPortsHint) return;
+    const isUdp = protocol === 'udp';
+    const displayPorts = isUdp
+      ? defaultUdpPorts.replaceAll(',', '/')
+      : defaultTcpPorts.replaceAll(',', '/');
+    presetPortsHint.textContent = `预置端口：${displayPorts}，可自定义输入。`;
+  }
+
+  function applyProtocolDefaults(protocol) {
+    const current = String(portsInput.value || '').trim();
+    const isAutoValue = !current || current === defaultTcpPorts || current === defaultUdpPorts;
+    if (!isAutoValue) {
+      updatePresetHint(protocol);
+      return;
+    }
+    portsInput.value = protocol === 'udp' ? defaultUdpPorts : defaultTcpPorts;
+    updatePresetHint(protocol);
+  }
+
+  function getSelectedOpenPorts() {
+    return Array.from(document.querySelectorAll('.scan-port-checkbox:checked'))
+      .map(item => Number(item.getAttribute('data-port')))
+      .filter(Number.isFinite);
+  }
+
+  function refreshBulkBtnState() {
+    const enabled = Boolean(latestScan.host_id) && getSelectedOpenPorts().length > 0;
+    batchCloseBtn.disabled = !enabled;
+    batchEditBtn.disabled = !enabled;
+  }
+
+  function updatePaginationInfo(totalRows) {
+    const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+    currentPage = Math.min(Math.max(1, currentPage), totalPages);
+    const begin = totalRows === 0 ? 0 : ((currentPage - 1) * pageSize + 1);
+    const end = Math.min(currentPage * pageSize, totalRows);
+    resultTotalText.textContent = `共 ${totalRows} 条`;
+    pageInfoText.textContent = totalRows === 0
+      ? '第 0 页 / 共 0 页'
+      : `第 ${currentPage} 页 / 共 ${totalPages} 页（${begin}-${end}）`;
+    prevPageBtn.disabled = currentPage <= 1 || totalRows === 0;
+    nextPageBtn.disabled = currentPage >= totalPages || totalRows === 0;
+    renderPageNumberButtons(totalRows, totalPages);
+  }
+
+  function buildPageNumberList(totalPages, page) {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    }
+    if (page <= 4) {
+      return [1, 2, 3, 4, 5, '...', totalPages];
+    }
+    if (page >= totalPages - 3) {
+      return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, '...', page - 1, page, page + 1, '...', totalPages];
+  }
+
+  function renderPageNumberButtons(totalRows, totalPages) {
+    if (!pageNumberList) return;
+    if (totalRows === 0 || totalPages <= 1) {
+      pageNumberList.innerHTML = '';
+      return;
+    }
+    const pages = buildPageNumberList(totalPages, currentPage);
+    pageNumberList.innerHTML = pages.map(item => {
+      if (item === '...') {
+        return '<span class="px-2 py-1 text-xs text-gray-400">...</span>';
+      }
+      const active = Number(item) === currentPage;
+      return `<button data-page="${item}" class="min-w-[30px] px-2 py-1.5 text-xs border rounded ${active ? 'border-primary bg-primary text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}">${item}</button>`;
+    }).join('');
+    if (jumpPageInput) {
+      jumpPageInput.value = String(currentPage);
+      jumpPageInput.max = String(totalPages);
+    }
+  }
+
+  function gotoPage(rawPage) {
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    if (totalPages <= 1) return;
+    const parsed = Number(rawPage);
+    if (!Number.isFinite(parsed)) return;
+    currentPage = Math.min(totalPages, Math.max(1, Math.floor(parsed)));
+    renderRows(latestScan.ports || []);
+    selectAllOpen.checked = false;
+  }
+
+  function buildSearchText(row) {
+    return [
+      String(row.port || ''),
+      String(row.service || ''),
+      String(row.protocol || ''),
+      row.status === 'open' ? '开放 open' : '关闭 closed'
+    ].join(' ').toLowerCase();
+  }
+
+  function applySearchFilter(rows) {
+    const keyword = String(resultSearchInput.value || '').trim().toLowerCase();
+    if (!keyword) return rows.slice();
+    return rows.filter(row => buildSearchText(row).includes(keyword));
+  }
+
+  function renderLoadingSkeleton() {
+    const rows = Array.from({ length: 5 }).map(() => `
+      <tr>
+        <td class="px-4 py-3"><div class="h-4 w-4 bg-gray-100 rounded animate-pulse"></div></td>
+        <td class="px-4 py-3"><div class="h-4 w-12 bg-gray-100 rounded animate-pulse"></div></td>
+        <td class="px-4 py-3"><div class="h-4 w-10 bg-gray-100 rounded animate-pulse"></div></td>
+        <td class="px-4 py-3"><div class="h-4 w-20 bg-gray-100 rounded animate-pulse"></div></td>
+        <td class="px-4 py-3"><div class="h-5 w-12 bg-gray-100 rounded-full animate-pulse"></div></td>
+        <td class="px-4 py-3"><div class="h-4 w-14 bg-gray-100 rounded animate-pulse"></div></td>
+        <td class="px-4 py-3"><div class="h-4 w-24 bg-gray-100 rounded animate-pulse"></div></td>
+      </tr>
+    `).join('');
+    resultBody.innerHTML = rows;
+  }
+
+  function renderRows(rows) {
+    if (!Array.isArray(rows) || !rows.length) {
+      resultBody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">未返回检测结果</td></tr>';
+      filteredRows = [];
+      updatePaginationInfo(0);
+      refreshBulkBtnState();
+      return;
+    }
+    filteredRows = applySearchFilter(rows);
+    if (!filteredRows.length) {
+      resultBody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">未匹配到搜索结果</td></tr>';
+      updatePaginationInfo(0);
+      refreshBulkBtnState();
+      return;
+    }
+    updatePaginationInfo(filteredRows.length);
+    const pageStart = (currentPage - 1) * pageSize;
+    const pageRows = filteredRows.slice(pageStart, pageStart + pageSize);
+
+    resultBody.innerHTML = pageRows.map(row => {
+      const isOpen = row.status === 'open';
+      const canSelect = isOpen && !row.rule_added;
+      const rowClass = isOpen ? 'bg-green-50/40' : '';
+      const checkbox = canSelect
+        ? `<input type="checkbox" class="scan-port-checkbox rounded border-gray-300 text-primary focus:ring-primary" data-port="${row.port}">`
+        : '<span class="text-gray-300">-</span>';
+      const statusText = isOpen
+        ? '<span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">开放</span>'
+        : '<span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">关闭</span>';
+      const elapsedText = Number(row.response_ms) >= 0 ? `${row.response_ms} ms` : '--';
+      const rowProtocol = row.protocol || protocolSelect.value || 'tcp';
+      const actionCell = isOpen ? `
+        <div class="flex items-center gap-2">
+          <button class="quick-close-btn px-2 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 ${row.rule_added ? 'opacity-40 cursor-not-allowed' : ''}" data-port="${row.port}" data-protocol="${escapeHtml(rowProtocol)}" ${row.rule_added ? 'disabled' : ''} title="一键添加入站 DROP 规则">
+            <i class="fa fa-ban mr-1"></i>关闭端口
+          </button>
+          <button class="edit-rule-btn px-2 py-1 text-xs border border-primary text-primary rounded hover:bg-blue-50" data-port="${row.port}" data-protocol="${escapeHtml(rowProtocol)}" title="编辑详细规则">
+            <i class="fa fa-sliders mr-1"></i>编辑规则
+          </button>
+          ${row.rule_added ? '<span class="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full"><i class="fa fa-check mr-1"></i>已添加</span>' : ''}
+        </div>
+      ` : '<span class="text-xs text-gray-400">-</span>';
+
+      return `
+        <tr class="${rowClass}">
+          <td class="px-4 py-3">${checkbox}</td>
+          <td class="px-4 py-3 text-sm font-medium text-dark">${row.port}</td>
+          <td class="px-4 py-3 text-sm text-secondary">${escapeHtml(rowProtocol)}</td>
+          <td class="px-4 py-3 text-sm text-secondary">${escapeHtml(row.service || '-')}</td>
+          <td class="px-4 py-3 text-sm">${statusText}</td>
+          <td class="px-4 py-3 text-sm text-secondary">${elapsedText}</td>
+          <td class="px-4 py-3">${actionCell}</td>
+        </tr>
+      `;
+    }).join('');
+
+    document.querySelectorAll('.scan-port-checkbox').forEach(item => item.addEventListener('change', refreshBulkBtnState));
+    document.querySelectorAll('.quick-close-btn').forEach(item => {
+      item.addEventListener('click', () => quickClose([Number(item.dataset.port)], item.dataset.protocol || protocolSelect.value || 'tcp'));
+    });
+    document.querySelectorAll('.edit-rule-btn').forEach(item => {
+      item.addEventListener('click', () => openRuleDialog('single', [Number(item.dataset.port)], item.dataset.protocol || 'tcp'));
+    });
+    refreshBulkBtnState();
+  }
+
+  function openDialog() {
+    ruleDialog.classList.remove('hidden');
+    ruleDialog.classList.add('flex');
+    setTimeout(() => {
+      dialogPanel.classList.add('scale-100');
+      dialogPanel.classList.remove('scale-95');
+    }, 10);
+  }
+
+  function closeDialog() {
+    dialogPanel.classList.remove('scale-100');
+    dialogPanel.classList.add('scale-95');
+    setTimeout(() => {
+      ruleDialog.classList.add('hidden');
+      ruleDialog.classList.remove('flex');
+      setRuleStatus('');
+      pendingPorts = [];
+    }, 150);
+  }
+
+  function updateScopeLabel() {
+    scopeLabel.textContent = ruleDirection.value === 'INPUT' ? '源IP地址' : '目的IP地址';
+  }
+
+  function openRuleDialog(mode, ports, protocol) {
+    if (!latestScan.host_id) {
+      alert('添加规则必须选择系统内主机');
+      return;
+    }
+    if (!ports.length) {
+      alert('未选择可操作端口');
+      return;
+    }
+    dialogMode = mode;
+    pendingPorts = ports.slice();
+    dialogTitle.textContent = mode === 'batch' ? '批量编辑规则' : `编辑端口 ${ports[0]} 规则`;
+    ruleDirection.value = 'INPUT';
+    ruleAction.value = mode === 'single' ? 'deny' : 'allow';
+    ruleProtocol.value = protocol || protocolSelect.value || 'tcp';
+    rulePorts.value = ports.join(',');
+    ruleScope.value = '0.0.0.0/0';
+    ruleInterface.value = '';
+    ruleComment.value = mode === 'batch' ? '批量端口规则' : `端口 ${ports[0]} 规则`;
+    updateScopeLabel();
+    setRuleStatus('');
+    openDialog();
+  }
+
+  function basicValidateIPScope(value) {
+    const input = String(value || '').trim();
+    if (!input) return false;
+    if (input === '0.0.0.0/0') return true;
+    const ipV4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+    const hostName = /^[a-zA-Z0-9.-]+$/;
+    return ipV4.test(input) || hostName.test(input);
+  }
+
+  async function submitRule(payload) {
+    const response = await fetch('/api/port-to-rule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || '添加规则失败');
+    }
+    return data;
+  }
+
+  async function quickClose(ports, protocol = 'tcp') {
+    if (!latestScan.host_id) {
+      alert('一键关闭仅支持系统内主机');
+      return;
+    }
+    try {
+      setScanStatus('正在执行关闭端口规则...');
+      const data = await submitRule({
+        host_id: latestScan.host_id,
+        ports,
+        direction: 'INPUT',
+        action: 'deny',
+        protocol,
+        source_ip: '0.0.0.0/0',
+        comment: '一键关闭开放端口'
+      });
+      setScanStatus(data.message || '规则已添加');
+      if (confirm('规则已添加，是否跳转到规则查看页面？')) {
+        window.location.href = data.rule_view_url || '/rules_in';
+        return;
+      }
+      scanBtn.click();
+    } catch (error) {
+      setScanStatus(error.message || '关闭端口失败', true);
+    }
+  }
+
+  hostSelect.addEventListener('change', function () {
+    const selected = hostSelect.options[hostSelect.selectedIndex];
+    const ip = selected?.getAttribute('data-ip') || '';
+    if (ip) targetInput.value = ip;
+    refreshBulkBtnState();
+  });
+
+  protocolSelect.addEventListener('change', function () {
+    applyProtocolDefaults(protocolSelect.value);
+  });
+
+  resultSearchInput.addEventListener('input', function () {
+    currentPage = 1;
+    renderRows(latestScan.ports || []);
+    selectAllOpen.checked = false;
+  });
+
+  pageSizeSelect.addEventListener('change', function () {
+    const next = Number(pageSizeSelect.value);
+    pageSize = Number.isFinite(next) && next > 0 ? next : 20;
+    currentPage = 1;
+    renderRows(latestScan.ports || []);
+    selectAllOpen.checked = false;
+  });
+
+  prevPageBtn.addEventListener('click', function () {
+    currentPage = Math.max(1, currentPage - 1);
+    renderRows(latestScan.ports || []);
+    selectAllOpen.checked = false;
+  });
+
+  nextPageBtn.addEventListener('click', function () {
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    currentPage = Math.min(totalPages, currentPage + 1);
+    renderRows(latestScan.ports || []);
+    selectAllOpen.checked = false;
+  });
+
+  pageNumberList.addEventListener('click', function (event) {
+    const target = event.target.closest('button[data-page]');
+    if (!target) return;
+    const page = Number(target.dataset.page);
+    gotoPage(page);
+  });
+
+  jumpPageBtn.addEventListener('click', function () {
+    gotoPage(jumpPageInput.value);
+  });
+
+  jumpPageInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      gotoPage(jumpPageInput.value);
+    }
+  });
+
+  selectAllOpen.addEventListener('change', () => {
+    document.querySelectorAll('.scan-port-checkbox').forEach(item => {
+      item.checked = selectAllOpen.checked;
+    });
+    refreshBulkBtnState();
+  });
+
+  batchCloseBtn.addEventListener('click', () => {
+    const selectedPorts = getSelectedOpenPorts();
+    if (!selectedPorts.length) {
+      alert('请先勾选开放端口');
+      return;
+    }
+    quickClose(selectedPorts, protocolSelect.value || 'tcp');
+  });
+
+  batchEditBtn.addEventListener('click', () => {
+    const selectedPorts = getSelectedOpenPorts();
+    if (!selectedPorts.length) {
+      alert('请先勾选开放端口');
+      return;
+    }
+    openRuleDialog('batch', selectedPorts, protocolSelect.value);
+  });
+
+  scanBtn.addEventListener('click', async function () {
+    const payload = {
+      host_id: hostSelect.value || '',
+      target: targetInput.value.trim(),
+      protocol: protocolSelect.value,
+      ports: portsInput.value.trim()
+    };
+    scanBtn.disabled = true;
+    renderLoadingSkeleton();
+    setScanStatus('正在检测端口，请稍候...');
+    try {
+      const response = await fetch('/api/port-detection/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || '端口检测失败');
+      latestScan = { host_id: data.host_id || '', target: data.target || payload.target, ports: data.ports || [] };
+      currentPage = 1;
+      const doneText = data.ping_ok ? `检测完成：${data.ping_message || '主机可达'}` : `主机不可达：${data.ping_message || ''}`;
+      setScanStatus(data.notice ? `${doneText}（${data.notice}）` : doneText, !data.ping_ok);
+      renderRows(data.ports || []);
+      selectAllOpen.checked = false;
+    } catch (error) {
+      latestScan = { host_id: '', target: '', ports: [] };
+      setScanStatus(error.message || '端口检测失败', true);
+      renderRows([]);
+    } finally {
+      scanBtn.disabled = false;
+      refreshBulkBtnState();
+    }
+  });
+
+  ruleDirection.addEventListener('change', updateScopeLabel);
+
+  confirmRuleBtn.addEventListener('click', async () => {
+    if (!latestScan.host_id) {
+      setRuleStatus('添加规则必须选择系统内主机', true);
+      return;
+    }
+    const portsRaw = rulePorts.value.trim();
+    const scope = ruleScope.value.trim() || '0.0.0.0/0';
+    if (!portsRaw) {
+      setRuleStatus('端口不能为空', true);
+      return;
+    }
+    if (!basicValidateIPScope(scope)) {
+      setRuleStatus('IP/CIDR/主机名格式不正确', true);
+      return;
+    }
+
+    confirmRuleBtn.disabled = true;
+    setRuleStatus('正在添加规则，请稍候...');
+    try {
+      const payload = {
+        host_id: latestScan.host_id,
+        ports: portsRaw,
+        direction: ruleDirection.value,
+        action: ruleAction.value,
+        protocol: ruleProtocol.value,
+        interface: ruleInterface.value.trim(),
+        comment: ruleComment.value.trim()
+      };
+      if (ruleDirection.value === 'INPUT') {
+        payload.source_ip = scope;
+      } else {
+        payload.dest_ip = scope;
+      }
+      const data = await submitRule(payload);
+      setRuleStatus(data.message || '规则已添加');
+      if (confirm('规则已添加，是否跳转到规则查看页面？')) {
+        window.location.href = data.rule_view_url || '/rules_in';
+        return;
+      }
+      closeDialog();
+      scanBtn.click();
+    } catch (error) {
+      setRuleStatus(error.message || '添加规则失败', true);
+    } finally {
+      confirmRuleBtn.disabled = false;
+    }
+  });
+
+  closeRuleDialog.addEventListener('click', closeDialog);
+  cancelRuleDialog.addEventListener('click', closeDialog);
+  ruleDialog.addEventListener('click', (event) => {
+    if (event.target === ruleDialog) closeDialog();
+  });
+
+  applyProtocolDefaults(protocolSelect.value);
+</script>
+{% endblock script %}

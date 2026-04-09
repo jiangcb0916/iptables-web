@@ -10,6 +10,10 @@ from functools import wraps
 import sqlite3
 import re
 import ipaddress
+import uuid
+import socket
+import platform
+import subprocess
 import os
 import shlex
 import base64
@@ -49,6 +53,9 @@ ROLES_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'roles.json')
 SYSTEM_CONFIG_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'system_config.json')
 TEMPLATES_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'templates.json')
 SSH_KEY_RECORDS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'ssh_key_setup_records.json')
+PORT_SCAN_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'port_scan_records.json')
+FIREWALL_RULE_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'firewall_rules.json')
+PORT_RULES_STORE_FILE = os.path.join(app.root_path, 'data', 'rules.json')
 _STORE_THREAD_LOCK = threading.RLock()
 
 DEFAULT_PERMISSION_CODES = [
@@ -173,6 +180,12 @@ def _ensure_local_store_files():
         _write_store_json(TEMPLATES_STORE_FILE, {"items": []})
     if not os.path.exists(SSH_KEY_RECORDS_STORE_FILE):
         _write_store_json(SSH_KEY_RECORDS_STORE_FILE, {"items": []})
+    if not os.path.exists(PORT_SCAN_STORE_FILE):
+        _write_store_json(PORT_SCAN_STORE_FILE, {"items": []})
+    if not os.path.exists(FIREWALL_RULE_STORE_FILE):
+        _write_store_json(FIREWALL_RULE_STORE_FILE, {"items": []})
+    if not os.path.exists(PORT_RULES_STORE_FILE):
+        _write_store_json(PORT_RULES_STORE_FILE, {"items": []})
 
 
 def _read_store_json(path, default):
@@ -296,6 +309,36 @@ def _read_ssh_key_records_store():
 
 def _write_ssh_key_records_store(items):
     _write_store_json(SSH_KEY_RECORDS_STORE_FILE, {"items": items})
+
+
+def _read_port_scan_records_store():
+    data = _read_store_json(PORT_SCAN_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _write_port_scan_records_store(items):
+    _write_store_json(PORT_SCAN_STORE_FILE, {"items": items})
+
+
+def _read_firewall_rules_store():
+    data = _read_store_json(FIREWALL_RULE_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _write_firewall_rules_store(items):
+    _write_store_json(FIREWALL_RULE_STORE_FILE, {"items": items})
+
+
+def _read_port_rules_store():
+    data = _read_store_json(PORT_RULES_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _write_port_rules_store(items):
+    _write_store_json(PORT_RULES_STORE_FILE, {"items": items})
 
 
 def _read_system_config_store():
@@ -541,6 +584,38 @@ def _normalize_local_store_data():
     if norm_ssh_records != ssh_records:
         _write_ssh_key_records_store(norm_ssh_records)
 
+    # port rules (for port detection module)
+    port_rules = _read_port_rules_store()
+    norm_port_rules = []
+    for item in port_rules:
+        rule = dict(item)
+        rule['id'] = str(rule.get('id', '') or '')
+        rule['host_id'] = int(rule.get('host_id', 0) or 0)
+        rule['host_ip'] = str(rule.get('host_ip', '') or '')
+        rule['direction'] = str(rule.get('direction', 'INPUT') or 'INPUT').upper()
+        if rule['direction'] not in ('INPUT', 'OUTPUT'):
+            rule['direction'] = 'INPUT'
+        rule['action'] = str(rule.get('action', 'DROP') or 'DROP').upper()
+        if rule['action'] not in ('ACCEPT', 'DROP'):
+            rule['action'] = 'DROP'
+        rule['protocol'] = str(rule.get('protocol', 'tcp') or 'tcp').lower()
+        if rule['protocol'] not in ('tcp', 'udp'):
+            rule['protocol'] = 'tcp'
+        try:
+            rule['port'] = int(rule.get('port', 0) or 0)
+        except (TypeError, ValueError):
+            rule['port'] = 0
+        rule['source_ip'] = str(rule.get('source_ip', '') or '')
+        rule['dest_ip'] = str(rule.get('dest_ip', '') or '')
+        rule['interface'] = str(rule.get('interface', '') or '')
+        rule['comment'] = str(rule.get('comment', '') or '')
+        rule['enabled'] = 1 if int(rule.get('enabled', 1) or 0) else 0
+        rule['created_at'] = str(rule.get('created_at', now) or now)
+        rule['created_by'] = str(rule.get('created_by', '') or '')
+        norm_port_rules.append(rule)
+    if norm_port_rules != port_rules:
+        _write_port_rules_store(norm_port_rules)
+
 
 
 
@@ -581,6 +656,425 @@ def _load_host_connection_info(host_id):
     if not row:
         return None
     return dict(row)
+
+
+COMMON_PORTS = [
+    {"port": 22, "service": "SSH"},
+    {"port": 80, "service": "HTTP"},
+    {"port": 443, "service": "HTTPS"},
+    {"port": 3389, "service": "RDP"},
+    {"port": 23, "service": "Telnet"},
+    {"port": 21, "service": "FTP"},
+    {"port": 25, "service": "SMTP"},
+    {"port": 3306, "service": "MySQL"},
+    {"port": 8080, "service": "HTTP-Alt"},
+]
+COMMON_SERVICE_MAP_TCP = {int(item["port"]): item["service"] for item in COMMON_PORTS}
+COMMON_SERVICE_MAP_UDP = {
+    53: "DNS",
+    67: "DHCP-Server",
+    68: "DHCP-Client",
+    69: "TFTP",
+    123: "NTP",
+    137: "NetBIOS-NS",
+    138: "NetBIOS-DGM",
+    161: "SNMP",
+    162: "SNMP-Trap",
+    500: "ISAKMP",
+    514: "Syslog",
+    520: "RIP",
+    1900: "SSDP",
+}
+
+
+def _service_name_for_port(protocol, port):
+    protocol = str(protocol or 'tcp').lower()
+    if protocol == 'udp':
+        return COMMON_SERVICE_MAP_UDP.get(int(port), f'UDP {port}')
+    return COMMON_SERVICE_MAP_TCP.get(int(port), f'Port {port}')
+
+
+def _parse_port_tokens(port_expr, max_ports=256):
+    if isinstance(port_expr, list):
+        raw_tokens = [str(item).strip() for item in port_expr]
+    else:
+        raw_tokens = [text.strip() for text in str(port_expr or '').split(',')]
+    ports = set()
+    for token in raw_tokens:
+        if not token:
+            continue
+        if '-' in token:
+            left, right = token.split('-', 1)
+            if not left.strip().isdigit() or not right.strip().isdigit():
+                raise ValueError(f'无效端口范围: {token}')
+            start = int(left.strip())
+            end = int(right.strip())
+            if start < 1 or end > 65535 or start > end:
+                raise ValueError(f'端口范围超出限制: {token}')
+            for port in range(start, end + 1):
+                ports.add(port)
+                if len(ports) > max_ports:
+                    raise ValueError(f'端口数量过多，请控制在 {max_ports} 个以内')
+        else:
+            if not token.isdigit():
+                raise ValueError(f'无效端口: {token}')
+            port = int(token)
+            if port < 1 or port > 65535:
+                raise ValueError(f'端口超出范围: {token}')
+            ports.add(port)
+            if len(ports) > max_ports:
+                raise ValueError(f'端口数量过多，请控制在 {max_ports} 个以内')
+    if not ports:
+        raise ValueError('请至少输入一个有效端口')
+    return sorted(ports)
+
+
+def _ping_host(host_ip, timeout_sec=2):
+    if not host_ip:
+        return False, '目标主机为空'
+    if platform.system().lower() == 'windows':
+        cmd = ['ping', '-n', '1', '-w', str(int(timeout_sec * 1000)), host_ip]
+    else:
+        cmd = ['ping', '-c', '1', '-W', str(timeout_sec), host_ip]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec + 1)
+        if result.returncode == 0:
+            return True, '主机可达'
+        return False, (result.stderr or result.stdout or '').strip() or '主机不可达'
+    except FileNotFoundError:
+        return True, '当前环境未安装 ping，跳过前置检测'
+    except subprocess.TimeoutExpired:
+        return False, 'Ping检测超时'
+    except Exception as e:
+        return False, f'Ping检测异常: {str(e)}'
+
+
+def _check_tcp_port(host_ip, port, timeout_sec=2):
+    start = time.time()
+    try:
+        with socket.create_connection((host_ip, int(port)), timeout=timeout_sec):
+            return True, int((time.time() - start) * 1000)
+    except Exception:
+        return False, int((time.time() - start) * 1000)
+
+
+def _check_udp_port(host_ip, port, timeout_sec=2):
+    start = time.time()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout_sec)
+    try:
+        sock.connect((host_ip, int(port)))
+        sock.send(b'\x00')
+        try:
+            sock.recv(1)
+            return True, int((time.time() - start) * 1000)
+        except socket.timeout:
+            # UDP无响应场景较常见，视为“可能开放（open|filtered）”
+            return True, int((time.time() - start) * 1000)
+        except (ConnectionRefusedError, OSError):
+            return False, int((time.time() - start) * 1000)
+    except Exception:
+        return False, int((time.time() - start) * 1000)
+    finally:
+        sock.close()
+
+
+def _scan_target_ports(host_id, host_ip, port_items, protocol='tcp'):
+    ping_ok, ping_message = _ping_host(host_ip, timeout_sec=2)
+    rows = []
+    protocol = str(protocol or 'tcp').lower()
+    for item in port_items:
+        port = int(item.get('port'))
+        service = str(item.get('service', '') or f'Port {port}')
+        if not ping_ok and '跳过前置' not in ping_message:
+            is_open, elapsed = False, -1
+        else:
+            if protocol == 'udp':
+                is_open, elapsed = _check_udp_port(host_ip, port, timeout_sec=2)
+            else:
+                is_open, elapsed = _check_tcp_port(host_ip, port, timeout_sec=2)
+        rows.append({
+            "port": port,
+            "protocol": protocol,
+            "service": service,
+            "status": "open" if is_open else "closed",
+            "response_ms": elapsed
+        })
+    if USE_LOCAL_FILE_STORE:
+        records = _read_port_scan_records_store()
+        records.append({
+            "id": _next_id(records),
+            "host_id": int(host_id or 0),
+            "host_ip": host_ip,
+            "protocol": protocol,
+            "ping_ok": ping_ok,
+            "ping_message": ping_message,
+            "checked_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "results": rows
+        })
+        if len(records) > 5000:
+            records = records[-5000:]
+        _write_port_scan_records_store(records)
+    return ping_ok, ping_message, _decorate_scan_rows_with_rule_status(host_ip, protocol, rows)
+
+
+def _run_remote_shell(host, cmd):
+    if host.get('auth_method', 'password') == 'password':
+        return pwd_shell_cmd(
+            hostname=host['ip_address'],
+            user=host['username'],
+            port=host['ssh_port'],
+            pwd=host['password'],
+            cmd=cmd
+        )
+    return sshkey_shell_cmd(
+        hostname=host['ip_address'],
+        user=host['username'],
+        port=host['ssh_port'],
+        private_key_str=host['private_key'],
+        cmd=cmd
+    )
+
+
+def _persist_host_firewall_rules(host):
+    operating_system = str(host.get('operating_system', '') or '').lower()
+    cmd = ''
+    if operating_system in ('centos', 'redhat'):
+        cmd = 'iptables-save > /etc/sysconfig/iptables'
+    elif operating_system in ('ubuntu', 'debian'):
+        cmd = 'iptables-save > /etc/iptables/rules.v4'
+    if cmd:
+        _run_remote_shell(host, cmd)
+    return cmd
+
+
+def _save_firewall_rule_records(host, ports, protocol, action, chain, source, persist_cmd):
+    if not USE_LOCAL_FILE_STORE:
+        return
+    rules = _read_firewall_rules_store()
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for port in ports:
+        rules.append({
+            "id": _next_id(rules),
+            "host_id": int(host.get('id', 0) or 0),
+            "target_ip": host.get('ip_address', ''),
+            "protocol": protocol,
+            "port": int(port),
+            "action": action,
+            "chain": chain,
+            "source": source,
+            "persist_command": persist_cmd,
+            "created_at": now
+        })
+    _write_firewall_rules_store(rules)
+
+
+def _normalize_ip_scope(raw_value):
+    value = str(raw_value or '').strip()
+    if not value or value.lower() in ('all', 'any', '全部', '所有'):
+        value = '0.0.0.0/0'
+    scope_error = _validate_auth_object(value)
+    if scope_error:
+        raise ValueError(scope_error)
+    return value
+
+
+def _build_iptables_rule_cmd(direction, action, protocol, port, source_ip=None, dest_ip=None, interface=''):
+    direction = str(direction or 'INPUT').strip().upper()
+    action = str(action or 'DROP').strip().upper()
+    protocol = str(protocol or 'tcp').strip().lower()
+    if direction not in ('INPUT', 'OUTPUT'):
+        raise ValueError('方向仅支持 INPUT/OUTPUT')
+    if action not in ('ACCEPT', 'DROP'):
+        raise ValueError('动作仅支持 ACCEPT/DROP')
+    if protocol not in ('tcp', 'udp'):
+        raise ValueError('协议仅支持 tcp/udp')
+    try:
+        port = int(port)
+    except Exception:
+        raise ValueError('端口必须是数字')
+    if port <= 0 or port > 65535:
+        raise ValueError('端口范围必须在 1-65535 之间')
+
+    cmd_parts = [f'iptables -A {direction}', f'-p {protocol}']
+    if direction == 'INPUT':
+        cmd_parts.append(f'-s {source_ip or "0.0.0.0/0"}')
+        cmd_parts.append(f'--dport {port}')
+        if interface:
+            cmd_parts.append(f'-i {interface}')
+    else:
+        cmd_parts.append(f'-d {dest_ip or "0.0.0.0/0"}')
+        cmd_parts.append(f'--dport {port}')
+        if interface:
+            cmd_parts.append(f'-o {interface}')
+    cmd_parts.append(f'-j {action}')
+    return ' '.join(cmd_parts)
+
+
+def _build_iptables_dedupe_cmd(direction, action, protocol, port, source_ip=None, dest_ip=None, interface=''):
+    rule_cmd = _build_iptables_rule_cmd(direction, action, protocol, port, source_ip, dest_ip, interface)
+    return rule_cmd.replace('iptables -A', 'iptables -C', 1) + f' || {rule_cmd}'
+
+
+def _port_rule_identity(rule):
+    return (
+        str(rule.get('host_ip', '') or ''),
+        str(rule.get('direction', '') or '').upper(),
+        str(rule.get('action', '') or '').upper(),
+        str(rule.get('protocol', '') or '').lower(),
+        str(rule.get('port', '') or ''),
+        str(rule.get('source_ip', '') or ''),
+        str(rule.get('dest_ip', '') or ''),
+        str(rule.get('interface', '') or ''),
+    )
+
+
+def _decorate_scan_rows_with_rule_status(host_ip, protocol, rows):
+    if not USE_LOCAL_FILE_STORE:
+        return rows
+    protocol = str(protocol or 'tcp').lower()
+    rules = _read_port_rules_store()
+    indexed = {
+        (int(item.get('port', 0) or 0), str(item.get('protocol', '') or '').lower())
+        for item in rules
+        if str(item.get('host_ip', '') or '') == str(host_ip or '')
+           and str(item.get('direction', 'INPUT') or 'INPUT').upper() == 'INPUT'
+           and str(item.get('action', 'DROP') or 'DROP').upper() == 'DROP'
+           and int(item.get('enabled', 1) or 0) == 1
+    }
+    result_rows = []
+    for row in rows:
+        row_copy = dict(row)
+        port_value = int(row_copy.get('port', 0) or 0)
+        row_copy['rule_added'] = (port_value, protocol) in indexed
+        result_rows.append(row_copy)
+    return result_rows
+
+
+def _parse_iptables_port_value(port_text):
+    text = str(port_text or '').strip()
+    if not text:
+        return []
+    if ':' in text:
+        return []
+    if ',' in text:
+        ports = []
+        for token in text.split(','):
+            token = token.strip()
+            if token.isdigit():
+                ports.append(int(token))
+        return ports
+    if text.isdigit():
+        return [int(text)]
+    return []
+
+
+def _remove_port_rules_by_runtime_rule(host_ip, direction, runtime_rule):
+    if not USE_LOCAL_FILE_STORE:
+        return 0
+    ports = _parse_iptables_port_value(runtime_rule.get('port', ''))
+    if not ports:
+        return 0
+    direction = str(direction or 'INPUT').upper()
+    protocol = str(runtime_rule.get('prot', '') or '').lower()
+    action = str(runtime_rule.get('target', '') or '').upper()
+    source = str(runtime_rule.get('source', '') or '').strip()
+    destination = str(runtime_rule.get('destination', '') or '').strip()
+    rules = _read_port_rules_store()
+    kept = []
+    removed = 0
+    port_set = set(ports)
+    for item in rules:
+        same_host = str(item.get('host_ip', '') or '') == str(host_ip or '')
+        same_direction = str(item.get('direction', '') or '').upper() == direction
+        same_protocol = str(item.get('protocol', '') or '').lower() == protocol
+        same_action = str(item.get('action', '') or '').upper() == action
+        same_port = int(item.get('port', 0) or 0) in port_set
+        if direction == 'INPUT':
+            same_scope = str(item.get('source_ip', '') or '').strip() == source
+        else:
+            same_scope = str(item.get('dest_ip', '') or '').strip() == destination
+        if same_host and same_direction and same_protocol and same_action and same_port and same_scope:
+            removed += 1
+            continue
+        kept.append(item)
+    if removed > 0:
+        _write_port_rules_store(kept)
+    return removed
+
+
+def _normalize_runtime_scope(value):
+    text = str(value or '').strip()
+    if not text or text in ('*', '0.0.0.0'):
+        return '0.0.0.0/0'
+    return text
+
+
+def _build_runtime_rule_signature_set(direction, iptables_output):
+    signatures = set()
+    direction = str(direction or '').upper()
+    for item in get_rule(iptables_output):
+        protocol = str(item.get('prot', '') or '').lower()
+        action = str(item.get('target', '') or '').upper()
+        source = _normalize_runtime_scope(item.get('source', ''))
+        destination = _normalize_runtime_scope(item.get('destination', ''))
+        ports = _parse_iptables_port_value(item.get('port', ''))
+        for port in ports:
+            signatures.add((
+                direction,
+                action,
+                protocol,
+                int(port),
+                source if direction == 'INPUT' else '',
+                destination if direction == 'OUTPUT' else '',
+            ))
+    return signatures
+
+
+def _sync_port_rules_for_host_with_runtime(host):
+    if not USE_LOCAL_FILE_STORE:
+        return 0
+    host_ip = str(host.get('ip_address', '') or '')
+    if not host_ip:
+        return 0
+
+    try:
+        input_output = _run_remote_shell(host, 'iptables -nL INPUT --line-number -t filter')
+        output_output = _run_remote_shell(host, 'iptables -nL OUTPUT --line-number -t filter')
+    except Exception:
+        # 无法获取远端规则时，避免误删本地记录
+        return 0
+
+    runtime_signatures = set()
+    runtime_signatures.update(_build_runtime_rule_signature_set('INPUT', input_output))
+    runtime_signatures.update(_build_runtime_rule_signature_set('OUTPUT', output_output))
+
+    rules = _read_port_rules_store()
+    kept = []
+    removed = 0
+    for item in rules:
+        if str(item.get('host_ip', '') or '') != host_ip:
+            kept.append(item)
+            continue
+        if int(item.get('enabled', 1) or 0) != 1:
+            kept.append(item)
+            continue
+        signature = (
+            str(item.get('direction', 'INPUT') or 'INPUT').upper(),
+            str(item.get('action', 'DROP') or 'DROP').upper(),
+            str(item.get('protocol', 'tcp') or 'tcp').lower(),
+            int(item.get('port', 0) or 0),
+            _normalize_runtime_scope(item.get('source_ip', '')) if str(item.get('direction', 'INPUT') or 'INPUT').upper() == 'INPUT' else '',
+            _normalize_runtime_scope(item.get('dest_ip', '')) if str(item.get('direction', 'INPUT') or 'INPUT').upper() == 'OUTPUT' else '',
+        )
+        if signature not in runtime_signatures:
+            removed += 1
+            continue
+        kept.append(item)
+
+    if removed > 0:
+        _write_port_rules_store(kept)
+    return removed
 
 
 _ensure_local_store_files()
@@ -2204,6 +2698,222 @@ def rules_view():
         return f"获取主机数据失败: {str(e)}", 500
 
 
+@app.route("/port_detection", methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def port_detection():
+    try:
+        cursor = None
+        if not USE_LOCAL_FILE_STORE:
+            db = get_db()
+            cursor = db.cursor()
+        host_options = _get_rule_view_hosts(cursor)
+        default_ports = ','.join(str(item['port']) for item in COMMON_PORTS)
+        return render_template('port_detection.html', host_options=host_options, default_ports=default_ports)
+    except Exception as e:
+        return f"加载端口检测页面失败: {str(e)}", 500
+
+
+@app.route('/api/port-detection/scan', methods=['POST'])
+@login_required
+@permission_required('hosts_view')
+def port_detection_scan_api():
+    payload = request.get_json(silent=True) or {}
+    host_id = payload.get('host_id')
+    target = str(payload.get('target') or '').strip()
+    protocol = str(payload.get('protocol') or 'tcp').strip().lower()
+    if protocol not in ('tcp', 'udp'):
+        return jsonify({'success': False, 'message': '协议仅支持 tcp/udp'}), 400
+
+    host = None
+    host_id_value = 0
+    scan_target = target
+    if str(host_id).isdigit():
+        host_id_value = int(host_id)
+        host = _load_host_connection_info(host_id_value)
+        if not host:
+            return jsonify({'success': False, 'message': '主机不存在'}), 404
+        scan_target = host.get('ip_address', '')
+    if not scan_target:
+        return jsonify({'success': False, 'message': '请先选择主机或输入目标IP/域名'}), 400
+
+    ports_input = payload.get('ports')
+    if ports_input is None or str(ports_input).strip() == '':
+        ports = [item['port'] for item in COMMON_PORTS]
+    else:
+        try:
+            ports = _parse_port_tokens(ports_input, max_ports=256)
+        except ValueError as e:
+            return jsonify({'success': False, 'message': str(e)}), 400
+
+    port_items = [{"port": port, "service": _service_name_for_port(protocol, port)} for port in ports]
+    try:
+        if host:
+            _sync_port_rules_for_host_with_runtime(host)
+        ping_ok, ping_message, rows = _scan_target_ports(host_id_value, scan_target, port_items, protocol=protocol)
+        return jsonify({
+            'success': True,
+            'host_id': host_id_value,
+            'target': scan_target,
+            'protocol': protocol,
+            'ping_ok': ping_ok,
+            'ping_message': ping_message,
+            'ports': rows,
+            'notice': 'UDP 探测结果为快速探测，可能存在 open|filtered 情况。' if protocol == 'udp' else ''
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'端口检测失败: {str(e)}'}), 500
+
+
+def _port_to_rule_impl(payload):
+    host_id = payload.get('host_id')
+    if not str(host_id).isdigit():
+        return jsonify({'success': False, 'message': '添加规则必须选择系统内主机'}), 400
+    host_id = int(host_id)
+    host = _load_host_connection_info(host_id)
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+
+    ports_input = payload.get('ports') or payload.get('port') or []
+    try:
+        ports = _parse_port_tokens(ports_input, max_ports=256)
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+    direction = str(payload.get('direction') or payload.get('chain') or 'INPUT').strip().upper()
+    if direction not in ('INPUT', 'OUTPUT'):
+        return jsonify({'success': False, 'message': '方向仅支持 INPUT/OUTPUT'}), 400
+
+    protocol = str(payload.get('protocol') or 'tcp').strip().lower()
+    if protocol not in ('tcp', 'udp'):
+        return jsonify({'success': False, 'message': '协议仅支持 tcp/udp'}), 400
+
+    action_text = str(payload.get('action') or 'drop').strip().lower()
+    if action_text in ('allow', 'accept', '允许'):
+        action = 'ACCEPT'
+    elif action_text in ('deny', 'drop', '拒绝'):
+        action = 'DROP'
+    else:
+        return jsonify({'success': False, 'message': '动作仅支持 allow/deny'}), 400
+
+    interface = str(payload.get('interface') or '').strip()
+    comment = str(payload.get('comment') or '').strip()
+    host_ip = str(host.get('ip_address', '') or '')
+    source_ip = ''
+    dest_ip = ''
+    try:
+        if direction == 'INPUT':
+            source_ip = _normalize_ip_scope(payload.get('source_ip') or payload.get('source') or '0.0.0.0/0')
+        else:
+            dest_ip = _normalize_ip_scope(payload.get('dest_ip') or payload.get('destination') or '0.0.0.0/0')
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+    existing_rules = _read_port_rules_store() if USE_LOCAL_FILE_STORE else []
+    existing_keys = {_port_rule_identity(item) for item in existing_rules if int(item.get('enabled', 1) or 0) == 1}
+
+    created_rules = []
+    duplicate_rules = []
+    failed_rules = []
+    for port in ports:
+        candidate = {
+            'host_ip': host_ip,
+            'direction': direction,
+            'action': action,
+            'protocol': protocol,
+            'port': int(port),
+            'source_ip': source_ip if direction == 'INPUT' else '',
+            'dest_ip': dest_ip if direction == 'OUTPUT' else '',
+            'interface': interface
+        }
+        if _port_rule_identity(candidate) in existing_keys:
+            duplicate_rules.append({'port': int(port), 'message': '规则已存在'})
+            continue
+        try:
+            cmd = _build_iptables_dedupe_cmd(
+                direction=direction,
+                action=action,
+                protocol=protocol,
+                port=port,
+                source_ip=source_ip,
+                dest_ip=dest_ip,
+                interface=interface
+            )
+            _run_remote_shell(host, cmd)
+            created_rules.append(candidate)
+        except Exception as e:
+            failed_rules.append({'port': int(port), 'error': str(e)})
+
+    persist_cmd = ''
+    persist_error = ''
+    if created_rules:
+        try:
+            persist_cmd = _persist_host_firewall_rules(host)
+        except Exception as e:
+            persist_error = str(e)
+
+        if USE_LOCAL_FILE_STORE:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            for rule in created_rules:
+                existing_rules.append({
+                    'id': str(uuid.uuid4()),
+                    'host_id': int(host.get('id', 0) or 0),
+                    'host_ip': host_ip,
+                    'target_ip': host_ip,
+                    'direction': direction,
+                    'action': action,
+                    'protocol': protocol,
+                    'port': int(rule['port']),
+                    'source_ip': rule.get('source_ip', ''),
+                    'dest_ip': rule.get('dest_ip', ''),
+                    'interface': interface,
+                    'comment': comment,
+                    'command': _build_iptables_rule_cmd(
+                        direction=direction,
+                        action=action,
+                        protocol=protocol,
+                        port=rule['port'],
+                        source_ip=source_ip,
+                        dest_ip=dest_ip,
+                        interface=interface
+                    ),
+                    'persist_command': persist_cmd,
+                    'created_at': now,
+                    'created_by': str(getattr(current_user, 'username', '') or ''),
+                    'enabled': 1
+                })
+            _write_port_rules_store(existing_rules)
+
+    added_ports = [item['port'] for item in created_rules]
+    return jsonify({
+        'success': bool(created_rules),
+        'message': f'已添加 {len(created_rules)} 条规则' + (f'，{len(duplicate_rules)} 条重复已跳过' if duplicate_rules else '') + (f'，{len(failed_rules)} 条失败' if failed_rules else ''),
+        'added_ports': added_ports,
+        'duplicates': duplicate_rules,
+        'failed_ports': failed_rules,
+        'persist_error': persist_error,
+        'rule_view_url': url_for('rules_in', host_id=host_id) if direction == 'INPUT' else url_for('rules_out', host_id=host_id),
+        'security_notice': '执行iptables需要root权限，建议使用root运行后端进程或配置sudo NOPASSWD。'
+    }), 200 if created_rules else 409
+
+
+@app.route('/api/port-to-rule', methods=['POST'])
+@login_required
+@permission_required('iptab_add')
+def port_to_rule_api():
+    payload = request.get_json(silent=True) or {}
+    return _port_to_rule_impl(payload)
+
+
+@app.route('/api/port-detection/add-rules', methods=['POST'])
+@login_required
+@permission_required('iptab_add')
+def port_detection_add_rules_api():
+    # compatibility endpoint for old frontend
+    payload = request.get_json(silent=True) or {}
+    return _port_to_rule_impl(payload)
+
+
 # 查看规则
 @app.route("/rules_in", methods=['GET'])
 @login_required
@@ -2759,9 +3469,14 @@ def del_rule():
         auth_method = host['auth_method']
         private_key = host['private_key']
         operating_system = host['operating_system']
+        deleted_rule = None
+        list_cmd = f'iptables -nL {direction} --line-number -t filter'
+        del_cmd = 'iptables -D {} {}'.format(direction, rule_id)
         if auth_method == 'password':
-            iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
-                                            cmd='iptables -D {} {}'.format(direction, rule_id))
+            before_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd, cmd=list_cmd)
+            before_rules = get_rule(before_output)
+            deleted_rule = next((item for item in before_rules if str(item.get('num', '')) == str(rule_id)), None)
+            pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd, cmd=del_cmd)
             if operating_system == 'centos' or operating_system == 'redhat':
                 pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                               cmd='iptables-save > /etc/sysconfig/iptables')
@@ -2771,9 +3486,12 @@ def del_rule():
             elif operating_system == 'ubuntu':
                 pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                               cmd='iptables-save > /etc/iptables/rules.v4')
+            refreshed_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd, cmd=list_cmd)
         else:
-            iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
-                                               cmd='iptables -D {} {}'.format(direction, rule_id))
+            before_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key, cmd=list_cmd)
+            before_rules = get_rule(before_output)
+            deleted_rule = next((item for item in before_rules if str(item.get('num', '')) == str(rule_id)), None)
+            sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key, cmd=del_cmd)
             if operating_system == 'centos' or operating_system == 'redhat':
                 sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                  cmd='iptables-save > /etc/sysconfig/iptables')
@@ -2783,7 +3501,11 @@ def del_rule():
             elif operating_system == 'ubuntu':
                 sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                  cmd='iptables-save > /etc/iptables/rules.v4')
-        data_list = get_rule(iptables_output)
+            refreshed_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key, cmd=list_cmd)
+        if deleted_rule:
+            _remove_port_rules_by_runtime_rule(hostname, direction, deleted_rule)
+        data_list = get_rule(refreshed_output)
+        host_options = _get_rule_view_hosts()
         # 【修复】记录成功日志
         log_operation(
             user_id=current_user.id,
@@ -2801,7 +3523,7 @@ def del_rule():
             }),
             success=1
         )
-        return render_template('rule.html', data_list=data_list, id=host_id)
+        return render_template('rule.html', data_list=data_list, id=host_id, host_options=host_options)
     except Exception as e:
         # 【修复】记录失败日志
         log_operation(
