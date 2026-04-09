@@ -526,6 +526,7 @@
     // 默认headers
     const headers = {
       'X-CSRFToken': getCookie('csrf_token'),
+      'X-CSRF-Token': getCookie('csrf_token'),
       ...options.headers
     };
 
@@ -691,7 +692,7 @@
    */
   function initTabByUrl() {
     const TAB_PATH_MAP = {
-      'basic': '/systemsetting',
+      'basic': '/systemseting',
       'user': '/users',
       'role': '/roles'
     };
@@ -1740,7 +1741,8 @@
 
       // 收集选中的权限 - 修复选择器
       document.querySelectorAll('#permission-list input[type="checkbox"]:checked').forEach(checkbox => {
-        selectedPermissions.push(parseInt(checkbox.getAttribute('data-id')));
+        const raw = checkbox.getAttribute('data-id');
+        selectedPermissions.push(/^\d+$/.test(raw) ? Number(raw) : raw);
       });
 
       fetch(`/roles/${roleId}/permissions`, {

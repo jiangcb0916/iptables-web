@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password": "pbkdf2:sha256:1000000$rHVCyAij9sr5kgXS$0f0e12291ff9f0e3a851ece000d43ebcc262f8b2b4ae49c7a06f6766c9701597",
+      "email": "admin@example.com",
+      "status": "active",
+      "role_ids": [
+        1
+      ],
+      "created_at": "2026-04-09 00:00:00",
+      "updated_at": "2026-04-09 00:00:00"
+    }
+  ]
+}

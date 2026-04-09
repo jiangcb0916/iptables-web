@@ -17,9 +17,13 @@ import hashlib
 import secrets
 import hmac
 import csv
+import threading
+import tempfile
+import fcntl
+from contextlib import contextmanager
 import paramiko
 from paramiko.client import AutoAddPolicy
-from paramiko.ssh_exception import PasswordRequiredException, SSHException
+from paramiko.ssh_exception import PasswordRequiredException, SSHException, AuthenticationException
 import math
 from io import StringIO
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, session, g, Response
@@ -36,6 +40,55 @@ import pytz
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
+USE_LOCAL_FILE_STORE = os.getenv('USE_LOCAL_FILE_STORE', '1').strip().lower() not in ('0', 'false', 'no')
+LOCAL_STORE_DIR = os.path.join(app.root_path, 'data', 'store')
+HOSTS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'hosts.json')
+OPERATION_LOG_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'operation_logs.json')
+USERS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'users.json')
+ROLES_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'roles.json')
+SYSTEM_CONFIG_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'system_config.json')
+TEMPLATES_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'templates.json')
+SSH_KEY_RECORDS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'ssh_key_setup_records.json')
+_STORE_THREAD_LOCK = threading.RLock()
+
+DEFAULT_PERMISSION_CODES = [
+    'sys_view', 'sys_edit',
+    'user_view', 'user_add', 'user_edit', 'user_del', 'user_assign',
+    'role_view', 'role_add', 'role_edit', 'role_assign', 'role_del',
+    'temp_view', 'temp_add', 'temp_edit', 'temp_del',
+    'hosts_view', 'hosts_add', 'hosts_edit', 'hosts_del',
+    'iptab_view', 'iptab_add', 'iptab_edit', 'iptab_del',
+    'log_view',
+    'ssh_key_manage'
+]
+PERMISSION_DEFINITIONS = [
+    {"id": 1, "code": "sys_view", "name": "查看系统设置"},
+    {"id": 2, "code": "sys_edit", "name": "编辑系统设置"},
+    {"id": 3, "code": "user_view", "name": "查看用户列表"},
+    {"id": 4, "code": "user_add", "name": "添加用户"},
+    {"id": 5, "code": "user_edit", "name": "编辑用户"},
+    {"id": 6, "code": "user_del", "name": "删除用户"},
+    {"id": 7, "code": "user_assign", "name": "分配用户角色"},
+    {"id": 8, "code": "role_view", "name": "查看角色"},
+    {"id": 9, "code": "role_add", "name": "添加角色"},
+    {"id": 10, "code": "role_edit", "name": "编辑角色"},
+    {"id": 11, "code": "role_assign", "name": "分配角色权限"},
+    {"id": 12, "code": "role_del", "name": "删除角色"},
+    {"id": 13, "code": "temp_view", "name": "查看模板"},
+    {"id": 14, "code": "temp_add", "name": "添加模板"},
+    {"id": 15, "code": "temp_edit", "name": "编辑模板"},
+    {"id": 16, "code": "temp_del", "name": "删除模板"},
+    {"id": 17, "code": "hosts_view", "name": "查看主机"},
+    {"id": 18, "code": "hosts_add", "name": "添加主机"},
+    {"id": 19, "code": "hosts_edit", "name": "编辑主机"},
+    {"id": 20, "code": "hosts_del", "name": "删除主机"},
+    {"id": 21, "code": "iptab_view", "name": "查看规则"},
+    {"id": 22, "code": "iptab_add", "name": "添加规则"},
+    {"id": 23, "code": "iptab_edit", "name": "编辑规则"},
+    {"id": 24, "code": "iptab_del", "name": "删除规则"},
+    {"id": 25, "code": "log_view", "name": "查看日志"},
+    {"id": 26, "code": "ssh_key_manage", "name": "管理SSH密钥"}
+]
 
 # 配置登录管理器
 login_manager = LoginManager()
@@ -52,6 +105,484 @@ app.static_folder = 'static'
 scheduler = APScheduler()
 
 
+def _clone_default(value):
+    if isinstance(value, (dict, list)):
+        return json.loads(json.dumps(value))
+    return value
+
+
+@contextmanager
+def _store_lock(path):
+    lock_path = f"{path}.lock"
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    with open(lock_path, 'a+', encoding='utf-8') as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _ensure_local_store_files():
+    if not USE_LOCAL_FILE_STORE:
+        return
+    os.makedirs(LOCAL_STORE_DIR, exist_ok=True)
+    if not os.path.exists(HOSTS_STORE_FILE):
+        _write_store_json(HOSTS_STORE_FILE, {"items": []})
+    if not os.path.exists(OPERATION_LOG_STORE_FILE):
+        _write_store_json(OPERATION_LOG_STORE_FILE, {"items": []})
+    if not os.path.exists(ROLES_STORE_FILE):
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _write_store_json(ROLES_STORE_FILE, {
+            "items": [{
+                "id": 1,
+                "role_name": "admin",
+                "role_description": "系统管理员，拥有所有权限",
+                "permission_codes": DEFAULT_PERMISSION_CODES,
+                "created_at": now,
+                "updated_at": now
+            }]
+        })
+    if not os.path.exists(USERS_STORE_FILE):
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _write_store_json(USERS_STORE_FILE, {
+            "items": [{
+                "id": 1,
+                "username": "admin",
+                "password": generate_password_hash('admin123', method='pbkdf2:sha256'),
+                "email": "admin@example.com",
+                "status": "active",
+                "role_ids": [1],
+                "created_at": now,
+                "updated_at": now
+            }]
+        })
+    if not os.path.exists(SYSTEM_CONFIG_STORE_FILE):
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _write_store_json(SYSTEM_CONFIG_STORE_FILE, {
+            "id": 1,
+            "system_name": "iptables-web",
+            "session_timeout": 30,
+            "log_retention_time": "30",
+            "color_mode": "light",
+            "password_strategy": "medium",
+            "created_at": now,
+            "updated_at": now
+        })
+    if not os.path.exists(TEMPLATES_STORE_FILE):
+        _write_store_json(TEMPLATES_STORE_FILE, {"items": []})
+    if not os.path.exists(SSH_KEY_RECORDS_STORE_FILE):
+        _write_store_json(SSH_KEY_RECORDS_STORE_FILE, {"items": []})
+
+
+def _read_store_json(path, default):
+    with _STORE_THREAD_LOCK, _store_lock(path):
+        if not os.path.exists(path):
+            return _clone_default(default)
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                content = json.load(f)
+            return content
+        except Exception:
+            return _clone_default(default)
+
+
+def _write_store_json(path, payload):
+    with _STORE_THREAD_LOCK, _store_lock(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd, temp_path = tempfile.mkstemp(prefix='tmp_', dir=os.path.dirname(path))
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, path)
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+
+def _read_hosts_from_store():
+    data = _read_store_json(HOSTS_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    normalized = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        normalized.append(item)
+    return normalized
+
+
+def _write_hosts_to_store(items):
+    _write_store_json(HOSTS_STORE_FILE, {"items": items})
+
+
+def _next_host_id(items):
+    max_id = 0
+    for item in items:
+        try:
+            max_id = max(max_id, int(item.get('id', 0)))
+        except Exception:
+            continue
+    return max_id + 1
+
+
+def _find_host_in_store(host_id):
+    target = str(host_id)
+    for item in _read_hosts_from_store():
+        if str(item.get('id')) == target:
+            return item
+    return None
+
+
+def _upsert_host_status_store(host_id, status, last_checked_at, last_check_error):
+    items = _read_hosts_from_store()
+    target = str(host_id)
+    updated = None
+    for item in items:
+        if str(item.get('id')) == target:
+            item['status'] = status
+            item['last_checked_at'] = last_checked_at
+            item['last_check_error'] = last_check_error
+            item['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            updated = item
+            break
+    if updated:
+        _write_hosts_to_store(items)
+    return updated
+
+
+def _read_operation_logs_from_store():
+    data = _read_store_json(OPERATION_LOG_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _read_users_from_store():
+    data = _read_store_json(USERS_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _write_users_to_store(items):
+    _write_store_json(USERS_STORE_FILE, {"items": items})
+
+
+def _read_roles_from_store():
+    data = _read_store_json(ROLES_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _write_roles_to_store(items):
+    _write_store_json(ROLES_STORE_FILE, {"items": items})
+
+
+def _read_templates_from_store():
+    data = _read_store_json(TEMPLATES_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _write_templates_to_store(items):
+    _write_store_json(TEMPLATES_STORE_FILE, {"items": items})
+
+
+def _read_ssh_key_records_store():
+    data = _read_store_json(SSH_KEY_RECORDS_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _write_ssh_key_records_store(items):
+    _write_store_json(SSH_KEY_RECORDS_STORE_FILE, {"items": items})
+
+
+def _read_system_config_store():
+    data = _read_store_json(SYSTEM_CONFIG_STORE_FILE, {})
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _write_system_config_store(data):
+    _write_store_json(SYSTEM_CONFIG_STORE_FILE, data)
+
+
+def _next_id(items):
+    max_id = 0
+    for item in items:
+        try:
+            max_id = max(max_id, int(item.get('id', 0)))
+        except Exception:
+            continue
+    return max_id + 1
+
+
+def _permission_maps():
+    id_to_code = {int(item['id']): item['code'] for item in PERMISSION_DEFINITIONS}
+    code_to_item = {item['code']: item for item in PERMISSION_DEFINITIONS}
+    return id_to_code, code_to_item
+
+
+def _permission_codes_from_payload(permissions):
+    id_to_code, code_to_item = _permission_maps()
+    result = []
+    if not isinstance(permissions, list):
+        return result
+    for permission in permissions:
+        code = None
+        if isinstance(permission, int):
+            code = id_to_code.get(permission)
+        elif isinstance(permission, str):
+            permission = permission.strip()
+            if not permission:
+                continue
+            if permission.isdigit():
+                code = id_to_code.get(int(permission))
+            elif permission in code_to_item:
+                code = permission
+        if code and code not in result:
+            result.append(code)
+    return result
+
+
+def _build_permission_response(role_permission_codes):
+    current = set(role_permission_codes or [])
+    response = []
+    for item in PERMISSION_DEFINITIONS:
+        response.append({
+            "id": item["id"],
+            "code": item["code"],
+            "name": item["name"],
+            "has_perm": item["code"] in current
+        })
+    return response
+
+
+def _normalize_local_store_data():
+    """
+    启动时规范化本地存储结构，避免历史数据字段缺失导致运行期异常。
+    """
+    if not USE_LOCAL_FILE_STORE:
+        return
+
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # hosts
+    hosts = _read_hosts_from_store()
+    norm_hosts = []
+    for item in hosts:
+        host = dict(item)
+        host['id'] = int(host.get('id', 0) or 0)
+        host['host_name'] = str(host.get('host_name', '') or '')
+        host['host_identifier'] = str(host.get('host_identifier', '') or '')
+        host['ip_address'] = str(host.get('ip_address', '') or '')
+        host['operating_system'] = str(host.get('operating_system', '') or '')
+        try:
+            host['ssh_port'] = int(host.get('ssh_port', 22) or 22)
+        except (TypeError, ValueError):
+            host['ssh_port'] = 22
+        host['username'] = str(host.get('username', '') or '')
+        host['auth_method'] = str(host.get('auth_method', 'password') or 'password')
+        host['password'] = str(host.get('password', '') or '')
+        host['private_key'] = str(host.get('private_key', '') or '')
+        host['status'] = str(host.get('status', 'unknown') or 'unknown')
+        host['last_checked_at'] = str(host.get('last_checked_at', '') or '')
+        host['last_check_error'] = str(host.get('last_check_error', '') or '')
+        host['created_at'] = str(host.get('created_at', now) or now)
+        host['updated_at'] = str(host.get('updated_at', now) or now)
+        norm_hosts.append(host)
+    if norm_hosts != hosts:
+        _write_hosts_to_store(norm_hosts)
+
+    # operation logs
+    logs = _read_operation_logs_from_store()
+    norm_logs = []
+    for item in logs:
+        log = dict(item)
+        try:
+            log['id'] = int(log.get('id', 0) or 0)
+        except (TypeError, ValueError):
+            log['id'] = 0
+        log['user_id'] = log.get('user_id')
+        log['username'] = str(log.get('username', '') or '')
+        log['operation_type'] = str(log.get('operation_type', '') or '')
+        log['operation_object'] = str(log.get('operation_object', '') or '')
+        log['operation_summary'] = str(log.get('operation_summary', '') or '')
+        details = log.get('operation_details', '')
+        if isinstance(details, (dict, list)):
+            log['operation_details'] = json.dumps(details, ensure_ascii=False)
+        else:
+            log['operation_details'] = str(details or '')
+        log['success'] = 1 if int(log.get('success', 0) or 0) else 0
+        log['operation_time'] = str(log.get('operation_time', now) or now)
+        norm_logs.append(log)
+    if norm_logs != logs:
+        _write_store_json(OPERATION_LOG_STORE_FILE, {"items": norm_logs})
+
+    # users
+    users = _read_users_from_store()
+    norm_users = []
+    for item in users:
+        user = dict(item)
+        user['id'] = int(user.get('id', 0) or 0)
+        user['username'] = str(user.get('username', '') or '')
+        user['password'] = str(user.get('password', '') or '')
+        user['email'] = str(user.get('email', '') or '')
+        user['status'] = str(user.get('status', 'active') or 'active')
+        role_ids = user.get('role_ids', [])
+        if not isinstance(role_ids, list):
+            role_ids = [role_ids]
+        user['role_ids'] = [int(role_id) for role_id in role_ids if str(role_id).isdigit()]
+        user['created_at'] = str(user.get('created_at', now) or now)
+        user['updated_at'] = str(user.get('updated_at', now) or now)
+        norm_users.append(user)
+    if norm_users != users:
+        _write_users_to_store(norm_users)
+
+    # roles
+    roles = _read_roles_from_store()
+    norm_roles = []
+    for item in roles:
+        role = dict(item)
+        role['id'] = int(role.get('id', 0) or 0)
+        role['role_name'] = str(role.get('role_name', '') or '')
+        role['role_description'] = str(role.get('role_description', '') or '')
+        permission_codes = role.get('permission_codes', [])
+        if not isinstance(permission_codes, list):
+            permission_codes = [permission_codes]
+        role['permission_codes'] = sorted(set(_permission_codes_from_payload(permission_codes)))
+        role['created_at'] = str(role.get('created_at', now) or now)
+        role['updated_at'] = str(role.get('updated_at', now) or now)
+        norm_roles.append(role)
+    if norm_roles != roles:
+        _write_roles_to_store(norm_roles)
+
+    # system config
+    cfg = _read_system_config_store()
+    norm_cfg = dict(cfg) if isinstance(cfg, dict) else {}
+    norm_cfg['id'] = int(norm_cfg.get('id', 1) or 1)
+    norm_cfg['system_name'] = str(norm_cfg.get('system_name', 'iptables-web') or 'iptables-web')
+    try:
+        norm_cfg['session_timeout'] = int(norm_cfg.get('session_timeout', 30) or 30)
+    except (TypeError, ValueError):
+        norm_cfg['session_timeout'] = 30
+    norm_cfg['log_retention_time'] = str(norm_cfg.get('log_retention_time', '30') or '30')
+    norm_cfg['color_mode'] = str(norm_cfg.get('color_mode', 'light') or 'light')
+    norm_cfg['password_strategy'] = str(norm_cfg.get('password_strategy', 'medium') or 'medium')
+    norm_cfg['created_at'] = str(norm_cfg.get('created_at', now) or now)
+    norm_cfg['updated_at'] = str(norm_cfg.get('updated_at', now) or now)
+    if norm_cfg != cfg:
+        _write_system_config_store(norm_cfg)
+
+    # templates
+    templates = _read_templates_from_store()
+    norm_templates = []
+    for item in templates:
+        temp = dict(item)
+        temp['id'] = int(temp.get('id', 0) or 0)
+        temp['template_name'] = str(temp.get('template_name', '') or '')
+        temp['template_identifier'] = str(temp.get('template_identifier', '') or '')
+        temp['direction'] = str(temp.get('direction', 'INPUT') or 'INPUT')
+        temp['created_at'] = str(temp.get('created_at', now) or now)
+        temp['updated_at'] = str(temp.get('updated_at', now) or now)
+        rules = temp.get('rules', [])
+        if not isinstance(rules, list):
+            rules = []
+        norm_rules = []
+        for idx, rule in enumerate(rules, start=1):
+            item_rule = dict(rule) if isinstance(rule, dict) else {}
+            item_rule['rule_id'] = int(item_rule.get('rule_id', idx) or idx)
+            item_rule['policy'] = str(item_rule.get('policy', '') or '')
+            item_rule['protocol'] = str(item_rule.get('protocol', '') or '')
+            item_rule['port'] = str(item_rule.get('port', '') or '')
+            item_rule['auth_object'] = str(item_rule.get('auth_object', '') or '')
+            item_rule['description'] = str(item_rule.get('description', '') or '')
+            item_rule['limit'] = str(item_rule.get('limit', '') or '')
+            item_rule['created_at'] = str(item_rule.get('created_at', temp['created_at']) or temp['created_at'])
+            item_rule['updated_at'] = str(item_rule.get('updated_at', temp['updated_at']) or temp['updated_at'])
+            norm_rules.append(item_rule)
+        temp['rules'] = norm_rules
+        norm_templates.append(temp)
+    if norm_templates != templates:
+        _write_templates_to_store(norm_templates)
+
+    # ssh key setup records
+    ssh_records = _read_ssh_key_records_store()
+    norm_ssh_records = []
+    for item in ssh_records:
+        rec = dict(item)
+        rec['id'] = int(rec.get('id', 0) or 0)
+        rec['host_ip'] = str(rec.get('host_ip', '') or '')
+        try:
+            rec['ssh_port'] = int(rec.get('ssh_port', 22) or 22)
+        except (TypeError, ValueError):
+            rec['ssh_port'] = 22
+        rec['target_username'] = str(rec.get('target_username', '') or '')
+        rec['key_type'] = str(rec.get('key_type', 'ed25519') or 'ed25519')
+        rec['private_key'] = str(rec.get('private_key', '') or '')
+        rec['public_key'] = str(rec.get('public_key', '') or '')
+        rec['private_key_path'] = str(rec.get('private_key_path', '') or '')
+        rec['public_key_path'] = str(rec.get('public_key_path', '') or '')
+        rec['setup_status'] = str(rec.get('setup_status', 'success') or 'success')
+        rec['error_message'] = str(rec.get('error_message', '') or '')
+        rec['operator_user_id'] = rec.get('operator_user_id')
+        rec['operator_username'] = str(rec.get('operator_username', '') or '')
+        rec['created_at'] = str(rec.get('created_at', now) or now)
+        rec['revoke_status'] = str(rec.get('revoke_status', 'active') or 'active')
+        rec['revoke_message'] = str(rec.get('revoke_message', '') or '')
+        rec['revoked_at'] = str(rec.get('revoked_at', '') or '')
+        norm_ssh_records.append(rec)
+    if norm_ssh_records != ssh_records:
+        _write_ssh_key_records_store(norm_ssh_records)
+
+
+
+
+def _append_operation_log_store(log_item):
+    logs = _read_operation_logs_from_store()
+    logs.append(log_item)
+    if len(logs) > 50000:
+        logs = logs[-50000:]
+    _write_store_json(OPERATION_LOG_STORE_FILE, {"items": logs})
+
+
+def _load_host_connection_info(host_id):
+    """
+    按 host_id 加载主机连接信息，优先使用本地文件存储。
+    """
+    if USE_LOCAL_FILE_STORE:
+        host = _find_host_in_store(host_id)
+        if not host:
+            return None
+        return {
+            'id': host.get('id'),
+            'ssh_port': int(host.get('ssh_port', 22)),
+            'username': host.get('username', ''),
+            'ip_address': host.get('ip_address', ''),
+            'auth_method': host.get('auth_method', 'password'),
+            'password': host.get('password', ''),
+            'private_key': host.get('private_key', ''),
+            'operating_system': host.get('operating_system', '')
+        }
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+    SELECT id, ssh_port, username, ip_address, auth_method, password, private_key, operating_system
+    FROM hosts WHERE id = ?
+    ''', (host_id,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return dict(row)
+
+
+_ensure_local_store_files()
+_normalize_local_store_data()
+
+
 # 生成6位随机小写英文字母组成的名字
 def random_name(length=6):
     # 定义小写英文字母范围（a-z对应的ASCII码是97-122）
@@ -62,6 +593,33 @@ def random_name(length=6):
 # 新增：日志清理任务
 def clean_expired_logs():
     """清理过期日志"""
+    if USE_LOCAL_FILE_STORE:
+        try:
+            retention_days = int(os.getenv('LOG_RETENTION_DAYS', '30'))
+            if retention_days <= 0:
+                return
+            expire_dt = datetime.now() - timedelta(days=retention_days)
+            logs = _read_operation_logs_from_store()
+            kept_logs = []
+            deleted_count = 0
+            for item in logs:
+                raw_time = item.get('operation_time', '')
+                try:
+                    item_dt = datetime.strptime(raw_time, '%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    kept_logs.append(item)
+                    continue
+                if item_dt >= expire_dt:
+                    kept_logs.append(item)
+                else:
+                    deleted_count += 1
+            if deleted_count:
+                _write_store_json(OPERATION_LOG_STORE_FILE, {"items": kept_logs})
+            app.logger.info(f"清理过期日志成功，共删除 {deleted_count} 条记录")
+        except Exception as e:
+            app.logger.error(f"清理过期日志失败: {str(e)}")
+        return
+
     # 【修复】添加应用上下文
     with app.app_context():
         db = get_db()
@@ -102,6 +660,9 @@ def clean_expired_ssh_key_records():
     通过环境变量 SSH_KEY_RECORD_RETENTION_DAYS 控制保留天数，默认 30 天。
     设置为 0 或负数表示不自动清理。
     """
+    if USE_LOCAL_FILE_STORE:
+        return
+
     with app.app_context():
         db = get_db()
         try:
@@ -411,6 +972,32 @@ def save_ssh_key_setup_record(host_ip, ssh_port, target_username, key_type,
                               private_key_path='', public_key_path='',
                               setup_status='success', error_message=''):
     """写入 SSH 密钥配置记录，便于回看和复用。"""
+    if USE_LOCAL_FILE_STORE:
+        records = _read_ssh_key_records_store()
+        record_id = _next_id(records)
+        encrypted_private_key = encrypt_host_secret(private_key) if private_key else ''
+        records.append({
+            'id': record_id,
+            'host_ip': host_ip,
+            'ssh_port': ssh_port,
+            'target_username': target_username,
+            'key_type': key_type,
+            'private_key': encrypted_private_key,
+            'public_key': public_key,
+            'private_key_path': private_key_path,
+            'public_key_path': public_key_path,
+            'setup_status': setup_status,
+            'error_message': error_message,
+            'operator_user_id': current_user.id if current_user and current_user.is_authenticated else None,
+            'operator_username': current_user.username if current_user and current_user.is_authenticated else '',
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'revoke_status': 'active',
+            'revoke_message': '',
+            'revoked_at': ''
+        })
+        _write_ssh_key_records_store(records)
+        return
+
     db = get_db()
     cursor = db.cursor()
     encrypted_private_key = encrypt_host_secret(private_key) if private_key else ''
@@ -435,6 +1022,15 @@ def refresh_host_statuses():
     """
     定时刷新主机连通状态（online/offline），避免列表页实时阻塞。
     """
+    if USE_LOCAL_FILE_STORE:
+        try:
+            hosts = _read_hosts_from_store()
+            for host in hosts:
+                _check_and_update_host_status(None, host)
+        except Exception as e:
+            app.logger.error(f"刷新主机状态失败: {str(e)}")
+        return
+
     with app.app_context():
         db = get_db()
         try:
@@ -486,10 +1082,13 @@ def _check_and_update_host_status(cursor, host):
         status = 'offline'
         error_msg = str(host_error)
 
-    cursor.execute(
-        "UPDATE hosts SET status = ?, last_checked_at = ?, last_check_error = ? WHERE id = ?",
-        (status, now, error_msg, host_id)
-    )
+    if USE_LOCAL_FILE_STORE:
+        _upsert_host_status_store(host_id, status, now, error_msg)
+    elif cursor is not None:
+        cursor.execute(
+            "UPDATE hosts SET status = ?, last_checked_at = ?, last_check_error = ? WHERE id = ?",
+            (status, now, error_msg, host_id)
+        )
     return {
         'status': status,
         'last_checked_at': now,
@@ -497,10 +1096,11 @@ def _check_and_update_host_status(cursor, host):
     }
 
 
-ensure_hosts_extended_columns()
-ensure_ssh_key_setup_records_table()
-ensure_ssh_key_setup_records_columns()
-ensure_ssh_key_manage_permission()
+if not USE_LOCAL_FILE_STORE:
+    ensure_hosts_extended_columns()
+    ensure_ssh_key_setup_records_table()
+    ensure_ssh_key_setup_records_columns()
+    ensure_ssh_key_manage_permission()
 scheduler.add_job(
     id='refresh_host_statuses',
     func=refresh_host_statuses,
@@ -544,6 +1144,27 @@ def log_operation(user_id, username, operation_type, operation_object, operation
     # 获取东八区当前时间
     tz = pytz.timezone('Asia/Shanghai')
     operation_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+    if USE_LOCAL_FILE_STORE:
+        logs = _read_operation_logs_from_store()
+        log_id = 1
+        if logs:
+            try:
+                log_id = max(int(item.get('id', 0)) for item in logs) + 1
+            except Exception:
+                log_id = len(logs) + 1
+        _append_operation_log_store({
+            "id": log_id,
+            "user_id": user_id,
+            "username": username,
+            "operation_type": operation_type,
+            "operation_object": operation_object,
+            "operation_summary": operation_summary,
+            "operation_details": operation_details,
+            "success": 1 if success else 0,
+            "operation_time": operation_time
+        })
+        return
+
     db = get_db()
     try:
         cursor = db.cursor()
@@ -589,8 +1210,14 @@ def pwd_shell_cmd(hostname, port, user, pwd, cmd):
     stderr = None
     try:
         pwd = decrypt_host_secret(pwd)
-        ssh.set_missing_host_key_policy(AutoAddPolicy())
-        ssh.connect(hostname=hostname, port=port, username=user, password=pwd, timeout=5)
+        _connect_with_password_fallback(
+            ssh_client=ssh,
+            hostname=hostname,
+            port=port,
+            username=user,
+            password=pwd,
+            timeout=5
+        )
         # stdin, stdout, stderr = ssh.exec_command('iptables -nL IN_public_allow --line-number -t filter -v')
         stdin, stdout, stderr = ssh.exec_command(cmd)
         # stdin, stdout, stderr = ssh.exec_command('iptables -nL INPUT --line-number -t filter -v')
@@ -614,6 +1241,49 @@ def pwd_shell_cmd(hostname, port, user, pwd, cmd):
         # 再关闭 SSH 连接
         if ssh:
             ssh.close()
+
+
+def _connect_with_password_fallback(ssh_client, hostname, port, username, password, timeout=8):
+    """
+    先尝试标准 password 认证；若服务器仅开启 keyboard-interactive，
+    自动回退到 interactive 认证，减少误报 Authentication failed。
+    """
+    ssh_client.set_missing_host_key_policy(AutoAddPolicy())
+    try:
+        ssh_client.connect(
+            hostname=hostname,
+            port=port,
+            username=username,
+            password=password,
+            timeout=timeout,
+            auth_timeout=timeout,
+            banner_timeout=timeout,
+            look_for_keys=False,
+            allow_agent=False
+        )
+        return
+    except AuthenticationException as password_error:
+        transport = None
+        try:
+            transport = paramiko.Transport((hostname, int(port)))
+            transport.banner_timeout = timeout
+            transport.start_client(timeout=timeout)
+
+            def auth_handler(title, instructions, prompts):
+                return [password for _ in prompts]
+
+            transport.auth_interactive(username, auth_handler)
+            if not transport.is_authenticated():
+                raise password_error
+
+            ssh_client._transport = transport
+            return
+        except Exception:
+            if transport:
+                transport.close()
+            raise RuntimeError(
+                f"认证失败：请检查用户名/密码是否正确，或目标主机是否禁用了密码登录（用户: {username}, 端口: {port}）"
+            )
 
 
 def normalize_private_key(private_key_str):
@@ -726,15 +1396,13 @@ def install_public_key_with_password(hostname, port, user, password, public_key_
     stdout = None
     stderr = None
     try:
-        ssh_client.set_missing_host_key_policy(AutoAddPolicy())
-        ssh_client.connect(
+        _connect_with_password_fallback(
+            ssh_client=ssh_client,
             hostname=hostname,
             port=port,
             username=user,
             password=password,
-            timeout=8,
-            look_for_keys=False,
-            allow_agent=False
+            timeout=8
         )
         quoted_pubkey = shlex.quote(public_key_str.strip())
         cmd = (
@@ -942,6 +1610,68 @@ def get_rule(iptables_output):
     return data_list
 
 
+def _normalize_rule_signature(rule):
+    protocol = str(rule.get('prot', 'all') or 'all').lower()
+    source = str(rule.get('source', '0.0.0.0/0') or '0.0.0.0/0').strip()
+    port = str(rule.get('port', '-1/-1') or '-1/-1').strip()
+    target = str(rule.get('target', '') or '').upper()
+    return protocol, source, port, target
+
+
+def _detect_rule_conflicts(rule_list):
+    duplicates = {}
+    policy_groups = {}
+    issues = []
+    for rule in rule_list:
+        num = str(rule.get('num', '') or '')
+        protocol, source, port, target = _normalize_rule_signature(rule)
+        full_key = (protocol, source, port, target)
+        compare_key = (protocol, source, port)
+        duplicates.setdefault(full_key, []).append(num)
+        policy_groups.setdefault(compare_key, []).append({"num": num, "target": target, "source": source})
+
+    for key, nums in duplicates.items():
+        if len(nums) > 1:
+            protocol, source, port, target = key
+            issues.append({
+                "type": "duplicate",
+                "severity": "medium",
+                "rule_numbers": nums,
+                "message": f"发现重复规则：{protocol}/{port} 来源 {source} -> {target}（规则ID: {', '.join(nums)}）"
+            })
+
+    for key, values in policy_groups.items():
+        targets = {item['target'] for item in values}
+        if len(targets) > 1:
+            protocol, source, port = key
+            issues.append({
+                "type": "policy_conflict",
+                "severity": "high",
+                "rule_numbers": [item['num'] for item in values],
+                "message": f"策略冲突：{protocol}/{port} 来源 {source} 同时存在不同动作 {', '.join(sorted(targets))}"
+            })
+
+    wildcard_first = {}
+    for rule in sorted(rule_list, key=lambda item: int(item.get('num', 0) or 0)):
+        protocol, source, port, target = _normalize_rule_signature(rule)
+        if source == '0.0.0.0/0':
+            wildcard_first.setdefault((protocol, port), {"num": str(rule.get('num', '')), "target": target})
+            continue
+        wildcard = wildcard_first.get((protocol, port))
+        if wildcard and wildcard['target'] != target:
+            issues.append({
+                "type": "shadowed_rule",
+                "severity": "high",
+                "rule_numbers": [wildcard['num'], str(rule.get('num', ''))],
+                "message": (
+                    f"规则可能被覆盖：先有全来源规则 {wildcard['num']}({wildcard['target']})，"
+                    f"后续规则 {rule.get('num')}({target}) 可能不生效"
+                )
+            })
+
+    return issues
+
+
 def _validate_auth_object(auth_object):
     """
     校验授权对象格式，支持 IPv4 和 CIDR。
@@ -1106,22 +1836,25 @@ def _build_host_connection_payload(data):
     private_key = (data.get('private_key') or '') if isinstance(data.get('private_key'), str) else ''
     ssh_port_raw = data.get('ssh_port', 22)
 
-    # 编辑场景下，允许复用数据库中的历史认证信息
+    # 编辑场景下，允许复用历史认证信息
     if host_id and (not password and not private_key):
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('''
-        SELECT ip_address, ssh_port, username, auth_method, password, private_key
-        FROM hosts WHERE id = ?
-        ''', (host_id,))
-        host = cursor.fetchone()
+        if USE_LOCAL_FILE_STORE:
+            host = _find_host_in_store(host_id)
+        else:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('''
+            SELECT ip_address, ssh_port, username, auth_method, password, private_key
+            FROM hosts WHERE id = ?
+            ''', (host_id,))
+            host = cursor.fetchone()
         if host:
-            ip_address_value = ip_address_value or host['ip_address']
-            ssh_port_raw = ssh_port_raw or host['ssh_port']
-            username = username or host['username']
-            auth_method = auth_method or host['auth_method']
-            password = password or (host['password'] or '')
-            private_key = private_key or (host['private_key'] or '')
+            ip_address_value = ip_address_value or host.get('ip_address', '')
+            ssh_port_raw = ssh_port_raw or host.get('ssh_port', 22)
+            username = username or host.get('username', '')
+            auth_method = auth_method or host.get('auth_method', 'password')
+            password = password or (host.get('password', '') or '')
+            private_key = private_key or (host.get('private_key', '') or '')
 
     if not ip_address_value:
         return None, 'IP地址不能为空'
@@ -1156,8 +1889,21 @@ def _build_host_connection_payload(data):
     }, None
 
 
-def _get_rule_view_hosts(cursor):
+def _get_rule_view_hosts(cursor=None):
     """获取规则查看页面可选主机列表。"""
+    if USE_LOCAL_FILE_STORE:
+        hosts = _read_hosts_from_store()
+        hosts = sorted(hosts, key=lambda item: item.get('created_at', ''), reverse=True)
+        return [
+            {
+                'id': item.get('id'),
+                'host_name': item.get('host_name', ''),
+                'host_identifier': item.get('host_identifier', ''),
+                'ip_address': item.get('ip_address', '')
+            }
+            for item in hosts
+        ]
+
     cursor.execute('''
     SELECT id, host_name, host_identifier, ip_address
     FROM hosts
@@ -1197,14 +1943,20 @@ def _collect_template_applied_host_ids(cursor, template_id):
     若日志不存在或解析失败，返回空列表。
     """
     host_ids = set()
-    cursor.execute('''
-    SELECT operation_details FROM operation_logs
-    WHERE operation_type = '应用' AND operation_object = '模板' AND success = 1
-    ''')
-    rows = cursor.fetchall()
+    if USE_LOCAL_FILE_STORE:
+        rows = _read_operation_logs_from_store()
+    else:
+        cursor.execute('''
+        SELECT operation_details FROM operation_logs
+        WHERE operation_type = '应用' AND operation_object = '模板' AND success = 1
+        ''')
+        rows = cursor.fetchall()
     for row in rows:
         try:
-            details = json.loads(row['operation_details']) if row['operation_details'] else {}
+            raw_details = row.get('operation_details') if isinstance(row, dict) else row['operation_details']
+            details = json.loads(raw_details) if isinstance(raw_details, str) and raw_details else (
+                raw_details if isinstance(raw_details, dict) else {}
+            )
         except (TypeError, json.JSONDecodeError):
             continue
         if str(details.get('template_id')) != str(template_id):
@@ -1274,6 +2026,24 @@ def _get_hosts_by_ids(cursor, host_ids):
             normalized_ids.append(int(host_id))
     if not normalized_ids:
         return []
+    if USE_LOCAL_FILE_STORE:
+        id_set = {str(item_id) for item_id in normalized_ids}
+        matched = []
+        for host in _read_hosts_from_store():
+            if str(host.get('id')) in id_set:
+                matched.append({
+                    'id': host.get('id'),
+                    'host_name': host.get('host_name', ''),
+                    'host_identifier': host.get('host_identifier', ''),
+                    'ssh_port': host.get('ssh_port', 22),
+                    'username': host.get('username', ''),
+                    'ip_address': host.get('ip_address', ''),
+                    'auth_method': host.get('auth_method', 'password'),
+                    'password': host.get('password', ''),
+                    'private_key': host.get('private_key', ''),
+                    'operating_system': host.get('operating_system', '')
+                })
+        return matched
     placeholders = ','.join(['?'] * len(normalized_ids))
     cursor.execute('''
     SELECT id, host_name, host_identifier, ssh_port, username, ip_address, auth_method, password, private_key, operating_system
@@ -1309,67 +2079,85 @@ def _persist_iptables(host):
 
 
 def _build_template_apply_payload(cursor, template_id):
-    cursor.execute('SELECT template_name, direction FROM templates WHERE id = ?', (template_id,))
-    template = cursor.fetchone()
+    template = None
+    rules = []
+    if USE_LOCAL_FILE_STORE:
+        for item in _read_templates_from_store():
+            if str(item.get('id')) == str(template_id):
+                template = item
+                rules = item.get('rules', [])
+                break
+    else:
+        cursor.execute('SELECT template_name, direction FROM templates WHERE id = ?', (template_id,))
+        template = cursor.fetchone()
+        if template:
+            cursor.execute('''
+            SELECT policy, protocol, port, auth_object, description, "limit"
+            FROM rules WHERE template_id = ?
+            ''', (template_id,))
+            rules = cursor.fetchall()
     if not template:
         return None, None, None, '模板不存在'
-
-    cursor.execute('''
-    SELECT policy, protocol, port, auth_object, description, "limit"
-    FROM rules WHERE template_id = ?
-    ''', (template_id,))
-    rules = cursor.fetchall()
     if not rules:
-        return template['template_name'], template['direction'], [], None
+        template_name = template.get('template_name') if USE_LOCAL_FILE_STORE else template['template_name']
+        direction = template.get('direction') if USE_LOCAL_FILE_STORE else template['direction']
+        return template_name, direction, [], None
 
-    direction = template['direction']
+    direction = template.get('direction') if USE_LOCAL_FILE_STORE else template['direction']
     cmd_list = []
     for rule in rules:
-        if 'tcp' in rule['protocol'].lower() or 'udp' in rule['protocol'].lower():
-            if '-1/-1' not in rule['port']:
-                if '-' in rule['port']:
-                    new_port = rule['port'].replace("-", ":")
-                    if rule['limit'] == '':
+        protocol = (rule.get('protocol') if USE_LOCAL_FILE_STORE else rule['protocol'])
+        port = (rule.get('port') if USE_LOCAL_FILE_STORE else rule['port'])
+        policy = (rule.get('policy') if USE_LOCAL_FILE_STORE else rule['policy'])
+        auth_object = (rule.get('auth_object') if USE_LOCAL_FILE_STORE else rule['auth_object'])
+        description = (rule.get('description') if USE_LOCAL_FILE_STORE else rule['description'])
+        limit = (rule.get('limit') if USE_LOCAL_FILE_STORE else rule['limit']) or ''
+        if 'tcp' in protocol.lower() or 'udp' in protocol.lower():
+            if '-1/-1' not in port:
+                if '-' in port:
+                    new_port = port.replace("-", ":")
+                    if limit == '':
                         cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule['auth_object'], rule['protocol'], new_port, rule['policy'], rule['description'])
+                            direction, auth_object, protocol, new_port, policy, description)
                     else:
                         cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
-                            direction, rule['auth_object'], rule['protocol'], new_port, rule['policy'], rule['limit'], random_name(), rule['description'])
+                            direction, auth_object, protocol, new_port, policy, limit, random_name(), description)
                     cmd_list.append(cmd)
-                elif ',' in rule['port']:
-                    if rule['limit'] == '':
+                elif ',' in port:
+                    if limit == '':
                         cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m comment --comment "{}" '.format(
-                            direction, rule['auth_object'], rule['protocol'], rule['port'], rule['policy'], rule['description'])
+                            direction, auth_object, protocol, port, policy, description)
                     else:
                         cmd = 'iptables -A {}  -s {} -p {} -m multiport --dports {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment --comment "{}" '.format(
-                            direction, rule['auth_object'], rule['protocol'], rule['port'], rule['policy'], rule['limit'], random_name(), rule['description'])
+                            direction, auth_object, protocol, port, policy, limit, random_name(), description)
                     cmd_list.append(cmd)
                 else:
-                    if rule['limit'] == '':
+                    if limit == '':
                         cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m comment  --comment "{}"'.format(
-                            direction, rule['auth_object'], rule['protocol'], rule['port'], rule['policy'], rule['description'])
+                            direction, auth_object, protocol, port, policy, description)
                     else:
                         cmd = 'iptables -A {}  -s {} -p {} --dport {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}" '.format(
-                            direction, rule['auth_object'], rule['protocol'], rule['port'], rule['policy'], rule['limit'], random_name(), rule['description'])
+                            direction, auth_object, protocol, port, policy, limit, random_name(), description)
                     cmd_list.append(cmd)
             else:
-                if rule['limit'] == '':
+                if limit == '':
                     cmd = 'iptables -A {} -s {} -p {} -j {} -m comment  --comment "{}"'.format(
-                        direction, rule['auth_object'], rule['protocol'], rule['policy'], rule['description'])
+                        direction, auth_object, protocol, policy, description)
                 else:
                     cmd = 'iptables -A {} -s {} -p {} -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}"'.format(
-                        direction, rule['auth_object'], rule['protocol'], rule['policy'], rule['limit'], random_name(), rule['description'])
+                        direction, auth_object, protocol, policy, limit, random_name(), description)
                 cmd_list.append(cmd)
         else:
-            if rule['limit'] == '':
+            if limit == '':
                 cmd = 'iptables -A {}  -s {} -p {}  -j {} -m comment  --comment "{}"'.format(
-                    direction, rule['auth_object'], rule['protocol'], rule['policy'], rule['description'])
+                    direction, auth_object, protocol, policy, description)
             else:
                 cmd = 'iptables -A {}  -s {} -p {}  -j {} -m hashlimit --hashlimit-mode srcip,dstport --hashlimit-above {} --hashlimit-name {} -m comment  --comment "{}"'.format(
-                    direction, rule['auth_object'], rule['protocol'], rule['policy'], rule['limit'], random_name(), rule['description'])
+                    direction, auth_object, protocol, policy, limit, random_name(), description)
             cmd_list.append(cmd)
 
-    return template['template_name'], direction, cmd_list, None
+    template_name = template.get('template_name') if USE_LOCAL_FILE_STORE else template['template_name']
+    return template_name, direction, cmd_list, None
 
 
 # 根路径路由：重定向到 /hosts?page=1
@@ -1392,8 +2180,10 @@ def rules_view():
     if direction not in ('INPUT', 'OUTPUT'):
         direction = 'INPUT'
     try:
-        db = get_db()
-        cursor = db.cursor()
+        cursor = None
+        if not USE_LOCAL_FILE_STORE:
+            db = get_db()
+            cursor = db.cursor()
         host_list = _get_rule_view_hosts(cursor)
         if not host_list:
             flash('暂无主机，请先添加主机后再查看规则')
@@ -1417,27 +2207,15 @@ def rules_in():
     all_params = dict(request.args)
     host_id = all_params['host_id']
     try:
-        # 获取数据库连接
-        db = get_db()
-        cursor = db.cursor()
-        # 查询所有主机数据
-        cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key,operating_system
-        FROM hosts where id = {}
-        '''.format(host_id))
-        # 获取所有记录
-        # 1. 获取所有列名（从 cursor.description 中提取）
-        columns = [column[0] for column in cursor.description]
-        # 2. 将每行数据与列名配对，转换为字典
-        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        if not hosts:
+        host = _load_host_connection_info(host_id)
+        if not host:
             return jsonify({'success': False, 'message': f'主机不存在: host_id={host_id}'}), 404
-        hostname = hosts[0]['ip_address']
-        port = hosts[0]['ssh_port']
-        user = hosts[0]['username']
-        pwd = hosts[0]['password']
-        auth_method = hosts[0]['auth_method']
-        private_key = hosts[0]['private_key']
+        hostname = host['ip_address']
+        port = host['ssh_port']
+        user = host['username']
+        pwd = host['password']
+        auth_method = host['auth_method']
+        private_key = host['private_key']
         if auth_method == 'password':
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                             cmd='iptables -nL INPUT --line-number -t filter')
@@ -1445,7 +2223,7 @@ def rules_in():
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL INPUT --line-number -t filter')
         data_list = get_rule(iptables_output)
-        host_options = _get_rule_view_hosts(cursor)
+        host_options = _get_rule_view_hosts()
         return render_template('rule.html', data_list=data_list, id=host_id, host_options=host_options)
     except Exception as e:
         # 错误处理
@@ -1458,25 +2236,15 @@ def rules_out():
     all_params = dict(request.args)
     host_id = all_params['host_id']
     try:
-        # 获取数据库连接
-        db = get_db()
-        cursor = db.cursor()
-        # 查询所有主机数据
-        cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key,operating_system
-        FROM hosts where id = {}
-        '''.format(host_id))
-        # 获取所有记录
-        # 1. 获取所有列名（从 cursor.description 中提取）
-        columns = [column[0] for column in cursor.description]
-        # 2. 将每行数据与列名配对，转换为字典
-        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        hostname = hosts[0]['ip_address']
-        port = hosts[0]['ssh_port']
-        user = hosts[0]['username']
-        pwd = hosts[0]['password']
-        auth_method = hosts[0]['auth_method']
-        private_key = hosts[0]['private_key']
+        host = _load_host_connection_info(host_id)
+        if not host:
+            return jsonify({'success': False, 'message': f'主机不存在: host_id={host_id}'}), 404
+        hostname = host['ip_address']
+        port = host['ssh_port']
+        user = host['username']
+        pwd = host['password']
+        auth_method = host['auth_method']
+        private_key = host['private_key']
         if auth_method == 'password':
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                             cmd='iptables -nL OUTPUT --line-number -t filter')
@@ -1484,11 +2252,58 @@ def rules_out():
             iptables_output = sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                                cmd='iptables -nL OUTPUT --line-number -t filter')
         data_list = get_rule(iptables_output)
-        host_options = _get_rule_view_hosts(cursor)
+        host_options = _get_rule_view_hosts()
         return render_template('rule.html', data_list=data_list, id=host_id, host_options=host_options)
     except Exception as e:
         # 错误处理
         return f"获取主机数据失败: {str(e)}", 500
+
+
+@app.route("/rules_conflicts", methods=['GET'])
+@login_required
+@permission_required('iptab_view')
+def rules_conflicts():
+    host_id = request.args.get('host_id')
+    direction = str(request.args.get('direction') or 'INPUT').upper()
+    if direction not in ('INPUT', 'OUTPUT'):
+        return jsonify({'success': False, 'message': '无效方向，仅支持 INPUT/OUTPUT'}), 400
+    if not host_id:
+        return jsonify({'success': False, 'message': '缺少主机ID'}), 400
+
+    try:
+        host = _load_host_connection_info(host_id)
+        if not host:
+            return jsonify({'success': False, 'message': f'主机不存在: host_id={host_id}'}), 404
+
+        if host['auth_method'] == 'password':
+            iptables_output = pwd_shell_cmd(
+                hostname=host['ip_address'],
+                user=host['username'],
+                port=host['ssh_port'],
+                pwd=host['password'],
+                cmd=f'iptables -nL {direction} --line-number -t filter'
+            )
+        else:
+            iptables_output = sshkey_shell_cmd(
+                hostname=host['ip_address'],
+                user=host['username'],
+                port=host['ssh_port'],
+                private_key_str=host['private_key'],
+                cmd=f'iptables -nL {direction} --line-number -t filter'
+            )
+
+        rules = get_rule(iptables_output)
+        conflicts = _detect_rule_conflicts(rules)
+        return jsonify({
+            'success': True,
+            'host_id': host_id,
+            'direction': direction,
+            'rules_count': len(rules),
+            'conflicts': conflicts,
+            'conflict_count': len(conflicts)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'冲突检测失败: {str(e)}'}), 500
 
 
 # 修改规则
@@ -1505,26 +2320,16 @@ def rules_update():
         return jsonify({'success': False, 'message': auth_object_error}), 400
     # 获取规则的具体数据
     try:
-        # 获取数据库连接
-        db = get_db()
-        cursor = db.cursor()
-        # 查询所有主机数据
-        cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key,operating_system
-        FROM hosts where id = {}
-        '''.format(host_id))
-        # 获取所有记录
-        # 1. 获取所有列名（从 cursor.description 中提取）
-        columns = [column[0] for column in cursor.description]
-        # 2. 将每行数据与列名配对，转换为字典
-        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        hostname = hosts[0]['ip_address']
-        port = hosts[0]['ssh_port']
-        user = hosts[0]['username']
-        pwd = hosts[0]['password']
-        auth_method = hosts[0]['auth_method']
-        private_key = hosts[0]['private_key']
-        operating_system = hosts[0]['operating_system']
+        host = _load_host_connection_info(host_id)
+        if not host:
+            return jsonify({'success': False, 'message': f'主机不存在: host_id={host_id}'}), 404
+        hostname = host['ip_address']
+        port = host['ssh_port']
+        user = host['username']
+        pwd = host['password']
+        auth_method = host['auth_method']
+        private_key = host['private_key']
+        operating_system = host['operating_system']
         if auth_method == 'password':
             # 删除
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
@@ -1723,28 +2528,16 @@ def rules_add():
         return jsonify({'success': False, 'message': auth_object_error}), 400
     # 获取规则的具体数据
     try:
-        # 获取数据库连接
-        db = get_db()
-        cursor = db.cursor()
-        # 查询所有主机数据
-        cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key, operating_system
-        FROM hosts where id = {}
-        '''.format(host_id))
-        # 获取所有记录
-        # 1. 获取所有列名（从 cursor.description 中提取）
-        columns = [column[0] for column in cursor.description]
-        # 2. 将每行数据与列名配对，转换为字典
-        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        if not hosts:
+        host = _load_host_connection_info(host_id)
+        if not host:
             return jsonify({'success': False, 'message': f'主机不存在: host_id={host_id}'}), 404
-        hostname = hosts[0]['ip_address']
-        port = hosts[0]['ssh_port']
-        user = hosts[0]['username']
-        pwd = hosts[0]['password']
-        auth_method = hosts[0]['auth_method']
-        private_key = hosts[0]['private_key']
-        operating_system = hosts[0]['operating_system']
+        hostname = host['ip_address']
+        port = host['ssh_port']
+        user = host['username']
+        pwd = host['password']
+        auth_method = host['auth_method']
+        private_key = host['private_key']
+        operating_system = host['operating_system']
         if auth_method == 'password':
             # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
@@ -1952,24 +2745,16 @@ def del_rule():
     rule_id = all_params['rule_id']
     direction = all_params['direction']
     try:
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('''
-        SELECT ssh_port, username, ip_address, auth_method, password, private_key,operating_system
-        FROM hosts where id = {}
-        '''.format(host_id))
-        # 获取所有记录
-        # 1. 获取所有列名（从 cursor.description 中提取）
-        columns = [column[0] for column in cursor.description]
-        # 2. 将每行数据与列名配对，转换为字典
-        hosts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        hostname = hosts[0]['ip_address']
-        port = hosts[0]['ssh_port']
-        user = hosts[0]['username']
-        pwd = hosts[0]['password']
-        auth_method = hosts[0]['auth_method']
-        private_key = hosts[0]['private_key']
-        operating_system = hosts[0]['operating_system']
+        host = _load_host_connection_info(host_id)
+        if not host:
+            return jsonify({'success': False, 'message': f'主机不存在: host_id={host_id}'}), 404
+        hostname = host['ip_address']
+        port = host['ssh_port']
+        user = host['username']
+        pwd = host['password']
+        auth_method = host['auth_method']
+        private_key = host['private_key']
+        operating_system = host['operating_system']
         if auth_method == 'password':
             iptables_output = pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
                                             cmd='iptables -D {} {}'.format(direction, rule_id))
@@ -2048,60 +2833,80 @@ def hosts():
     start = (int(page) - 1) * page_size
     end = int(page) * page_size
     try:
-        # 获取数据库连接
-        db = get_db()
-        cursor = db.cursor()
-
-        # 搜索功能实现
-        if search_keyword:
-            # 带搜索条件的查询
-            cursor.execute('''
-            SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
-                   operating_system, created_at, ssh_port, status, last_checked_at, last_check_error
-            FROM hosts 
-            WHERE host_name LIKE ? OR host_identifier LIKE ? OR ip_address LIKE ?
-            ORDER BY created_at DESC
-            ''', (f'%{search_keyword}%', f'%{search_keyword}%', f'%{search_keyword}%'))
-        else:
-            # 原有的无搜索条件查询
-            cursor.execute('''
-            SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
-                   operating_system, created_at, ssh_port, status, last_checked_at, last_check_error
-            FROM hosts 
-            ORDER BY created_at DESC
-            ''')
-
-        # 获取所有记录
-        hosts = cursor.fetchall()
-
-        # 转换为字典列表，方便前端处理
         host_list = []
-        for host in hosts:
-            host_list.append({
-                'id': host['id'],
-                'ssh_port': host['ssh_port'],
-                'username': host['username'],
-                'auth_method': host['auth_method'],
-                'host_name': host['host_name'],
-                'host_identifier': host['host_identifier'],
-                'ip_address': host['ip_address'],
-                'operating_system': host['operating_system'],
-                'created_at': host['created_at'],
-                'status': host['status'] if 'status' in host.keys() else 'unknown',
-                'last_checked_at': host['last_checked_at'] if 'last_checked_at' in host.keys() else '',
-                'last_check_error': host['last_check_error'] if 'last_check_error' in host.keys() else ''
-            })
+        if USE_LOCAL_FILE_STORE:
+            items = _read_hosts_from_store()
+            if search_keyword:
+                key = search_keyword.lower()
+                items = [
+                    item for item in items
+                    if key in str(item.get('host_name', '')).lower()
+                    or key in str(item.get('host_identifier', '')).lower()
+                    or key in str(item.get('ip_address', '')).lower()
+                ]
+            items = sorted(items, key=lambda item: item.get('created_at', ''), reverse=True)
+            for host in items:
+                host_list.append({
+                    'id': host.get('id'),
+                    'ssh_port': host.get('ssh_port', 22),
+                    'username': host.get('username', ''),
+                    'auth_method': host.get('auth_method', 'password'),
+                    'host_name': host.get('host_name', ''),
+                    'host_identifier': host.get('host_identifier', ''),
+                    'ip_address': host.get('ip_address', ''),
+                    'operating_system': host.get('operating_system', ''),
+                    'created_at': host.get('created_at', ''),
+                    'status': host.get('status', 'unknown'),
+                    'last_checked_at': host.get('last_checked_at', ''),
+                    'last_check_error': host.get('last_check_error', '')
+                })
+        else:
+            db = get_db()
+            cursor = db.cursor()
+            if search_keyword:
+                cursor.execute('''
+                SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
+                       operating_system, created_at, ssh_port, status, last_checked_at, last_check_error
+                FROM hosts 
+                WHERE host_name LIKE ? OR host_identifier LIKE ? OR ip_address LIKE ?
+                ORDER BY created_at DESC
+                ''', (f'%{search_keyword}%', f'%{search_keyword}%', f'%{search_keyword}%'))
+            else:
+                cursor.execute('''
+                SELECT id, username, auth_method, host_name, host_identifier, ip_address, 
+                       operating_system, created_at, ssh_port, status, last_checked_at, last_check_error
+                FROM hosts 
+                ORDER BY created_at DESC
+                ''')
+            hosts = cursor.fetchall()
+            for host in hosts:
+                host_list.append({
+                    'id': host['id'],
+                    'ssh_port': host['ssh_port'],
+                    'username': host['username'],
+                    'auth_method': host['auth_method'],
+                    'host_name': host['host_name'],
+                    'host_identifier': host['host_identifier'],
+                    'ip_address': host['ip_address'],
+                    'operating_system': host['operating_system'],
+                    'created_at': host['created_at'],
+                    'status': host['status'] if 'status' in host.keys() else 'unknown',
+                    'last_checked_at': host['last_checked_at'] if 'last_checked_at' in host.keys() else '',
+                    'last_check_error': host['last_check_error'] if 'last_check_error' in host.keys() else ''
+                })
 
         # 计算总页数（考虑搜索结果）
         total_items = len(host_list)
-        total_pages = math.ceil(total_items / page_size)
+        total_pages = max(1, math.ceil(total_items / page_size)) if total_items else 1
+        display_start = (start + 1) if total_items > 0 else 0
+        display_end = min(end, total_items) if total_items > 0 else 0
 
         # 将主机数据和搜索关键词传递到模板
         return render_template('host.html',
                                host_list=host_list[start:end],
                                sum=total_items,
-                               start=(start + 1),
-                               end=min(end, total_items),  # 处理最后一页可能不足一页的情况
+                               start=display_start,
+                               end=display_end,  # 处理最后一页可能不足一页的情况
                                current_page=page,
                                total_pages=total_pages,
                                search_keyword=search_keyword)  # 传递搜索关键词到前端
@@ -2122,30 +2927,52 @@ def add_host():
         if error_message:
             return jsonify({'success': False, 'message': error_message}), 400
 
-        db = get_db()
-        cursor = db.cursor()
-
-        # 插入主机数据
-        cursor.execute('''
-        INSERT INTO hosts 
-        (host_name, host_identifier, ip_address, operating_system, ssh_port, 
-         username, auth_method, password, private_key, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            data['host_name'],
-            data['host_identifier'],
-            data['ip_address'],
-            data['operating_system'],
-            ssh_port,
-            data.get('username', ''),
-            data.get('auth_method', 'password'),
-            encrypt_host_secret(data.get('password', '')),
-            encrypt_host_secret(data.get('private_key', '')),
-            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        ))
-
-        db.commit()
+        if USE_LOCAL_FILE_STORE:
+            items = _read_hosts_from_store()
+            identifier = data['host_identifier'].strip()
+            if any(str(item.get('host_identifier', '')).strip() == identifier for item in items):
+                return jsonify({'success': False, 'message': '主机标识已存在，请更换为唯一值（如 web-02）'}), 409
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            items.append({
+                'id': _next_host_id(items),
+                'host_name': data['host_name'],
+                'host_identifier': identifier,
+                'ip_address': data['ip_address'],
+                'operating_system': data['operating_system'],
+                'ssh_port': ssh_port,
+                'username': data.get('username', ''),
+                'auth_method': data.get('auth_method', 'password'),
+                'password': encrypt_host_secret(data.get('password', '')),
+                'private_key': encrypt_host_secret(data.get('private_key', '')),
+                'status': 'unknown',
+                'last_checked_at': '',
+                'last_check_error': '',
+                'created_at': now,
+                'updated_at': now
+            })
+            _write_hosts_to_store(items)
+        else:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('''
+            INSERT INTO hosts 
+            (host_name, host_identifier, ip_address, operating_system, ssh_port, 
+             username, auth_method, password, private_key, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                data['host_name'],
+                data['host_identifier'],
+                data['ip_address'],
+                data['operating_system'],
+                ssh_port,
+                data.get('username', ''),
+                data.get('auth_method', 'password'),
+                encrypt_host_secret(data.get('password', '')),
+                encrypt_host_secret(data.get('private_key', '')),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            ))
+            db.commit()
         # 【修改】日志记录增加operation_summary和JSON格式的operation_details
         log_operation(
             user_id=current_user.id,
@@ -2338,18 +3165,22 @@ def host_refresh_status():
         return jsonify({'success': False, 'message': '缺少主机ID'}), 400
 
     try:
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('''
-        SELECT id, ip_address, ssh_port, username, auth_method, password, private_key
-        FROM hosts WHERE id = ?
-        ''', (host_id,))
-        host = cursor.fetchone()
+        if USE_LOCAL_FILE_STORE:
+            host = _find_host_in_store(host_id)
+        else:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('''
+            SELECT id, ip_address, ssh_port, username, auth_method, password, private_key
+            FROM hosts WHERE id = ?
+            ''', (host_id,))
+            host = cursor.fetchone()
         if not host:
             return jsonify({'success': False, 'message': '主机不存在'}), 404
 
-        result = _check_and_update_host_status(cursor, host)
-        db.commit()
+        result = _check_and_update_host_status(None if USE_LOCAL_FILE_STORE else cursor, host)
+        if not USE_LOCAL_FILE_STORE:
+            db.commit()
         return jsonify({
             'success': True,
             'message': '主机状态已刷新',
@@ -2367,19 +3198,25 @@ def del_host():
     host = None
     host_id = request.args.get('id')
     try:
-        db = get_db()
-        cursor = db.cursor()
-
-        # 【修复1】修改查询语句，获取所有需要的字段
-        cursor.execute('SELECT host_name, ip_address, operating_system FROM hosts WHERE id = ?', (host_id,))
-        host_row = cursor.fetchone()
-
-        # 【修复2】将Row对象转换为字典
-        if host_row:
-            columns = [column[0] for column in cursor.description]
-            host = dict(zip(columns, host_row))
-        else:
+        if USE_LOCAL_FILE_STORE:
+            items = _read_hosts_from_store()
             host = None
+            remained = []
+            for item in items:
+                if str(item.get('id')) == str(host_id):
+                    host = item
+                else:
+                    remained.append(item)
+        else:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('SELECT host_name, ip_address, operating_system FROM hosts WHERE id = ?', (host_id,))
+            host_row = cursor.fetchone()
+            if host_row:
+                columns = [column[0] for column in cursor.description]
+                host = dict(zip(columns, host_row))
+            else:
+                host = None
 
         if not host:
             log_operation(
@@ -2397,9 +3234,11 @@ def del_host():
             )
             return jsonify({'success': False, 'message': '主机不存在'}), 404
 
-        # 删除主机
-        cursor.execute('DELETE FROM hosts WHERE id = ?', (host_id,))
-        db.commit()
+        if USE_LOCAL_FILE_STORE:
+            _write_hosts_to_store(remained)
+        else:
+            cursor.execute('DELETE FROM hosts WHERE id = ?', (host_id,))
+            db.commit()
 
         # 【修复3】现在可以安全访问所有字段
         log_operation(
@@ -2453,15 +3292,26 @@ def update_host():
         if error_message:
             return jsonify({'success': False, 'message': error_message}), 400
 
-        db = get_db()
-        cursor = db.cursor()
-        # 【新增】获取主机原始信息用于日志
-        cursor.execute('SELECT host_name, ip_address FROM hosts WHERE id = ?', (host_id,))
-        host = cursor.fetchone()
-        if not host:
-            return jsonify({'success': False, 'message': '主机不存在'}), 404
-        original_host_name = host['host_name']
-        original_ip = host['ip_address']
+        if USE_LOCAL_FILE_STORE:
+            items = _read_hosts_from_store()
+            host = None
+            for item in items:
+                if str(item.get('id')) == str(host_id):
+                    host = item
+                    break
+            if not host:
+                return jsonify({'success': False, 'message': '主机不存在'}), 404
+            original_host_name = host.get('host_name', '')
+            original_ip = host.get('ip_address', '')
+        else:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('SELECT host_name, ip_address FROM hosts WHERE id = ?', (host_id,))
+            host = cursor.fetchone()
+            if not host:
+                return jsonify({'success': False, 'message': '主机不存在'}), 404
+            original_host_name = host['host_name']
+            original_ip = host['ip_address']
 
         # 不修改密码
         password_value = data.get('password')
@@ -2471,24 +3321,41 @@ def update_host():
                 and (private_key_value is None or (isinstance(private_key_value, str) and not private_key_value.strip()))
         )
 
-        if keep_original_auth:
-            cursor.execute(
-                'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, updated_at = ? WHERE id = ?;',
-                (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
-                 ssh_port, data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
-            db.commit()
-            if cursor.rowcount == 0:
-                return jsonify({'success': False, 'message': '主机不存在'}), 404
-            return jsonify({'success': True, 'message': '主机编辑成功'})
-        # 修改密码
+        if USE_LOCAL_FILE_STORE:
+            identifier = data['host_identifier'].strip()
+            for item in items:
+                if str(item.get('id')) != str(host_id) and str(item.get('host_identifier', '')).strip() == identifier:
+                    return jsonify({'success': False, 'message': '主机标识已存在，请更换为唯一值（如 web-02）'}), 409
+            host['host_name'] = data['host_name']
+            host['host_identifier'] = identifier
+            host['ip_address'] = data['ip_address']
+            host['operating_system'] = data['operating_system']
+            host['ssh_port'] = ssh_port
+            host['username'] = data['username']
+            host['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            if not keep_original_auth:
+                host['auth_method'] = data['auth_method']
+                host['password'] = encrypt_host_secret(data.get('password', ''))
+                host['private_key'] = encrypt_host_secret(data.get('private_key', ''))
+            _write_hosts_to_store(items)
         else:
-            cursor.execute(
-                'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, auth_method = ?, password = ?, private_key = ? ,updated_at = ? WHERE id = ?;',
-                (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
-                 ssh_port, data['username'], data['auth_method'],
-                 encrypt_host_secret(data['password']), encrypt_host_secret(data['private_key']),
-                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
-            db.commit()
+            if keep_original_auth:
+                cursor.execute(
+                    'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, updated_at = ? WHERE id = ?;',
+                    (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
+                     ssh_port, data['username'], datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+                db.commit()
+                if cursor.rowcount == 0:
+                    return jsonify({'success': False, 'message': '主机不存在'}), 404
+                return jsonify({'success': True, 'message': '主机编辑成功'})
+            else:
+                cursor.execute(
+                    'UPDATE hosts SET host_name = ?, host_identifier = ?, ip_address = ?, operating_system = ?, ssh_port = ?, username = ?, auth_method = ?, password = ?, private_key = ? ,updated_at = ? WHERE id = ?;',
+                    (data['host_name'], data['host_identifier'], data['ip_address'], data['operating_system'],
+                     ssh_port, data['username'], data['auth_method'],
+                     encrypt_host_secret(data['password']), encrypt_host_secret(data['private_key']),
+                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'), host_id))
+                db.commit()
         # 【修复】记录成功日志
         log_operation(
             user_id=current_user.id,
@@ -2513,8 +3380,6 @@ def update_host():
             }),
             success=1
         )
-        if cursor.rowcount == 0:
-            return jsonify({'success': False, 'message': '主机不存在'}), 404
         return jsonify({'success': True, 'message': '主机编辑成功'})
     except Exception as e:
         # 【修复】记录失败日志
@@ -2692,6 +3557,60 @@ def ssh_key_setup_records():
     limit = max(1, min(limit, 100))
 
     try:
+        if USE_LOCAL_FILE_STORE:
+            records = _read_ssh_key_records_store()
+            filtered = []
+            key_lower = keyword.lower()
+            for row in records:
+                if keyword:
+                    hay = f"{row.get('host_ip','')} {row.get('target_username','')} {row.get('key_type','')}".lower()
+                    if key_lower not in hay:
+                        continue
+                revoke_status = row.get('revoke_status') or 'active'
+                setup_status = row.get('setup_status') or 'success'
+                if status == 'active':
+                    if not (setup_status == 'success' and revoke_status == 'active'):
+                        continue
+                elif status == 'revoked':
+                    if revoke_status != 'revoked':
+                        continue
+                elif status == 'setup_failed':
+                    if setup_status == 'success':
+                        continue
+                elif status == 'revoke_failed':
+                    if revoke_status != 'failed':
+                        continue
+                filtered.append(row)
+            filtered.sort(key=lambda x: int(x.get('id', 0)), reverse=True)
+            total = len(filtered)
+            data_rows = filtered[:limit]
+            out = []
+            for row in data_rows:
+                out.append({
+                    'id': row.get('id'),
+                    'host_ip': row.get('host_ip', ''),
+                    'ssh_port': row.get('ssh_port', 22),
+                    'target_username': row.get('target_username', ''),
+                    'key_type': row.get('key_type', ''),
+                    'has_private_key': bool(row.get('private_key')),
+                    'public_key': row.get('public_key', ''),
+                    'private_key_path': row.get('private_key_path', ''),
+                    'public_key_path': row.get('public_key_path', ''),
+                    'setup_status': row.get('setup_status', 'success'),
+                    'error_message': row.get('error_message', ''),
+                    'operator_user_id': row.get('operator_user_id'),
+                    'operator_username': row.get('operator_username', ''),
+                    'created_at': row.get('created_at', ''),
+                    'revoke_status': row.get('revoke_status', 'active'),
+                    'revoke_message': row.get('revoke_message', ''),
+                    'revoked_at': row.get('revoked_at', '')
+                })
+            return jsonify({
+                'success': True,
+                'data': out,
+                'meta': {'total': total, 'keyword': keyword, 'status': status}
+            })
+
         db = get_db()
         cursor = db.cursor()
         where_clauses = []
@@ -2773,6 +3692,61 @@ def delete_ssh_key_setup_record(record_id):
         return jsonify({'success': False, 'message': str(csrf_error)}), 403
 
     try:
+        if USE_LOCAL_FILE_STORE:
+            records = _read_ssh_key_records_store()
+            record = next((item for item in records if int(item.get('id', 0)) == int(record_id)), None)
+            if not record:
+                return jsonify({'success': False, 'message': '配置记录不存在'}), 404
+            if record.get('setup_status') == 'success' and (record.get('revoke_status') or 'active') != 'revoked':
+                return jsonify({
+                    'success': False,
+                    'message': '请先执行“删除目标主机密钥”，再删除配置记录'
+                }), 409
+            remained = [item for item in records if int(item.get('id', 0)) != int(record_id)]
+            _write_ssh_key_records_store(remained)
+            removed_files = []
+            remove_errors = []
+            for file_path in [record.get('private_key_path'), record.get('public_key_path')]:
+                if not file_path:
+                    continue
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        removed_files.append(file_path)
+                except Exception as file_error:
+                    remove_errors.append(f"{file_path}: {str(file_error)}")
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='SSH密钥',
+                operation_summary=f"删除SSH密钥配置记录: #{record_id}",
+                operation_details=json.dumps({
+                    "record_id": record_id,
+                    "host_ip": record.get('host_ip'),
+                    "ssh_port": record.get('ssh_port'),
+                    "target_username": record.get('target_username'),
+                    "key_type": record.get('key_type'),
+                    "setup_status": record.get('setup_status'),
+                    "removed_files": removed_files,
+                    "remove_errors": remove_errors,
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=1
+            )
+            message = '配置记录删除成功'
+            if remove_errors:
+                message += '（部分本地密钥文件删除失败）'
+            return jsonify({
+                'success': True,
+                'message': message,
+                'data': {
+                    'record_id': record_id,
+                    'removed_files': removed_files,
+                    'remove_errors': remove_errors
+                }
+            })
+
         db = get_db()
         cursor = db.cursor()
         cursor.execute('''
@@ -2850,6 +3824,49 @@ def remove_target_key_by_record(record_id):
         return jsonify({'success': False, 'message': str(csrf_error)}), 403
 
     try:
+        if USE_LOCAL_FILE_STORE:
+            records = _read_ssh_key_records_store()
+            record = next((item for item in records if int(item.get('id', 0)) == int(record_id)), None)
+            if not record:
+                return jsonify({'success': False, 'message': '配置记录不存在'}), 404
+            if record.get('revoke_status') == 'revoked':
+                return jsonify({'success': False, 'message': '该记录对应的目标主机公钥已删除'}), 409
+            if not record.get('private_key') or not record.get('public_key'):
+                return jsonify({'success': False, 'message': '记录缺少私钥或公钥信息，无法执行删除'}), 400
+            private_key_plain = decrypt_host_secret(record.get('private_key'))
+            remove_public_key_with_private_key(
+                hostname=record.get('host_ip'),
+                port=record.get('ssh_port'),
+                user=record.get('target_username'),
+                private_key_str=private_key_plain,
+                public_key_str=record.get('public_key')
+            )
+            revoked_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            record['revoke_status'] = 'revoked'
+            record['revoke_message'] = '目标主机公钥已删除'
+            record['revoked_at'] = revoked_at
+            _write_ssh_key_records_store(records)
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='SSH密钥',
+                operation_summary=f"删除目标主机公钥成功: 记录#{record_id}",
+                operation_details=json.dumps({
+                    "record_id": record_id,
+                    "host_ip": record.get('host_ip'),
+                    "ssh_port": record.get('ssh_port'),
+                    "target_username": record.get('target_username'),
+                    "operation_time": revoked_at
+                }),
+                success=1
+            )
+            return jsonify({
+                'success': True,
+                'message': '目标主机公钥已删除',
+                'data': {'record_id': record_id, 'revoked_at': revoked_at}
+            })
+
         db = get_db()
         cursor = db.cursor()
         cursor.execute('''
@@ -2903,6 +3920,18 @@ def remove_target_key_by_record(record_id):
             'data': {'record_id': record_id, 'revoked_at': revoked_at}
         })
     except Exception as e:
+        if USE_LOCAL_FILE_STORE:
+            try:
+                records = _read_ssh_key_records_store()
+                record = next((item for item in records if int(item.get('id', 0)) == int(record_id)), None)
+                if record:
+                    record['revoke_status'] = 'failed'
+                    record['revoke_message'] = str(e)
+                    _write_ssh_key_records_store(records)
+            except Exception:
+                pass
+            return jsonify({'success': False, 'message': f'删除目标主机公钥失败: {str(e)}'}), 500
+
         try:
             db = get_db()
             cursor = db.cursor()
@@ -2926,6 +3955,36 @@ def get_private_key_by_record(record_id):
         return jsonify({'success': False, 'message': str(csrf_error)}), 403
 
     try:
+        if USE_LOCAL_FILE_STORE:
+            records = _read_ssh_key_records_store()
+            row = next((item for item in records if int(item.get('id', 0)) == int(record_id)), None)
+            if not row:
+                return jsonify({'success': False, 'message': '配置记录不存在'}), 404
+            if row.get('setup_status') != 'success':
+                return jsonify({'success': False, 'message': '该记录配置失败，不支持查看私钥'}), 400
+            if row.get('revoke_status') == 'revoked':
+                return jsonify({'success': False, 'message': '该记录已删除目标主机公钥，禁止再次查看私钥'}), 403
+            if not row.get('private_key'):
+                return jsonify({'success': False, 'message': '该记录缺少私钥信息'}), 400
+            private_key = decrypt_host_secret(row.get('private_key'))
+            return jsonify({
+                'success': True,
+                'data': {
+                    'id': row.get('id'),
+                    'host_ip': row.get('host_ip'),
+                    'ssh_port': row.get('ssh_port'),
+                    'target_username': row.get('target_username'),
+                    'key_type': row.get('key_type'),
+                    'private_key': private_key,
+                    'public_key': row.get('public_key') or '',
+                    'private_key_path': row.get('private_key_path') or '',
+                    'public_key_path': row.get('public_key_path') or '',
+                    'created_at': row.get('created_at') or '',
+                    'setup_status': row.get('setup_status') or 'success',
+                    'revoke_status': row.get('revoke_status') or 'active'
+                }
+            })
+
         db = get_db()
         cursor = db.cursor()
         cursor.execute('''
@@ -2972,6 +4031,47 @@ def get_private_key_by_record(record_id):
 @permission_required('temp_view')
 def templates():
     try:
+        if USE_LOCAL_FILE_STORE:
+            search_keyword = request.args.get('search', '').strip()
+            result = _read_templates_from_store()
+            if search_keyword:
+                key = search_keyword.lower()
+                result = [
+                    item for item in result
+                    if key in str(item.get('template_name', '')).lower()
+                    or key in str(item.get('template_identifier', '')).lower()
+                ]
+            temp_info = []
+            for res in result:
+                data_list = []
+                for idx, rule in enumerate(res.get('rules', []), start=1):
+                    data_list.append({
+                        'rule_id': rule.get('rule_id', idx),
+                        'policy': rule.get('policy', ''),
+                        'protocol': rule.get('protocol', ''),
+                        'port': rule.get('port', ''),
+                        'auth_object': rule.get('auth_object', ''),
+                        'description': rule.get('description', ''),
+                        'created_at': rule.get('created_at', res.get('created_at', '')),
+                        'updated_at': rule.get('updated_at', res.get('updated_at', '')),
+                        'limit': rule.get('limit', ''),
+                    })
+                temp_info.append({
+                    'template_id': res.get('id'),
+                    'template_name': res.get('template_name', ''),
+                    'direction': res.get('direction', 'INPUT'),
+                    'template_identifier': res.get('template_identifier', ''),
+                    'updated_at': res.get('updated_at', ''),
+                    'rules': data_list,
+                })
+            total_templates = len(temp_info)
+            return render_template(
+                'templates.html',
+                data_list=temp_info,
+                search_keyword=search_keyword,
+                sum=total_templates
+            )
+
         db = get_db()
         cursor = db.cursor()
         # 获取搜索关键词
@@ -3049,6 +4149,57 @@ def templates_add():
         validated_data, error_message = _validate_template_payload(data, is_edit=False)
         if error_message:
             return jsonify({'success': False, 'message': error_message}), 400
+
+        if USE_LOCAL_FILE_STORE:
+            templates_data = _read_templates_from_store()
+            if any(
+                str(item.get('template_name', '')).strip() == validated_data['name']
+                for item in templates_data
+            ):
+                return jsonify({'success': False, 'message': '模板名称已存在'}), 409
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            template_id = _next_id(templates_data)
+            rules = []
+            for idx, rule in enumerate(validated_data['rules'], start=1):
+                rules.append({
+                    'rule_id': idx,
+                    'policy': rule['policy'],
+                    'protocol': rule['protocol'],
+                    'port': rule['port'],
+                    'auth_object': rule['auth_object'],
+                    'description': rule['description'],
+                    'limit': rule['limit'],
+                    'created_at': now,
+                    'updated_at': now
+                })
+            templates_data.append({
+                'id': template_id,
+                'template_name': validated_data['name'],
+                'template_identifier': validated_data['description'],
+                'direction': validated_data['direction'],
+                'created_at': now,
+                'updated_at': now,
+                'rules': rules
+            })
+            _write_templates_to_store(templates_data)
+            rule_count = len(validated_data['rules'])
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='添加',
+                operation_object='模板',
+                operation_summary=f"添加模板: {validated_data['name']} (规则数: {rule_count})",
+                operation_details=json.dumps({
+                    "template_id": template_id,
+                    "template_name": validated_data['name'],
+                    "direction": validated_data['direction'],
+                    "description": validated_data['description'],
+                    "rule_count": rule_count,
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=1
+            )
+            return jsonify({'success': True, 'message': '模板添加成功'})
 
         db = get_db()
         cursor = db.cursor()
@@ -3163,6 +4314,35 @@ def templates_del():
     template_id = request.args.get('temp_id')
     template = None  # 初始化template变量
     try:
+        if USE_LOCAL_FILE_STORE:
+            templates_data = _read_templates_from_store()
+            target = None
+            remained = []
+            for item in templates_data:
+                if str(item.get('id')) == str(template_id):
+                    target = item
+                else:
+                    remained.append(item)
+            if not target:
+                return jsonify({'success': False, 'message': '模板不存在'}), 404
+            _write_templates_to_store(remained)
+            rule_count = len(target.get('rules', []))
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='删除',
+                operation_object='模板',
+                operation_summary=f"删除模板: {target.get('template_name', '')} (规则数: {rule_count})",
+                operation_details=json.dumps({
+                    "template_id": template_id,
+                    "template_name": target.get('template_name', ''),
+                    "deleted_rules": rule_count,
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=1
+            )
+            return jsonify({'success': True, 'message': '模板删除成功'})
+
         db = get_db()
         cursor = db.cursor()
         # 【新增】获取模板名称用于日志
@@ -3281,6 +4461,62 @@ def templates_edit():
         if error_message:
             return jsonify({'success': False, 'message': error_message}), 400
 
+        if USE_LOCAL_FILE_STORE:
+            templates_data = _read_templates_from_store()
+            target = None
+            for item in templates_data:
+                if str(item.get('id')) == str(validated_data['temp_id']):
+                    target = item
+                    break
+            if not target:
+                return jsonify({'success': False, 'message': '模板不存在'}), 404
+            for item in templates_data:
+                if str(item.get('id')) != str(validated_data['temp_id']) and str(item.get('template_name', '')).strip() == validated_data['name']:
+                    return jsonify({'success': False, 'message': '模板名称已存在'}), 409
+            original_template_name = target.get('template_name', '')
+            old_rule_count = len(target.get('rules', []))
+            new_rule_count = len(validated_data['rules'])
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            target['template_name'] = validated_data['name']
+            target['template_identifier'] = validated_data['description']
+            target['direction'] = validated_data['direction']
+            target['updated_at'] = now
+            new_rules = []
+            for idx, rule in enumerate(validated_data['rules'], start=1):
+                new_rules.append({
+                    'rule_id': idx,
+                    'policy': rule['policy'],
+                    'protocol': rule['protocol'],
+                    'port': rule['port'],
+                    'auth_object': rule['auth_object'],
+                    'description': rule['description'],
+                    'limit': rule.get('limit', ''),
+                    'created_at': now,
+                    'updated_at': now
+                })
+            target['rules'] = new_rules
+            _write_templates_to_store(templates_data)
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='编辑',
+                operation_object='模板',
+                operation_summary=f"编辑模板: {original_template_name} -> {validated_data['name']} (规则数: {old_rule_count}→{new_rule_count})",
+                operation_details=json.dumps({
+                    "template_id": validated_data['temp_id'],
+                    "original": {"name": original_template_name, "rule_count": old_rule_count},
+                    "updated": {
+                        "name": validated_data['name'],
+                        "description": validated_data['description'],
+                        "direction": validated_data['direction'],
+                        "rule_count": new_rule_count
+                    },
+                    "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=1
+            )
+            return jsonify({'success': True, 'message': '模板修改成功'})
+
         db = get_db()
         cursor = db.cursor()
 
@@ -3397,6 +4633,16 @@ def templates_edit():
 @login_required
 def temp_host_api():
     try:
+        if USE_LOCAL_FILE_STORE:
+            host_list = []
+            hosts = sorted(_read_hosts_from_store(), key=lambda x: x.get('created_at', ''), reverse=True)
+            for host in hosts:
+                host_list.append({
+                    'id': host.get('id'),
+                    'host_name': host.get('host_identifier', '')
+                })
+            return jsonify({'success': True, 'data': host_list})
+
         # 获取数据库连接
         db = get_db()
         cursor = db.cursor()
@@ -3443,8 +4689,10 @@ def temp_to_hosts():
         if not isinstance(host_ids_list, list) or len(host_ids_list) == 0:
             return jsonify({'success': False, 'message': '请至少选择一台主机'}), 400
 
-        db = get_db()
-        cursor = db.cursor()
+        cursor = None
+        if not USE_LOCAL_FILE_STORE:
+            db = get_db()
+            cursor = db.cursor()
         template_name, direction, cmd_list, build_error = _build_template_apply_payload(cursor, template_id)
         if build_error:
             return jsonify({'success': False, 'message': build_error}), 404
@@ -3532,8 +4780,10 @@ def temp_to_hosts_precheck():
         if not isinstance(host_ids_list, list) or len(host_ids_list) == 0:
             return jsonify({'success': False, 'message': '请至少选择一台主机'}), 400
 
-        db = get_db()
-        cursor = db.cursor()
+        cursor = None
+        if not USE_LOCAL_FILE_STORE:
+            db = get_db()
+            cursor = db.cursor()
         template_name, _, cmd_list, build_error = _build_template_apply_payload(cursor, template_id)
         if build_error:
             return jsonify({'success': False, 'message': build_error}), 404
@@ -3584,6 +4834,50 @@ def temp_copy():
     if not template_id:
         return jsonify({'success': False, 'message': '缺少模板ID'}), 400
     try:
+        if USE_LOCAL_FILE_STORE:
+            templates_data = _read_templates_from_store()
+            source_template = next((item for item in templates_data if str(item.get('id')) == str(template_id)), None)
+            if not source_template:
+                return jsonify({'success': False, 'message': '模板不存在'}), 404
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            copied_name = f"{source_template.get('template_name', '')}-副本"
+            copied_identifier = f"{source_template.get('template_identifier', '')}（复制于{datetime.now().strftime('%m-%d %H:%M')}）"
+            new_template_id = _next_id(templates_data)
+            copied_rules = []
+            for idx, rule in enumerate(source_template.get('rules', []), start=1):
+                copied_rule = dict(rule)
+                copied_rule['rule_id'] = idx
+                copied_rule['created_at'] = now
+                copied_rule['updated_at'] = now
+                copied_rules.append(copied_rule)
+            templates_data.append({
+                'id': new_template_id,
+                'template_name': copied_name,
+                'template_identifier': copied_identifier,
+                'direction': source_template.get('direction', 'INPUT'),
+                'created_at': now,
+                'updated_at': now,
+                'rules': copied_rules
+            })
+            _write_templates_to_store(templates_data)
+            log_operation(
+                user_id=current_user.id,
+                username=current_user.username,
+                operation_type='复制',
+                operation_object='模板',
+                operation_summary=f"复制模板: {source_template.get('template_name', '')} -> {copied_name}",
+                operation_details=json.dumps({
+                    'source_template_id': template_id,
+                    'source_template_name': source_template.get('template_name', ''),
+                    'new_template_id': new_template_id,
+                    'new_template_name': copied_name,
+                    'rule_count': len(copied_rules),
+                    'operation_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }),
+                success=1
+            )
+            return jsonify({'success': True, 'message': '模板复制成功'})
+
         db = get_db()
         cursor = db.cursor()
         cursor.execute('SELECT template_name, template_identifier, direction FROM templates WHERE id = ?', (template_id,))
@@ -3662,6 +4956,9 @@ def get_system_config():
         @permission_required('sys_view')
         def get_config():
             try:
+                if USE_LOCAL_FILE_STORE:
+                    config = _read_system_config_store()
+                    return jsonify(config or {})
                 db = get_db()
                 config = db.execute('SELECT * FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
                 return jsonify(dict(config)) if config else jsonify({})
@@ -3677,6 +4974,38 @@ def get_system_config():
             data = None
             try:
                 data = request.get_json()
+                if USE_LOCAL_FILE_STORE:
+                    original_config = _read_system_config_store()
+                    if not original_config:
+                        return jsonify({'error': '系统配置不存在'}), 404
+                    updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    original_config['system_name'] = data['system_name']
+                    original_config['session_timeout'] = int(data['default_session_timeout'])
+                    original_config['log_retention_time'] = str(data['log_retention_days'])
+                    original_config['color_mode'] = data['color_mode']
+                    original_config['password_strategy'] = data['password_strategy']
+                    original_config['updated_at'] = updated_at
+                    _write_system_config_store(original_config)
+                    log_operation(
+                        user_id=current_user.id,
+                        username=current_user.username,
+                        operation_type='编辑',
+                        operation_object='系统设置',
+                        operation_summary=f"更新系统设置: {data['system_name']}",
+                        operation_details=json.dumps({
+                            "updated": {
+                                "system_name": data['system_name'],
+                                "session_timeout": data['default_session_timeout'],
+                                "log_retention": data['log_retention_days'],
+                                "color_mode": data['color_mode'],
+                                "password_strategy": data['password_strategy']
+                            },
+                            "operation_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        }),
+                        success=1
+                    )
+                    return jsonify({'success': True, 'message': '保存系统配置成功'})
+
                 db = get_db()
                 cursor = db.cursor()
                 # 获取原始配置用于日志
@@ -3767,6 +5096,9 @@ def get_system_config():
 def get_session_timeout():
     """从数据库获取会话超时时间（分钟），默认30分钟"""
     try:
+        if USE_LOCAL_FILE_STORE:
+            config = _read_system_config_store()
+            return int(config.get('session_timeout', 30))
         db = get_db()
         config = db.execute('SELECT session_timeout FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
         if config and config['session_timeout'] is not None:
@@ -3814,6 +5146,22 @@ class User(UserMixin):
 
     def has_permission(self, permission_code):
         """检查用户是否拥有指定权限"""
+        if USE_LOCAL_FILE_STORE:
+            users = _read_users_from_store()
+            target = None
+            for user in users:
+                if str(user.get('id')) == str(self.id):
+                    target = user
+                    break
+            if not target:
+                return False
+            role_ids = {str(role_id) for role_id in (target.get('role_ids') or [])}
+            for role in _read_roles_from_store():
+                if str(role.get('id')) in role_ids:
+                    if permission_code in (role.get('permission_codes') or []):
+                        return True
+            return False
+
         db = get_db()
         try:
             cursor = db.cursor()
@@ -3835,6 +5183,24 @@ class User(UserMixin):
 @login_manager.user_loader
 def load_user(user_id):
     """从数据库加载用户信息，包括用户角色"""
+    if USE_LOCAL_FILE_STORE:
+        users = _read_users_from_store()
+        roles = _read_roles_from_store()
+        user = next((item for item in users if str(item.get('id')) == str(user_id)), None)
+        if not user or user.get('status') != 'active':
+            return None
+        role_map = {str(role.get('id')): role for role in roles}
+        user_roles = []
+        for role_id in user.get('role_ids', []):
+            role = role_map.get(str(role_id))
+            if role:
+                user_roles.append({'id': role.get('id'), 'name': role.get('role_name')})
+        return User(
+            user_id=user.get('id'),
+            username=user.get('username'),
+            roles=user_roles
+        )
+
     db = get_db()
     try:
         # 查询用户基本信息
@@ -3873,23 +5239,28 @@ def login():
         password = request.form.get('password')
         remember = request.form.get('remember') == 'on'
 
-        # 从数据库查询用户
-        db = get_db()
-        user_data = db.execute('SELECT id, username, password, status FROM user WHERE username = ?',
-                               (username,)).fetchone()
+        if USE_LOCAL_FILE_STORE:
+            user_data = next(
+                (item for item in _read_users_from_store() if item.get('username') == username),
+                None
+            )
+        else:
+            db = get_db()
+            user_data = db.execute('SELECT id, username, password, status FROM user WHERE username = ?',
+                                   (username,)).fetchone()
 
         if not user_data:
             return jsonify(success=False, message='用户名不存在') if request.headers.get(
                 'X-Requested-With') == 'XMLHttpRequest' else \
                 render_template('login.html', error='用户名不存在')
 
-        if user_data['status'] != 'active':
+        if user_data.get('status') != 'active':
             return jsonify(success=False, message='用户已被禁用') if request.headers.get(
                 'X-Requested-With') == 'XMLHttpRequest' else \
                 render_template('login.html', error='用户已被禁用')
 
         try:
-            password_ok = verify_user_password(user_data['password'], password)
+            password_ok = verify_user_password(user_data.get('password', ''), password)
         except ValueError as verify_error:
             app.logger.error(f"登录密码校验失败: {str(verify_error)}")
             return jsonify(success=False, message=str(verify_error)) if request.headers.get(
@@ -3902,7 +5273,7 @@ def login():
                 render_template('login.html', error='密码不正确')
 
         # 加载用户角色信息
-        user = load_user(user_data['id'])
+        user = load_user(user_data.get('id'))
         session['created_at'] = time.time()
         login_user(user, remember=remember)
 
@@ -3917,6 +5288,61 @@ def login():
 @login_required
 @permission_required('user_view')
 def users():
+    if USE_LOCAL_FILE_STORE:
+        if request.method == "GET":
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                try:
+                    users_data = [{'username': item.get('username', '')} for item in _read_users_from_store()]
+                    return jsonify({"success": True, "users": users_data})
+                except Exception:
+                    return jsonify({"success": False, "message": "获取用户列表失败"}), 500
+            users_data = _read_users_from_store()
+            roles_map = {str(role.get('id')): role.get('role_name', '') for role in _read_roles_from_store()}
+            user_list = []
+            for item in users_data:
+                role_names = [roles_map.get(str(role_id), '') for role_id in item.get('role_ids', []) if roles_map.get(str(role_id))]
+                user_list.append({
+                    'id': item.get('id'),
+                    'roles': ', '.join(role_names) if role_names else 'None',
+                    'username': item.get('username', ''),
+                    'email': item.get('email', ''),
+                    'status': item.get('status', 'active'),
+                    'created_at': item.get('created_at', '')
+                })
+            return render_template('systemseting.html', user_list=user_list)
+
+        user_data = request.get_json() or {}
+        username = (user_data.get('username') or '').strip()
+        password = user_data.get('password') or ''
+        email = (user_data.get('email') or '').strip()
+        status = user_data.get('status', 'active')
+        role_id = user_data.get('role')
+        if not username or not password or not email or not role_id:
+            return jsonify({"success": False, "message": "用户名、密码、邮箱、角色为必填项"}), 400
+        users_data = _read_users_from_store()
+        if any(item.get('username') == username for item in users_data):
+            return jsonify({"success": False, "message": "用户名已存在，请更换！"}), 409
+        if any(item.get('email') == email for item in users_data):
+            return jsonify({"success": False, "message": "邮箱已存在，请更换！"}), 409
+        try:
+            role_id_int = int(role_id)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "无效的角色ID格式"}), 400
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        user_id = _next_id(users_data)
+        users_data.append({
+            'id': user_id,
+            'username': username,
+            'password': hash_user_password(password),
+            'email': email,
+            'status': status,
+            'role_ids': [role_id_int],
+            'created_at': now,
+            'updated_at': now
+        })
+        _write_users_to_store(users_data)
+        return jsonify({"success": True, "message": "用户添加成功！"}), 200
+
     # 如果是查看用户管理页面
     if request.method == "GET":
         # 新增：如果是AJAX请求，返回用户列表JSON数据（用于日志筛选）
@@ -4129,6 +5555,49 @@ def users():
 @login_required
 @permission_required('user_edit')
 def user_edit():
+    if USE_LOCAL_FILE_STORE:
+        users_data = _read_users_from_store()
+        roles_data = _read_roles_from_store()
+        if request.method == 'GET':
+            user_id = request.args.get('id')
+            user = next((item for item in users_data if str(item.get('id')) == str(user_id)), None)
+            if not user:
+                return jsonify({'success': False, 'message': '用户不存在'}), 404
+            roles = [{'id': role.get('id'), 'role_name': role.get('role_name', '')} for role in roles_data]
+            return jsonify({
+                'success': True,
+                'user': {
+                    'id': user.get('id'),
+                    'username': user.get('username', ''),
+                    'email': user.get('email', ''),
+                    'status': user.get('status', 'active')
+                },
+                'roles': roles,
+                'user_roles': user.get('role_ids', [])
+            })
+        data = request.get_json() or {}
+        user_id = data.get('id')
+        user = next((item for item in users_data if str(item.get('id')) == str(user_id)), None)
+        if not user:
+            return jsonify({'success': False, 'message': '用户不存在'}), 404
+        user['username'] = data.get('username', user.get('username', ''))
+        user['email'] = data.get('email', user.get('email', ''))
+        user['status'] = data.get('status', user.get('status', 'active'))
+        if data.get('password'):
+            user['password'] = hash_user_password(data.get('password'))
+        if 'role' in data:
+            role_payload = data.get('role', [])
+            if isinstance(role_payload, list):
+                role_list = role_payload
+            elif role_payload is None:
+                role_list = []
+            else:
+                role_list = [role_payload]
+            user['role_ids'] = [int(role_id) for role_id in role_list if str(role_id).isdigit()]
+        user['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _write_users_to_store(users_data)
+        return jsonify({'success': True, 'message': '用户更新成功'})
+
     if request.method == 'GET':
         user_id = request.args.get('id')
         try:
@@ -4308,6 +5777,16 @@ def user_edit():
 @permission_required('user_del')
 def user_del():
     user_id = request.args.get('id')
+    if USE_LOCAL_FILE_STORE:
+        if int(user_id) == int(current_user.id):
+            return jsonify({'success': False, 'message': '不能删除当前登录用户'}), 400
+        users_data = _read_users_from_store()
+        remained = [item for item in users_data if str(item.get('id')) != str(user_id)]
+        if len(remained) == len(users_data):
+            return jsonify({'success': False, 'message': '用户不存在'}), 404
+        _write_users_to_store(remained)
+        return jsonify({'success': True, 'message': '用户删除成功'})
+
     # 防止删除自己
     if int(user_id) == current_user.id:
         return jsonify({'success': False, 'message': '不能删除当前登录用户'}), 400
@@ -4399,6 +5878,16 @@ def user_del():
 def assign_user_roles(user_id):
     data = request.get_json()
     roles = data['roles']
+    if USE_LOCAL_FILE_STORE:
+        users_data = _read_users_from_store()
+        target = next((item for item in users_data if str(item.get('id')) == str(user_id)), None)
+        if not target:
+            return jsonify({'success': False, 'message': '用户不存在'}), 404
+        target['role_ids'] = [int(role_id) for role_id in roles if str(role_id).isdigit()]
+        target['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _write_users_to_store(users_data)
+        return jsonify({'success': True, 'message': '角色分配成功'})
+
     db = get_db()
     try:
         cursor = db.cursor()
@@ -4421,6 +5910,49 @@ def assign_user_roles(user_id):
 @login_required
 @permission_required('role_view')  # 角色管理需要role_view权限
 def roles():
+    if USE_LOCAL_FILE_STORE:
+        roles_data = _read_roles_from_store()
+        users_data = _read_users_from_store()
+        if request.method == 'GET':
+            role_list = []
+            for role in roles_data:
+                role_id = role.get('id')
+                user_count = sum(1 for user in users_data if role_id in (user.get('role_ids') or []))
+                role_list.append({
+                    'id': role_id,
+                    'role_name': role.get('role_name', ''),
+                    'role_description': role.get('role_description', ''),
+                    'permissions': role.get('permission_codes', []),
+                    'user_count': user_count,
+                    'created_at': role.get('created_at', ''),
+                    'updated_at': role.get('updated_at', '')
+                })
+            if request.headers.get('Accept') == 'application/json':
+                return jsonify({'success': True, 'roles': role_list})
+            return render_template('systemseting.html', role_list=role_list)
+
+        if not current_user.has_permission('role_add'):
+            return jsonify(success=False, message='没有添加角色权限'), 403
+        role_data = request.get_json() or {}
+        role_name = (role_data.get('role_name') or '').strip()
+        if not role_name:
+            return jsonify({"success": False, "message": "角色名不能为空"}), 400
+        if any(role.get('role_name') == role_name for role in roles_data):
+            return jsonify({"success": False, "message": "角色名称已存在"}), 409
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        role_id = _next_id(roles_data)
+        permission_codes = _permission_codes_from_payload(role_data.get('permissions', []))
+        roles_data.append({
+            'id': role_id,
+            'role_name': role_name,
+            'role_description': role_data.get('role_description', ''),
+            'permission_codes': permission_codes,
+            'created_at': now,
+            'updated_at': now
+        })
+        _write_roles_to_store(roles_data)
+        return jsonify({"success": True, "message": "角色添加成功！"}), 200
+
     if request.method == 'GET':
         db = get_db()
         try:
@@ -4588,6 +6120,35 @@ def roles():
 @login_required
 @permission_required('role_edit')
 def role_edit():
+    if USE_LOCAL_FILE_STORE:
+        roles_data = _read_roles_from_store()
+        if request.method == 'GET':
+            role_id = request.args.get('id')
+            role = next((item for item in roles_data if str(item.get('id')) == str(role_id)), None)
+            if not role:
+                return jsonify({'success': False, 'message': '角色不存在'}), 404
+            return jsonify({
+                'success': True,
+                'role': {
+                    'id': role.get('id'),
+                    'role_name': role.get('role_name', ''),
+                    'role_description': role.get('role_description', '')
+                },
+                'permissions': role.get('permission_codes', [])
+            })
+        data = request.get_json() or {}
+        role_id = data.get('id')
+        role = next((item for item in roles_data if str(item.get('id')) == str(role_id)), None)
+        if not role:
+            return jsonify({'success': False, 'message': '角色不存在'}), 404
+        role['role_name'] = data.get('role_name', role.get('role_name', ''))
+        role['role_description'] = data.get('role_description', role.get('role_description', ''))
+        if 'permissions' in data and isinstance(data.get('permissions'), list):
+            role['permission_codes'] = _permission_codes_from_payload(data.get('permissions'))
+        role['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _write_roles_to_store(roles_data)
+        return jsonify({'success': True, 'message': '角色更新成功'})
+
     if request.method == 'GET':
         role_id = request.args.get('id')
         try:
@@ -4733,6 +6294,20 @@ def role_edit():
 @permission_required('role_del')
 def role_del():
     role_id = request.args.get('id')
+    if USE_LOCAL_FILE_STORE:
+        if int(role_id) == 1:
+            return jsonify({'success': False, 'message': '不能删除默认管理员角色'}), 400
+        roles_data = _read_roles_from_store()
+        users_data = _read_users_from_store()
+        role_id_int = int(role_id)
+        if any(role_id_int in (user.get('role_ids') or []) for user in users_data):
+            return jsonify({'success': False, 'message': '该角色已分配给用户，请先移除用户关联'}), 400
+        remained = [item for item in roles_data if int(item.get('id', 0)) != role_id_int]
+        if len(remained) == len(roles_data):
+            return jsonify({'success': False, 'message': '角色不存在'}), 404
+        _write_roles_to_store(remained)
+        return jsonify({'success': True, 'message': '角色删除成功'})
+
     # 防止删除管理员角色
     if int(role_id) == 1:
         return jsonify({'success': False, 'message': '不能删除默认管理员角色'}), 400
@@ -4858,6 +6433,20 @@ def role_del():
 @login_required
 @permission_required('role_assign')  # 分配权限需要role_assign权限
 def role_permissions(role_id):
+    if USE_LOCAL_FILE_STORE:
+        roles_data = _read_roles_from_store()
+        role = next((item for item in roles_data if int(item.get('id', 0)) == int(role_id)), None)
+        if not role:
+            return jsonify({"success": False, "message": "角色不存在"}), 404
+        if request.method == 'GET':
+            all_permissions = _build_permission_response(role.get('permission_codes') or [])
+            return jsonify({"success": True, "permissions": all_permissions})
+        permissions = request.json.get('permissions', [])
+        role['permission_codes'] = _permission_codes_from_payload(permissions)
+        role['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _write_roles_to_store(roles_data)
+        return jsonify({"success": True, "message": "权限分配成功！"})
+
     db = get_db()
     if request.method == 'GET':
         # 获取角色当前拥有的权限
@@ -5044,6 +6633,107 @@ def logs():
 
         where_clause = "WHERE " + " AND ".join(query_conditions) if query_conditions else ""
         return where_clause, query_params
+
+    def filter_logs_store(items):
+        operation_type = request.args.get('operation_type')
+        operation_object = request.args.get('operation_object')
+        success = request.args.get('success')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        search_keyword = request.args.get('search', '').strip().lower()
+        username = request.args.get('username')
+
+        op_types = {t.strip() for t in (operation_type or '').split(',') if t.strip()}
+        op_objects = {o.strip() for o in (operation_object or '').split(',') if o.strip()}
+        success_set = {int(s.strip()) for s in (success or '').split(',') if s.strip().isdigit()}
+
+        start_val = start_time.replace('T', ' ') if start_time else ''
+        if start_val and len(start_val) <= 16:
+            start_val += ':00'
+        end_val = end_time.replace('T', ' ') if end_time else ''
+        if end_val and len(end_val) <= 16:
+            end_val += ':00'
+
+        filtered = []
+        for item in items:
+            if op_types and item.get('operation_type') not in op_types:
+                continue
+            if op_objects and item.get('operation_object') not in op_objects:
+                continue
+            if success_set and int(item.get('success', 0)) not in success_set:
+                continue
+            if username and item.get('username') != username:
+                continue
+            op_time = item.get('operation_time', '')
+            if start_val and op_time < start_val:
+                continue
+            if end_val and op_time > end_val:
+                continue
+            if search_keyword:
+                haystack = ' '.join([
+                    str(item.get('username', '')),
+                    str(item.get('operation_summary', '')),
+                    str(item.get('operation_details', ''))
+                ]).lower()
+                if search_keyword not in haystack:
+                    continue
+            filtered.append(item)
+        filtered.sort(key=lambda x: x.get('operation_time', ''), reverse=True)
+        return filtered
+
+    if USE_LOCAL_FILE_STORE:
+        items = _read_operation_logs_from_store()
+
+        if request.args.get('get_operation_types') == 'true':
+            types = sorted({item.get('operation_type', '') for item in items if item.get('operation_type')})
+            return jsonify({"success": True, "types": types})
+
+        filtered_logs = filter_logs_store(items)
+
+        if request.args.get('export') == 'csv':
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['操作时间', '操作用户', '操作类型', '操作对象', '操作内容', '结果'])
+            for row in filtered_logs[:5000]:
+                writer.writerow([
+                    row.get('operation_time', ''),
+                    row.get('username', ''),
+                    row.get('operation_type', ''),
+                    row.get('operation_object', ''),
+                    row.get('operation_summary', ''),
+                    '成功' if int(row.get('success', 0)) else '失败'
+                ])
+            filename = f"operation_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            return Response(
+                output.getvalue(),
+                mimetype='text/csv; charset=utf-8',
+                headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+            )
+
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 10, type=int)
+            offset = (page - 1) * per_page
+            paged = filtered_logs[offset: offset + per_page]
+            for item in paged:
+                details = item.get('operation_details')
+                if isinstance(details, str):
+                    try:
+                        item['operation_details'] = json.loads(details)
+                    except json.JSONDecodeError:
+                        pass
+            total = len(filtered_logs)
+            return jsonify({
+                'success': True,
+                'data': paged,
+                'pagination': {
+                    'total': total,
+                    'page': page,
+                    'per_page': per_page,
+                    'pages': (total + per_page - 1) // per_page
+                }
+            })
+        return render_template('logs.html')
 
     # 获取操作类型列表
     if request.args.get('get_operation_types') == 'true':

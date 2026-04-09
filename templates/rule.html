@@ -76,10 +76,15 @@
               </select>
             </div>
 
-            <!-- 新增规则按钮 - 右侧 -->
-            <button id="add-rule-btn" class="bg-primary text-white px-5 py-2.5 rounded-lg font-medium flex items-center btn-hover self-start md:self-auto ml-auto">
-              <i class="fa fa-plus mr-2"></i> 新增规则
-            </button>
+            <!-- 规则操作按钮 - 右侧 -->
+            <div class="flex gap-2 self-start md:self-auto ml-auto">
+              <button id="detect-conflict-btn" class="px-4 py-2.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 font-medium hover:bg-amber-100 transition-colors">
+                <i class="fa fa-bug mr-1"></i> 冲突检测
+              </button>
+              <button id="add-rule-btn" class="bg-primary text-white px-5 py-2.5 rounded-lg font-medium flex items-center btn-hover">
+                <i class="fa fa-plus mr-2"></i> 新增规则
+              </button>
+            </div>
           </div>
 
           <!-- 规则列表 -->
@@ -324,6 +329,38 @@
     // 新增：获取限速相关元素
     const speedLimitContainer = document.getElementById('speed-limit-container');
     const speedLimitInput = document.getElementById('speed-limit');
+    const detectConflictBtn = document.getElementById('detect-conflict-btn');
+
+    detectConflictBtn?.addEventListener('click', async () => {
+      const currentUrl = window.location.pathname;
+      const direction = currentUrl.includes('/rules_in') ? 'INPUT' : 'OUTPUT';
+      const hostId = {{ id|tojson }};
+      const oldHtml = detectConflictBtn.innerHTML;
+      detectConflictBtn.disabled = true;
+      detectConflictBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>检测中';
+      try {
+        const response = await fetch(`/rules_conflicts?host_id=${hostId}&direction=${direction}`);
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || '冲突检测失败');
+        }
+        if (!data.conflicts || data.conflicts.length === 0) {
+          showToast('success-toast');
+          document.querySelector('#success-toast span').textContent = '未检测到明显冲突规则';
+          return;
+        }
+        const details = data.conflicts
+          .map((item, idx) => `${idx + 1}. [${item.severity}] ${item.message}`)
+          .join('\n');
+        showErrorToast(`检测到 ${data.conflict_count} 项潜在冲突`);
+        alert(`冲突检测结果\n\n${details}`);
+      } catch (error) {
+        showErrorToast(error.message || '冲突检测失败');
+      } finally {
+        detectConflictBtn.disabled = false;
+        detectConflictBtn.innerHTML = oldHtml;
+      }
+    });
 
     // 打开新增规则模态框
     addRuleBtn.addEventListener('click', () => {

@@ -16,7 +16,7 @@
 
 - 前端：Tailwind CSS + Font Awesome + 原生 JavaScript
 - 后端：Python + Flask + Flask-Login + Flask-APScheduler
-- 数据库：SQLite（`firewall_management.db`）
+- 数据存储：本地文件存储（默认 `data/store/*.json`），兼容 SQLite（`firewall_management.db`）
 - 远程执行：Paramiko（SSH）
 
 ## 环境要求
@@ -41,6 +41,17 @@ pip install -r requirements.txt
 # 4) 启动
 python3 app.py
 ```
+
+### 本地文件存储模式（默认）
+
+- 默认启用 `USE_LOCAL_FILE_STORE=1`，主机与操作日志会落盘到 `data/store/hosts.json` 和 `data/store/operation_logs.json`
+- 认证与配置也会落盘到：
+  - `data/store/users.json`
+  - `data/store/roles.json`
+  - `data/store/system_config.json`
+  - `data/store/templates.json`
+  - `data/store/ssh_key_setup_records.json`
+- 如需切回 SQLite 逻辑，可在启动前设置：`export USE_LOCAL_FILE_STORE=0`
 
 默认监听：`0.0.0.0:2025`  
 访问地址：`http://127.0.0.1:2025`
