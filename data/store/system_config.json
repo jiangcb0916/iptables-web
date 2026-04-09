@@ -1,6 +1,6 @@
 {
   "id": 1,
-  "system_name": "iptables-web",
+  "system_name": "防火墙管理系统",
   "session_timeout": 30,
   "log_retention_time": "30",
   "color_mode": "dark",

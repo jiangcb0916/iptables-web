@@ -161,7 +161,7 @@ def _ensure_local_store_files():
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         _write_store_json(SYSTEM_CONFIG_STORE_FILE, {
             "id": 1,
-            "system_name": "iptables-web",
+            "system_name": "防火墙管理系统",
             "session_timeout": 30,
             "log_retention_time": "30",
             "color_mode": "light",
@@ -463,7 +463,11 @@ def _normalize_local_store_data():
     cfg = _read_system_config_store()
     norm_cfg = dict(cfg) if isinstance(cfg, dict) else {}
     norm_cfg['id'] = int(norm_cfg.get('id', 1) or 1)
-    norm_cfg['system_name'] = str(norm_cfg.get('system_name', 'iptables-web') or 'iptables-web')
+    current_system_name = str(norm_cfg.get('system_name', '') or '').strip()
+    if not current_system_name or current_system_name.lower() in ('iptables-web', 'iptables_web', 'iptables web'):
+        norm_cfg['system_name'] = '防火墙管理系统'
+    else:
+        norm_cfg['system_name'] = current_system_name
     try:
         norm_cfg['session_timeout'] = int(norm_cfg.get('session_timeout', 30) or 30)
     except (TypeError, ValueError):
