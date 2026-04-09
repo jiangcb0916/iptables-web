@@ -128,20 +128,20 @@
       </header>
 
       <!-- 页面内容 -->
-      <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+      <main class="flex-1 overflow-y-auto bg-gray-50 p-6 fw-page-main">
         <div class="container mx-auto max-w-7xl">
           <!-- 页面标题和操作区 -->
-          <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 fw-page-hero">
             <div>
-              <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">主机管理</h1>
-              <p class="text-secondary">管理所有受防火墙保护的主机设备</p>
+              <h1 class="fw-page-title">主机管理</h1>
+              <p class="fw-page-subtitle">管理所有受防火墙保护的主机设备</p>
             </div>
 
             <div class="flex flex-wrap gap-3 self-end md:self-auto ml-auto items-center">
               <select id="group-filter" class="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white">
                 <option value="all">全部分组</option>
               </select>
-              <button id="add-host-btn" class="bg-primary text-white px-5 py-2 rounded-lg font-medium flex items-center btn-hover">
+              <button id="add-host-btn" class="fw-btn-primary px-5 py-2 font-medium flex items-center btn-hover">
                 <i class="fa fa-plus mr-2"></i> 添加主机
               </button>
             </div>
@@ -170,7 +170,7 @@
             <datalist id="group-options"></datalist>
           </div>
           <!-- 主机列表 -->
-          <div class="bg-white rounded-xl table-shadow overflow-hidden">
+          <div class="fw-table-wrap table-shadow">
             <table class="min-w-full divide-y divide-gray-200">
               <thead class="bg-gray-50">
                 <tr>

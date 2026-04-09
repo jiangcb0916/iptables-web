@@ -767,14 +767,14 @@ def _check_udp_port(host_ip, port, timeout_sec=2):
         sock.send(b'\x00')
         try:
             sock.recv(1)
-            return True, int((time.time() - start) * 1000)
+            return 'open', int((time.time() - start) * 1000)
         except socket.timeout:
-            # UDP无响应场景较常见，视为“可能开放（open|filtered）”
-            return True, int((time.time() - start) * 1000)
+            # UDP 无响应更准确应标记为 filtered（无法确认开放）
+            return 'filtered', int((time.time() - start) * 1000)
         except (ConnectionRefusedError, OSError):
-            return False, int((time.time() - start) * 1000)
+            return 'closed', int((time.time() - start) * 1000)
     except Exception:
-        return False, int((time.time() - start) * 1000)
+        return 'closed', int((time.time() - start) * 1000)
     finally:
         sock.close()
 
@@ -787,17 +787,18 @@ def _scan_target_ports(host_id, host_ip, port_items, protocol='tcp'):
         port = int(item.get('port'))
         service = str(item.get('service', '') or f'Port {port}')
         if not ping_ok and '跳过前置' not in ping_message:
-            is_open, elapsed = False, -1
+            status, elapsed = 'closed', -1
         else:
             if protocol == 'udp':
-                is_open, elapsed = _check_udp_port(host_ip, port, timeout_sec=2)
+                status, elapsed = _check_udp_port(host_ip, port, timeout_sec=2)
             else:
                 is_open, elapsed = _check_tcp_port(host_ip, port, timeout_sec=2)
+                status = "open" if is_open else "closed"
         rows.append({
             "port": port,
             "protocol": protocol,
             "service": service,
-            "status": "open" if is_open else "closed",
+            "status": status,
             "response_ms": elapsed
         })
     if USE_LOCAL_FILE_STORE:

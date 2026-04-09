@@ -40,12 +40,12 @@
       </header>
 
       <!-- 页面内容 -->
-      <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+      <main class="flex-1 overflow-y-auto bg-gray-50 p-6 fw-page-main">
         <div class="container mx-auto max-w-7xl">
           <!-- 页面标题 -->
-          <header class="mb-8">
-            <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">防火墙规则管理</h1>
-            <p class="text-secondary">管理和配置防火墙的访问控制规则</p>
+          <header class="mb-6 fw-page-hero">
+            <h1 class="fw-page-title">防火墙规则管理</h1>
+            <p class="fw-page-subtitle">管理和配置防火墙的访问控制规则</p>
           </header>
 
           <!-- 方向选择、主机信息和新增按钮区域 -->
@@ -78,17 +78,17 @@
 
             <!-- 规则操作按钮 - 右侧 -->
             <div class="flex gap-2 self-start md:self-auto ml-auto">
-              <button id="detect-conflict-btn" class="px-4 py-2.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 font-medium hover:bg-amber-100 transition-colors">
+              <button id="detect-conflict-btn" class="px-4 py-2.5 font-medium fw-btn-outline">
                 <i class="fa fa-bug mr-1"></i> 冲突检测
               </button>
-              <button id="add-rule-btn" class="bg-primary text-white px-5 py-2.5 rounded-lg font-medium flex items-center btn-hover">
+              <button id="add-rule-btn" class="fw-btn-primary px-5 py-2.5 font-medium flex items-center btn-hover">
                 <i class="fa fa-plus mr-2"></i> 新增规则
               </button>
             </div>
           </div>
 
           <!-- 规则列表 -->
-          <div class="bg-white rounded-xl table-shadow overflow-hidden">
+          <div class="fw-table-wrap table-shadow">
             <table class="min-w-full divide-y divide-gray-200">
               <thead class="bg-gray-50">
                 <tr>

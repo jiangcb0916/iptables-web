@@ -2,31 +2,29 @@
 {% block main %}
 <style>
   .key-page-bg {
-    background: radial-gradient(1200px 380px at 18% -5%, rgba(37, 99, 235, 0.10), transparent 60%),
-                radial-gradient(900px 300px at 90% 8%, rgba(14, 165, 233, 0.08), transparent 55%),
-                linear-gradient(180deg, #f5f8ff 0%, #f3f6fb 100%);
+    background: #f8fafc;
   }
   .key-ui {
     font-size: 16px;
+    line-height: 1.58;
   }
   .key-glass-header {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(8px);
+    background: #ffffff;
   }
   .key-panel {
     background: #fff;
-    border: 1px solid #e6ebf4;
-    border-radius: 16px;
-    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
   }
   .key-panel-title {
     color: #0f172a;
     letter-spacing: 0.2px;
-    font-size: 22px;
+    font-size: 1.2rem;
   }
   .key-hint {
     color: #64748b;
-    font-size: 16px;
+    font-size: 1.05rem;
   }
   .key-field {
     border-color: #cfd8e6;
@@ -39,14 +37,16 @@
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
   }
   .key-btn-primary {
-    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+    background: #2563eb;
     border: 1px solid #2563eb;
     color: #fff;
     transition: transform 0.18s ease, box-shadow 0.18s ease;
   }
   .key-btn-primary:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
     transform: translateY(-1px);
-    box-shadow: 0 10px 20px rgba(37, 99, 235, 0.24);
+    box-shadow: 0 8px 16px rgba(37, 99, 235, 0.2);
   }
   .key-btn-subtle {
     border: 1px solid #d6deea;
@@ -100,22 +100,22 @@
     background: #f1f6ff !important;
   }
   .key-label {
-    font-size: 16px;
+    font-size: 1.02rem;
   }
   .key-input {
-    font-size: 17px;
+    font-size: 1.02rem;
   }
   .key-help {
-    font-size: 14px;
+    font-size: 0.92rem;
   }
   .key-table {
-    font-size: 16px;
+    font-size: 1.02rem;
   }
   .key-table thead th {
-    font-size: 15px;
+    font-size: 0.9rem;
   }
   .key-badge {
-    font-size: 14px;
+    font-size: 0.75rem;
   }
   .key-status {
     display: inline-flex;
@@ -124,7 +124,7 @@
     padding: 8px 12px;
     border-radius: 10px;
     border: 1px solid transparent;
-    font-size: 16px;
+    font-size: 0.875rem;
     font-weight: 500;
   }
   .key-status.success {
@@ -152,19 +152,19 @@
 <div class="key-ui flex-1 flex flex-col overflow-hidden">
   <header class="key-glass-header border-b border-gray-200 shadow-sm z-10">
     <div class="max-w-6xl w-full mx-auto h-16 px-6 flex items-center justify-between">
-      <h1 class="text-3xl font-semibold text-slate-900 flex items-center">
-        <span class="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-blue-50 text-blue-600 mr-2">
+      <h1 class="text-xl font-semibold text-slate-900 flex items-center">
+        <span class="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-blue-50 text-blue-600 mr-2">
           <i class="fa fa-key"></i>
         </span>
         SSH 密钥配置
       </h1>
-        <span class="hidden md:inline-flex items-center px-3 py-1.5 rounded-full text-base text-blue-700 bg-blue-50 border border-blue-100">
+        <span class="hidden md:inline-flex items-center px-3 py-1.5 rounded-full text-sm text-blue-700 bg-blue-50 border border-blue-100">
         一键配置 · 自动验证
       </span>
     </div>
   </header>
 
-  <main class="flex-1 overflow-y-auto key-page-bg p-6">
+  <main class="flex-1 overflow-y-auto key-page-bg p-6 fw-page-main">
     <div class="container mx-auto max-w-6xl space-y-6">
       <section class="key-panel p-6">
         <div class="flex items-start justify-between gap-4 mb-5">
@@ -197,10 +197,10 @@
             <label class="key-label block font-medium text-gray-700 mb-1">密钥类型</label>
             <input id="key-type" type="hidden" value="ed25519">
             <div class="key-segment h-11 rounded-xl p-1 flex items-center gap-1">
-              <button type="button" class="key-segment-btn active h-full flex-1 rounded-lg text-lg font-medium" data-key-type="ed25519">
+              <button type="button" class="key-segment-btn active h-full flex-1 rounded-lg text-sm font-medium" data-key-type="ed25519">
                 ed25519（推荐）
               </button>
-              <button type="button" class="key-segment-btn h-full flex-1 rounded-lg text-lg font-medium" data-key-type="rsa">
+              <button type="button" class="key-segment-btn h-full flex-1 rounded-lg text-sm font-medium" data-key-type="rsa">
                 rsa
               </button>
             </div>
@@ -218,7 +218,7 @@
           </div>
 
           <div class="lg:col-span-3">
-            <button id="setup-btn" class="key-btn-primary h-11 w-full rounded-xl font-semibold text-lg">
+            <button id="setup-btn" class="key-btn-primary h-11 w-full rounded-xl font-semibold text-sm">
               一键配置并验证
             </button>
           </div>
@@ -266,7 +266,7 @@
         <div class="flex flex-col gap-3 mb-4">
           <div class="flex items-center justify-between">
             <h2 class="key-panel-title font-semibold">配置记录</h2>
-            <button id="refresh-records-btn" class="key-btn-subtle inline-flex items-center gap-1 px-3 py-1.5 text-lg rounded-lg">
+            <button id="refresh-records-btn" class="key-btn-subtle inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg">
               <i class="fa fa-refresh"></i>
               刷新记录
             </button>
@@ -281,8 +281,8 @@
               <option value="setup_failed">配置失败</option>
               <option value="revoke_failed">删除失败</option>
             </select>
-            <button id="records-search-btn" class="key-btn-primary h-10 w-full rounded-xl text-lg font-medium">搜索</button>
-            <button id="records-clear-btn" class="key-btn-subtle h-10 w-full rounded-xl text-lg">重置</button>
+            <button id="records-search-btn" class="key-btn-primary h-10 w-full rounded-xl text-sm font-medium">搜索</button>
+            <button id="records-clear-btn" class="key-btn-subtle h-10 w-full rounded-xl text-sm">重置</button>
           </div>
 
           <div class="text-base text-gray-500">共 <span id="records-total">0</span> 条记录</div>
