@@ -2,3 +2,19 @@
 .gitignore
 firewall_management.db
 .specstory/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Runtime lock/temp files
+*.lock
+
+# Runtime data (generated at run time)
+data/store/operation_logs.json
+data/store/port_scan_records.json
+data/store/firewall_rules.json
+data/rules.json
+
+# Generated SSH key material
+data/ssh_keys/
