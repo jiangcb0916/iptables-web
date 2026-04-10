@@ -964,6 +964,17 @@ def _build_iptables_dedupe_cmd(direction, action, protocol, port, source_ip=None
     return rule_cmd.replace('iptables -A', 'iptables -C', 1) + f' || {rule_cmd}'
 
 
+def _build_iptables_insert_cmd(direction, position, action, protocol, port, source_ip=None, dest_ip=None, interface=''):
+    rule_cmd = _build_iptables_rule_cmd(direction, action, protocol, port, source_ip, dest_ip, interface)
+    direction = str(direction or 'INPUT').strip().upper()
+    return rule_cmd.replace(f'iptables -A {direction}', f'iptables -I {direction} {int(position)}', 1)
+
+
+def _build_iptables_check_cmd(direction, action, protocol, port, source_ip=None, dest_ip=None, interface=''):
+    rule_cmd = _build_iptables_rule_cmd(direction, action, protocol, port, source_ip, dest_ip, interface)
+    return rule_cmd.replace('iptables -A', 'iptables -C', 1)
+
+
 def _port_rule_identity(rule):
     return (
         str(rule.get('host_ip', '') or ''),
@@ -3018,7 +3029,8 @@ def _port_to_rule_impl(payload):
             duplicate_rules.append({'port': int(port), 'message': '规则已存在'})
             continue
         try:
-            cmd = _build_iptables_dedupe_cmd(
+            insert_position = _resolve_insert_rule_position(host, direction, 999999, action)
+            check_cmd = _build_iptables_check_cmd(
                 direction=direction,
                 action=action,
                 protocol=protocol,
@@ -3027,7 +3039,17 @@ def _port_to_rule_impl(payload):
                 dest_ip=dest_ip,
                 interface=interface
             )
-            _run_remote_shell(host, cmd)
+            insert_cmd = _build_iptables_insert_cmd(
+                direction=direction,
+                position=insert_position,
+                action=action,
+                protocol=protocol,
+                port=port,
+                source_ip=source_ip,
+                dest_ip=dest_ip,
+                interface=interface
+            )
+            _run_remote_shell(host, f'{check_cmd} || {insert_cmd}')
             created_rules.append(candidate)
         except Exception as e:
             failed_rules.append({'port': int(port), 'error': str(e)})
@@ -3335,14 +3357,74 @@ def rules_conflicts():
 
 
 # 修改规则
+def _resolve_insert_rule_position(host, direction, requested_rule_id, auth_policy=''):
+    """
+    iptables 插入位置必须在 [1, 当前规则数 + 1]。
+    当自定义ID过大时，自动降级为末尾插入，避免报错:
+    iptables: Index of insertion too big.
+    """
+    requested = max(1, int(str(requested_rule_id).strip()))
+    normalized_policy = str(auth_policy or '').strip().upper()
+    list_cmd = f'iptables -nL {direction} --line-number -t filter'
+    if host['auth_method'] == 'password':
+        output = pwd_shell_cmd(
+            hostname=host['ip_address'],
+            user=host['username'],
+            port=host['ssh_port'],
+            pwd=host['password'],
+            cmd=list_cmd
+        )
+    else:
+        output = sshkey_shell_cmd(
+            hostname=host['ip_address'],
+            user=host['username'],
+            port=host['ssh_port'],
+            private_key_str=host['private_key'],
+            cmd=list_cmd
+        )
+    current_rules = get_rule(output or '')
+    max_insert = len(current_rules) + 1
+    bounded = min(requested, max_insert)
+
+    # 允许规则优先放在首个拒绝规则之前，避免“先拒绝后允许”导致允许规则失效。
+    first_drop_pos = None
+    last_accept_pos = 0
+    for rule in current_rules:
+        try:
+            pos = int(str(rule.get('num', '')).strip())
+        except Exception:
+            continue
+        target = str(rule.get('target', '')).strip().upper()
+        if target == 'ACCEPT':
+            last_accept_pos = max(last_accept_pos, pos)
+        if target == 'DROP' and first_drop_pos is None:
+            first_drop_pos = pos
+
+    if normalized_policy == 'ACCEPT' and first_drop_pos is not None:
+        return min(bounded, first_drop_pos)
+
+    if normalized_policy == 'DROP':
+        # 拒绝规则默认放在允许规则之后，避免遮蔽白名单规则。
+        minimum_drop_position = min(max_insert, last_accept_pos + 1)
+        return max(bounded, minimum_drop_position)
+
+    return bounded
+
+
 @app.route("/rules_update", methods=['POST'])
 @login_required
 @permission_required('iptab_edit')  # 添加规则编辑权限
 def rules_update():
     all_params = request.get_json()
     host_id = all_params['host_id']
-    rule_id = all_params['rule_id']
+    rule_id = str(all_params.get('rule_id', '')).strip()
+    original_rule_id = str(all_params.get('original_rule_id') or rule_id).strip()
+    requested_rule_id = rule_id
     direction = all_params['direction']
+    if not rule_id or not rule_id.isdigit() or int(rule_id) <= 0:
+        return jsonify({'success': False, 'message': '规则ID必须为大于0的整数'}), 400
+    if not original_rule_id or not original_rule_id.isdigit() or int(original_rule_id) <= 0:
+        return jsonify({'success': False, 'message': '原规则ID无效'}), 400
     auth_object_error = _validate_auth_object(all_params.get('auth_object'))
     if auth_object_error:
         return jsonify({'success': False, 'message': auth_object_error}), 400
@@ -3361,7 +3443,10 @@ def rules_update():
         if auth_method == 'password':
             # 删除
             pwd_shell_cmd(hostname=hostname, user=user, port=port, pwd=pwd,
-                          cmd='iptables -D {} {}'.format(direction, rule_id))
+                          cmd='iptables -D {} {}'.format(direction, original_rule_id))
+            rule_id = str(_resolve_insert_rule_position(
+                host, direction, requested_rule_id, all_params.get('auth_policy')
+            ))
             # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:
                 # 正常的端口
@@ -3441,7 +3526,10 @@ def rules_update():
 
         else:
             sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
-                             cmd='iptables -D {} {}'.format(direction, rule_id))
+                             cmd='iptables -D {} {}'.format(direction, original_rule_id))
+            rule_id = str(_resolve_insert_rule_position(
+                host, direction, requested_rule_id, all_params.get('auth_policy')
+            ))
             if operating_system == 'centos' or operating_system == 'redhat':
                 sshkey_shell_cmd(hostname=hostname, user=user, port=port, private_key_str=private_key,
                                  cmd='iptables-save > /etc/sysconfig/iptables')
@@ -3540,13 +3628,15 @@ def rules_update():
 @permission_required('iptab_add')  # 添加规则添加权限
 def rules_add():
     all_params = request.get_json()
-    print(all_params)
     host_id = all_params['host_id']
-    rule_id = all_params['rule_id']
+    rule_id = str(all_params.get('rule_id', '')).strip()
+    requested_rule_id = rule_id
     direction = all_params['direction']
     protocol = (all_params.get('protocol') or '').lower()
     port = (all_params.get('port') or '').strip()
     auth_object = (all_params.get('auth_object') or '').strip()
+    if not rule_id or not rule_id.isdigit() or int(rule_id) <= 0:
+        return jsonify({'success': False, 'message': '规则ID必须为大于0的整数'}), 400
 
     # 基础参数校验，避免明显非法请求进入SSH阶段
     if protocol in ('tcp', 'udp') and not port:
@@ -3566,6 +3656,9 @@ def rules_add():
         auth_method = host['auth_method']
         private_key = host['private_key']
         operating_system = host['operating_system']
+        rule_id = str(_resolve_insert_rule_position(
+            host, direction, requested_rule_id, all_params.get('auth_policy')
+        ))
         if auth_method == 'password':
             # 正常的tcp或udp规则
             if 'tcp' in all_params['protocol'] or 'udp' in all_params['protocol']:

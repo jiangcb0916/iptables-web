@@ -295,6 +295,7 @@
   let dialogMode = 'single';
   let pendingPorts = [];
   let messageDialogResolver = null;
+  let allowBackdropCloseForMessageDialog = false;
   const defaultTcpPorts = '{{ default_ports }}';
   const defaultUdpPorts = '53,67,68,69,123,137,138,161,162,500,514,1900';
   const HIGH_RISK_PORTS = new Set([21, 22, 23, 25, 53, 80, 443, 3306, 3389, 5432, 6379]);
@@ -331,7 +332,8 @@
       confirmText = '确定',
       cancelText = '取消',
       showCancel = true,
-      danger = false
+      danger = false,
+      allowBackdropClose = false
     } = options;
     messageDialogTitle.textContent = title;
     messageDialogContent.textContent = message;
@@ -343,6 +345,7 @@
       : 'px-4 py-2 bg-primary text-white rounded-md text-sm';
     messageDialog.classList.remove('hidden');
     messageDialog.classList.add('flex');
+    allowBackdropCloseForMessageDialog = Boolean(allowBackdropClose);
     setTimeout(() => {
       messageDialogPanel.classList.add('scale-100');
       messageDialogPanel.classList.remove('scale-95');
@@ -362,6 +365,7 @@
         messageDialogResolver(result);
       }
       messageDialogResolver = null;
+      allowBackdropCloseForMessageDialog = false;
     }, 120);
   }
 
@@ -697,6 +701,15 @@
     }, 150);
   }
 
+  function forceCloseDialog() {
+    dialogPanel.classList.remove('scale-100');
+    dialogPanel.classList.add('scale-95');
+    ruleDialog.classList.add('hidden');
+    ruleDialog.classList.remove('flex');
+    setRuleStatus('');
+    pendingPorts = [];
+  }
+
   function updateScopeLabel() {
     scopeLabel.textContent = ruleDirection.value === 'INPUT' ? '源IP地址' : '目的IP地址';
   }
@@ -976,12 +989,13 @@
         payload.dest_ip = scope;
       }
       const data = await submitRule(payload);
-      setRuleStatus(data.message || '规则已添加');
+      const successMessage = data.message || '规则已添加';
+      forceCloseDialog();
       if (await showConfirmDialog('规则已添加，是否跳转规则页？', '完成')) {
         window.location.href = data.rule_view_url || '/rules_in';
         return;
       }
-      closeDialog();
+      setScanStatus(successMessage);
       scanBtn.click();
     } catch (error) {
       setRuleStatus(error.message || '添加规则失败', true);
@@ -998,7 +1012,9 @@
   messageDialogCancel.addEventListener('click', () => closeMessageDialog(false));
   messageDialogConfirm.addEventListener('click', () => closeMessageDialog(true));
   messageDialog.addEventListener('click', (event) => {
-    if (event.target === messageDialog) closeMessageDialog(false);
+    if (event.target === messageDialog && allowBackdropCloseForMessageDialog) {
+      closeMessageDialog(false);
+    }
   });
 
   applyProtocolDefaults(protocolSelect.value);
