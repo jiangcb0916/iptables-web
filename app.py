@@ -10,6 +10,8 @@ from functools import wraps
 import sqlite3
 import re
 import ipaddress
+from urllib import request as urllib_request
+from urllib import error as urllib_error
 import uuid
 import socket
 import platform
@@ -58,6 +60,14 @@ FIREWALL_RULE_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'firewall_rules.json')
 PORT_RULES_STORE_FILE = os.path.join(app.root_path, 'data', 'rules.json')
 RULE_SNAPSHOTS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'rule_snapshots.json')
 _STORE_THREAD_LOCK = threading.RLock()
+PROMETHEUS_METRICS_URL = os.getenv(
+    'PROMETHEUS_METRICS_URL',
+    'http://172.16.80.125:9191/metrics'
+).strip()
+PROMETHEUS_TERMINAL_METRIC_NAMES_RAW = os.getenv(
+    'PROMETHEUS_TERMINAL_METRIC_NAMES',
+    'sfUserName,fUserName'
+).strip()
 
 DEFAULT_PERMISSION_CODES = [
     'sys_view', 'sys_edit',
@@ -3852,6 +3862,175 @@ def del_rule():
 
 # 查看主机
 # 主机管理页面路由 - 读取数据库并返回数据到前端
+def _is_valid_ip(ip_text):
+    if not ip_text:
+        return False
+    try:
+        ipaddress.ip_address(str(ip_text).strip())
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_prometheus_labels(labels_blob):
+    labels = {}
+    for match in re.finditer(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"\\])*)"', labels_blob or ''):
+        key = match.group(1)
+        value = match.group(2).replace(r'\"', '"').replace(r'\\', '\\').strip()
+        if key not in labels:
+            labels[key] = value
+    return labels
+
+
+def _get_prometheus_metric_names():
+    names = [item.strip() for item in PROMETHEUS_TERMINAL_METRIC_NAMES_RAW.split(',')]
+    return set([item for item in names if item])
+
+
+def _extract_customer_terminal_items_from_metrics(text):
+    metric_names = _get_prometheus_metric_names()
+    if not metric_names:
+        metric_names = {'sfUserName', 'fUserName'}
+
+    items = []
+    pattern = re.compile(
+        r'^([a-zA-Z_:][a-zA-Z0-9_:]*)\{([^}]*)\}\s+[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$'
+    )
+    for raw_line in (text or '').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            continue
+        match = pattern.match(line)
+        if not match:
+            continue
+        metric_name = match.group(1)
+        if metric_name not in metric_names:
+            continue
+
+        labels = _parse_prometheus_labels(match.group(2))
+        ip = str(labels.get('sfStaIp') or labels.get('sfsTaIp') or labels.get('ip') or '').strip()
+        if not _is_valid_ip(ip):
+            continue
+
+        name = str(labels.get('sfUserName') or labels.get('sfsUserName') or labels.get('name') or '').strip() or '未知'
+        phone = str(labels.get('sfUserPhone') or labels.get('sfsPhone') or labels.get('phone') or '').strip()
+        items.append({
+            'name': name,
+            'phone': phone,
+            'ip': ip,
+            'status': 'online',
+            'status_text': '在线'
+        })
+
+    deduplicated = []
+    seen = set()
+    for item in items:
+        key = (item['name'], item['phone'], item['ip'])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append(item)
+    return deduplicated
+
+
+def _fetch_customer_terminal_items(timeout_seconds=5):
+    req = urllib_request.Request(
+        PROMETHEUS_METRICS_URL,
+        headers={'User-Agent': 'iptables-web/1.0', 'Accept': 'text/plain'}
+    )
+    with urllib_request.urlopen(req, timeout=timeout_seconds) as resp:
+        raw = resp.read()
+    text = raw.decode('utf-8', errors='replace')
+    return _extract_customer_terminal_items_from_metrics(text)
+
+
+@app.route("/customer_terminals", methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def customer_terminals_page():
+    return render_template('customer_terminals.html')
+
+
+@app.route('/api/customer-terminals', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def customer_terminals_api():
+    keyword = (request.args.get('keyword') or '').strip().lower()
+    page = request.args.get('page', '1')
+    page_size = request.args.get('page_size', '10')
+
+    try:
+        page = max(1, int(page))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(page_size)
+        page_size = min(200, max(1, page_size))
+    except (TypeError, ValueError):
+        page_size = 10
+
+    try:
+        items = _fetch_customer_terminal_items(timeout_seconds=5)
+    except urllib_error.URLError:
+        return jsonify({
+            'success': False,
+            'message': '获取客户终端列表失败，请检查Prometheus服务',
+            'items': [],
+            'total': 0,
+            'page': page,
+            'page_size': page_size
+        }), 200
+    except PermissionError as e:
+        return jsonify({
+            'success': False,
+            'message': f'Prometheus接口访问被拒绝: {str(e)}',
+            'items': [],
+            'total': 0,
+            'page': page,
+            'page_size': page_size
+        }), 200
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'message': f'Prometheus数据解析异常: {str(e)}',
+            'items': [],
+            'total': 0,
+            'page': page,
+            'page_size': page_size
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'获取客户终端列表失败: {str(e)}',
+            'items': [],
+            'total': 0,
+            'page': page,
+            'page_size': page_size
+        }), 200
+
+    if keyword:
+        items = [
+            item for item in items
+            if keyword in item.get('name', '').lower()
+            or keyword in item.get('phone', '').lower()
+            or keyword in item.get('ip', '').lower()
+        ]
+
+    total = len(items)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged_items = items[start:end] if start < total else []
+
+    return jsonify({
+        'success': True,
+        'message': 'ok',
+        'items': paged_items,
+        'total': total,
+        'page': page,
+        'page_size': page_size
+    })
+
+
 @app.route("/hosts", methods=['GET'])
 @login_required
 @permission_required('hosts_view')  # 添加主机查看权限

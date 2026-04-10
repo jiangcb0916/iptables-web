@@ -1,0 +1,251 @@
+{% extends 'base.html' %}
+{% block main %}
+<style type="text/tailwindcss">
+  @layer utilities {
+    .sidebar-item {
+      @apply flex items-center px-4 py-3 text-gray-700 hover:bg-primary/10 hover:text-primary transition-colors cursor-pointer;
+    }
+    .sidebar-item.active {
+      @apply bg-primary/10 text-primary border-l-4 border-primary;
+    }
+  }
+</style>
+<div class="flex-1 flex flex-col overflow-hidden">
+  <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+    <div class="flex items-center justify-between h-16 px-6">
+      <div class="flex-1 max-w-md mx-4">
+        <div class="relative">
+          <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+            <i class="fa fa-search"></i>
+          </span>
+          <input id="keyword-input" type="text"
+                 class="block w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm"
+                 placeholder="搜索姓名、手机号、IP地址">
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="refresh-btn" class="fw-btn-outline px-4 py-2 text-sm font-medium">
+          <i class="fa fa-refresh mr-1"></i> 刷新
+        </button>
+        <button id="export-csv-btn" class="fw-btn-primary px-4 py-2 text-sm font-medium">
+          <i class="fa fa-download mr-1"></i> 导出CSV
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 overflow-y-auto bg-gray-50 p-6 fw-page-main">
+    <div class="container mx-auto max-w-7xl">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 fw-page-hero">
+        <div>
+          <h1 class="fw-page-title">客户终端列表</h1>
+          <!-- <p class="fw-page-subtitle">展示准入 API 返回的终端姓名、手机号、IP与在线状态</p> -->
+        </div>
+      </div>
+
+      <div id="alert-box" class="hidden mb-4 rounded-lg px-4 py-3 text-sm"></div>
+
+      <div class="fw-table-wrap">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">姓名</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">手机号</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">IP地址</th>
+              <th class="px-6 py-4 text-left text-xs font-semibold text-secondary uppercase tracking-wider">状态</th>
+            </tr>
+          </thead>
+          <tbody id="customer-terminal-body" class="bg-white divide-y divide-gray-200"></tbody>
+        </table>
+
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+          <div id="page-summary" class="text-sm text-secondary">显示 0 到 0 条，共 0 条</div>
+          <div class="flex items-center gap-2">
+            <button id="prev-btn" class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50">
+              <i class="fa fa-chevron-left"></i>
+            </button>
+            <span id="page-indicator" class="text-sm text-secondary">第 1 页</span>
+            <button id="next-btn" class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50">
+              <i class="fa fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock main %}
+
+{% block script %}
+<script>
+  const state = {
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 10,
+    keyword: ''
+  };
+
+  const bodyEl = document.getElementById('customer-terminal-body');
+  const pageSummaryEl = document.getElementById('page-summary');
+  const pageIndicatorEl = document.getElementById('page-indicator');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const keywordInput = document.getElementById('keyword-input');
+  const refreshBtn = document.getElementById('refresh-btn');
+  const exportCsvBtn = document.getElementById('export-csv-btn');
+  const alertBox = document.getElementById('alert-box');
+
+  function showAlert(message, type = 'error') {
+    const baseClass = 'mb-4 rounded-lg px-4 py-3 text-sm';
+    const typeClass = type === 'error'
+      ? 'bg-red-50 text-red-700 border border-red-200'
+      : 'bg-blue-50 text-blue-700 border border-blue-200';
+    alertBox.className = `${baseClass} ${typeClass}`;
+    alertBox.textContent = message;
+    alertBox.classList.remove('hidden');
+  }
+
+  function clearAlert() {
+    alertBox.classList.add('hidden');
+    alertBox.textContent = '';
+  }
+
+  function renderRows() {
+    if (!state.items.length) {
+      bodyEl.innerHTML = `
+        <tr>
+          <td colspan="4" class="px-6 py-12 text-center">
+            <div class="text-base font-semibold text-gray-700 mb-1">暂无客户终端数据</div>
+            <div class="text-sm text-secondary">无有效数据</div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    bodyEl.innerHTML = state.items.map(item => `
+      <tr class="hover:bg-gray-50 transition-colors">
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-dark">${item.name || '未知'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${item.phone || '-'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-secondary">${item.ip || '-'}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm">
+          ${renderStatusBadge(item.status, item.status_text)}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderStatusBadge(status, statusText) {
+    const text = statusText || '未知';
+    if (status === 'online') {
+      return '<span class="px-2 py-1 text-xs rounded-full bg-green-100 text-success">在线</span>';
+    }
+    if (status === 'offline') {
+      return '<span class="px-2 py-1 text-xs rounded-full bg-red-100 text-danger">离线</span>';
+    }
+    if (status === 'uninstalled') {
+      return '<span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700">未装助手</span>';
+    }
+    return `<span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">${text}</span>`;
+  }
+
+  function renderPagination() {
+    const totalPages = Math.max(1, Math.ceil(state.total / state.pageSize));
+    const start = state.total ? (state.page - 1) * state.pageSize + 1 : 0;
+    const end = state.total ? Math.min(state.page * state.pageSize, state.total) : 0;
+    pageSummaryEl.textContent = `显示 ${start} 到 ${end} 条，共 ${state.total} 条`;
+    pageIndicatorEl.textContent = `第 ${state.page} / ${totalPages} 页`;
+    prevBtn.disabled = state.page <= 1;
+    nextBtn.disabled = state.page >= totalPages;
+  }
+
+  async function loadData() {
+    clearAlert();
+    refreshBtn.disabled = true;
+    refreshBtn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i> 刷新中';
+    try {
+      const params = new URLSearchParams({
+        page: String(state.page),
+        page_size: String(state.pageSize),
+        keyword: state.keyword
+      });
+      const response = await fetch(`/api/customer-terminals?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || '获取客户终端列表失败，请检查准入API服务');
+      }
+      state.items = Array.isArray(data.items) ? data.items : [];
+      state.total = Number(data.total || 0);
+      renderRows();
+      renderPagination();
+      if (!state.items.length) {
+        showAlert('无有效数据', 'info');
+      }
+    } catch (error) {
+      state.items = [];
+      state.total = 0;
+      renderRows();
+      renderPagination();
+      showAlert(error.message || '获取客户终端列表失败，请检查准入API服务', 'error');
+    } finally {
+      refreshBtn.disabled = false;
+      refreshBtn.innerHTML = '<i class="fa fa-refresh mr-1"></i> 刷新';
+    }
+  }
+
+  function exportCurrentRowsToCsv() {
+    if (!state.items.length) {
+      showAlert('当前页无可导出数据', 'info');
+      return;
+    }
+    const header = ['姓名', '手机号', 'IP地址', '状态'];
+    const lines = [header.join(',')];
+    state.items.forEach(item => {
+      const row = [item.name || '', item.phone || '', item.ip || '', item.status_text || '未知']
+        .map(value => `"${String(value).replace(/"/g, '""')}"`);
+      lines.push(row.join(','));
+    });
+    const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    link.href = URL.createObjectURL(blob);
+    link.download = `customer_terminals_${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  }
+
+  let keywordTimer = null;
+  keywordInput.addEventListener('input', (event) => {
+    clearTimeout(keywordTimer);
+    keywordTimer = setTimeout(() => {
+      state.keyword = event.target.value.trim();
+      state.page = 1;
+      loadData();
+    }, 300);
+  });
+
+  prevBtn.addEventListener('click', () => {
+    if (state.page <= 1) return;
+    state.page -= 1;
+    loadData();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(state.total / state.pageSize));
+    if (state.page >= totalPages) return;
+    state.page += 1;
+    loadData();
+  });
+
+  refreshBtn.addEventListener('click', () => loadData());
+  exportCsvBtn.addEventListener('click', exportCurrentRowsToCsv);
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadData();
+  });
+</script>
+{% endblock script %}
