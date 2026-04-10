@@ -56,6 +56,7 @@ SSH_KEY_RECORDS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'ssh_key_setup_record
 PORT_SCAN_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'port_scan_records.json')
 FIREWALL_RULE_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'firewall_rules.json')
 PORT_RULES_STORE_FILE = os.path.join(app.root_path, 'data', 'rules.json')
+RULE_SNAPSHOTS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'rule_snapshots.json')
 _STORE_THREAD_LOCK = threading.RLock()
 
 DEFAULT_PERMISSION_CODES = [
@@ -186,6 +187,8 @@ def _ensure_local_store_files():
         _write_store_json(FIREWALL_RULE_STORE_FILE, {"items": []})
     if not os.path.exists(PORT_RULES_STORE_FILE):
         _write_store_json(PORT_RULES_STORE_FILE, {"items": []})
+    if not os.path.exists(RULE_SNAPSHOTS_STORE_FILE):
+        _write_store_json(RULE_SNAPSHOTS_STORE_FILE, {"items": []})
 
 
 def _read_store_json(path, default):
@@ -339,6 +342,16 @@ def _read_port_rules_store():
 
 def _write_port_rules_store(items):
     _write_store_json(PORT_RULES_STORE_FILE, {"items": items})
+
+
+def _read_rule_snapshots_store():
+    data = _read_store_json(RULE_SNAPSHOTS_STORE_FILE, {"items": []})
+    items = data.get('items', []) if isinstance(data, dict) else []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _write_rule_snapshots_store(items):
+    _write_store_json(RULE_SNAPSHOTS_STORE_FILE, {"items": items})
 
 
 def _read_system_config_store():
@@ -610,11 +623,35 @@ def _normalize_local_store_data():
         rule['interface'] = str(rule.get('interface', '') or '')
         rule['comment'] = str(rule.get('comment', '') or '')
         rule['enabled'] = 1 if int(rule.get('enabled', 1) or 0) else 0
+        rule['expires_at'] = str(rule.get('expires_at', '') or '')
+        rule['expired_at'] = str(rule.get('expired_at', '') or '')
+        rule['expire_status'] = str(rule.get('expire_status', '') or '')
+        rule['expire_error'] = str(rule.get('expire_error', '') or '')
         rule['created_at'] = str(rule.get('created_at', now) or now)
         rule['created_by'] = str(rule.get('created_by', '') or '')
         norm_port_rules.append(rule)
     if norm_port_rules != port_rules:
         _write_port_rules_store(norm_port_rules)
+
+    # rule snapshots
+    snapshots = _read_rule_snapshots_store()
+    norm_snapshots = []
+    for item in snapshots:
+        snap = dict(item)
+        snap['id'] = str(snap.get('id', '') or '')
+        snap['host_id'] = int(snap.get('host_id', 0) or 0)
+        snap['host_ip'] = str(snap.get('host_ip', '') or '')
+        snap['direction'] = str(snap.get('direction', 'ALL') or 'ALL').upper()
+        if snap['direction'] not in ('INPUT', 'OUTPUT', 'ALL'):
+            snap['direction'] = 'ALL'
+        snap['trigger'] = str(snap.get('trigger', 'manual') or 'manual')
+        snap['note'] = str(snap.get('note', '') or '')
+        snap['operator'] = str(snap.get('operator', '') or '')
+        snap['content'] = str(snap.get('content', '') or '')
+        snap['created_at'] = str(snap.get('created_at', now) or now)
+        norm_snapshots.append(snap)
+    if norm_snapshots != snapshots:
+        _write_rule_snapshots_store(norm_snapshots)
 
 
 
@@ -1078,6 +1115,131 @@ def _sync_port_rules_for_host_with_runtime(host):
     return removed
 
 
+def _parse_datetime_text(raw_text):
+    text = str(raw_text or '').strip()
+    if not text:
+        return None
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S'):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _build_iptables_remove_cmd(direction, action, protocol, port, source_ip=None, dest_ip=None, interface=''):
+    rule_cmd = _build_iptables_rule_cmd(direction, action, protocol, port, source_ip, dest_ip, interface)
+    return rule_cmd.replace('iptables -A', 'iptables -D', 1)
+
+
+def _create_rule_snapshot(host, direction='ALL', trigger='manual', note=''):
+    """
+    保存规则快照（基于 iptables-save）。
+    """
+    if not USE_LOCAL_FILE_STORE:
+        return None
+    host_ip = str(host.get('ip_address', '') or '')
+    if not host_ip:
+        return None
+    content = _run_remote_shell(host, 'iptables-save')
+    snapshots = _read_rule_snapshots_store()
+    item = {
+        'id': str(uuid.uuid4()),
+        'host_id': int(host.get('id', 0) or 0),
+        'host_ip': host_ip,
+        'direction': str(direction or 'ALL').upper(),
+        'trigger': str(trigger or 'manual'),
+        'note': str(note or ''),
+        'operator': str(getattr(current_user, 'username', '') or ''),
+        'content': str(content or ''),
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    snapshots.append(item)
+    if len(snapshots) > 5000:
+        snapshots = snapshots[-5000:]
+    _write_rule_snapshots_store(snapshots)
+    return item
+
+
+def _rollback_rule_snapshot(snapshot):
+    host_id = int(snapshot.get('host_id', 0) or 0)
+    host = _load_host_connection_info(host_id)
+    if not host:
+        raise ValueError(f'快照对应主机不存在: host_id={host_id}')
+    content = str(snapshot.get('content', '') or '')
+    if not content:
+        raise ValueError('快照内容为空，无法回滚')
+    encoded = base64.b64encode(content.encode('utf-8')).decode('ascii')
+    restore_cmd = (
+        "TMP_RULE_FILE=/tmp/fw_snapshot_restore.rules && "
+        f"echo {shlex.quote(encoded)} | base64 -d > \"$TMP_RULE_FILE\" && "
+        "iptables-restore < \"$TMP_RULE_FILE\" && "
+        "rm -f \"$TMP_RULE_FILE\""
+    )
+    _run_remote_shell(host, restore_cmd)
+    _persist_host_firewall_rules(host)
+
+
+def _expire_due_port_rules():
+    if not USE_LOCAL_FILE_STORE:
+        return 0
+    rules = _read_port_rules_store()
+    if not rules:
+        return 0
+    now = datetime.now()
+    changed = 0
+    host_cache = {}
+    for idx, rule in enumerate(rules):
+        if int(rule.get('enabled', 1) or 0) != 1:
+            continue
+        expire_dt = _parse_datetime_text(rule.get('expires_at'))
+        if not expire_dt or expire_dt > now:
+            continue
+        host_id = int(rule.get('host_id', 0) or 0)
+        host = host_cache.get(host_id)
+        if host is None:
+            host = _load_host_connection_info(host_id)
+            host_cache[host_id] = host
+        if not host:
+            rules[idx]['expire_status'] = 'pending'
+            rules[idx]['expire_error'] = '主机不存在或不可用，等待重试'
+            changed += 1
+            continue
+        try:
+            del_cmd = _build_iptables_remove_cmd(
+                direction=rule.get('direction', 'INPUT'),
+                action=rule.get('action', 'DROP'),
+                protocol=rule.get('protocol', 'tcp'),
+                port=rule.get('port', 0),
+                source_ip=rule.get('source_ip', ''),
+                dest_ip=rule.get('dest_ip', ''),
+                interface=rule.get('interface', '')
+            )
+            _run_remote_shell(host, del_cmd)
+            _persist_host_firewall_rules(host)
+            rules[idx]['enabled'] = 0
+            rules[idx]['expired_at'] = now.strftime('%Y-%m-%d %H:%M:%S')
+            rules[idx]['expire_status'] = 'expired'
+            rules[idx]['expire_error'] = ''
+            changed += 1
+        except Exception as e:
+            rules[idx]['expire_status'] = 'pending'
+            rules[idx]['expire_error'] = str(e)
+            changed += 1
+    if changed:
+        _write_port_rules_store(rules)
+    return changed
+
+
+def clean_expired_port_rules():
+    try:
+        count = _expire_due_port_rules()
+        if count:
+            app.logger.info(f"到期规则自动回收完成，处理 {count} 条记录")
+    except Exception as e:
+        app.logger.error(f"到期规则自动回收失败: {str(e)}")
+
+
 _ensure_local_store_files()
 _normalize_local_store_data()
 
@@ -1221,6 +1383,12 @@ scheduler.add_job(
     trigger='cron',
     hour=3,
     minute=30
+)
+scheduler.add_job(
+    id='clean_expired_port_rules',
+    func=clean_expired_port_rules,
+    trigger='interval',
+    minutes=1
 )
 scheduler.start()
 
@@ -2799,6 +2967,15 @@ def _port_to_rule_impl(payload):
 
     interface = str(payload.get('interface') or '').strip()
     comment = str(payload.get('comment') or '').strip()
+    expires_at = str(payload.get('expires_at') or '').strip()
+    expires_in_minutes = payload.get('expires_in_minutes')
+    if expires_in_minutes not in (None, '') and not expires_at:
+        try:
+            expires_at = (datetime.now() + timedelta(minutes=int(expires_in_minutes))).strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            return jsonify({'success': False, 'message': 'expires_in_minutes 必须是整数'}), 400
+    if expires_at and not _parse_datetime_text(expires_at):
+        return jsonify({'success': False, 'message': 'expires_at 格式错误，示例: 2026-04-10 18:30:00'}), 400
     host_ip = str(host.get('ip_address', '') or '')
     source_ip = ''
     dest_ip = ''
@@ -2869,6 +3046,10 @@ def _port_to_rule_impl(payload):
                     'dest_ip': rule.get('dest_ip', ''),
                     'interface': interface,
                     'comment': comment,
+                    'expires_at': expires_at,
+                    'expired_at': '',
+                    'expire_status': '',
+                    'expire_error': '',
                     'command': _build_iptables_rule_cmd(
                         direction=direction,
                         action=action,
@@ -2913,6 +3094,128 @@ def port_detection_add_rules_api():
     # compatibility endpoint for old frontend
     payload = request.get_json(silent=True) or {}
     return _port_to_rule_impl(payload)
+
+
+@app.route('/api/rules-snapshots', methods=['GET'])
+@login_required
+@permission_required('iptab_view')
+def list_rule_snapshots_api():
+    host_id = request.args.get('host_id')
+    direction = str(request.args.get('direction') or '').upper()
+    limit = request.args.get('limit', '50')
+    try:
+        limit_value = max(1, min(200, int(limit)))
+    except Exception:
+        limit_value = 50
+    snapshots = _read_rule_snapshots_store() if USE_LOCAL_FILE_STORE else []
+    result = []
+    for item in reversed(snapshots):
+        if host_id and str(item.get('host_id', '')) != str(host_id):
+            continue
+        if direction and direction in ('INPUT', 'OUTPUT', 'ALL') and str(item.get('direction', 'ALL')).upper() != direction:
+            continue
+        result.append(item)
+        if len(result) >= limit_value:
+            break
+    return jsonify({'success': True, 'items': result, 'count': len(result)})
+
+
+@app.route('/api/rules-snapshots', methods=['POST'])
+@login_required
+@permission_required('iptab_edit')
+def create_rule_snapshot_api():
+    payload = request.get_json(silent=True) or {}
+    host_id = payload.get('host_id')
+    if not str(host_id).isdigit():
+        return jsonify({'success': False, 'message': 'host_id 无效'}), 400
+    host = _load_host_connection_info(int(host_id))
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+    direction = str(payload.get('direction') or 'ALL').upper()
+    if direction not in ('INPUT', 'OUTPUT', 'ALL'):
+        return jsonify({'success': False, 'message': 'direction 仅支持 INPUT/OUTPUT/ALL'}), 400
+    note = str(payload.get('note') or '').strip()
+    if not note:
+        note = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        snapshot = _create_rule_snapshot(host, direction=direction, trigger='manual', note=note)
+        return jsonify({'success': True, 'message': '规则快照创建成功', 'snapshot': snapshot})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'规则快照创建失败: {str(e)}'}), 500
+
+
+@app.route('/api/rules-rollback', methods=['POST'])
+@login_required
+@permission_required('iptab_edit')
+def rollback_rule_snapshot_api():
+    payload = request.get_json(silent=True) or {}
+    snapshot_id = str(payload.get('snapshot_id') or '').strip()
+    if not snapshot_id:
+        return jsonify({'success': False, 'message': 'snapshot_id 不能为空'}), 400
+    snapshots = _read_rule_snapshots_store() if USE_LOCAL_FILE_STORE else []
+    snapshot = next((item for item in snapshots if str(item.get('id', '')) == snapshot_id), None)
+    if not snapshot:
+        return jsonify({'success': False, 'message': '快照不存在'}), 404
+    try:
+        _rollback_rule_snapshot(snapshot)
+        return jsonify({
+            'success': True,
+            'message': '规则回滚成功',
+            'rule_view_url': url_for('rules_in', host_id=snapshot.get('host_id'))
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'规则回滚失败: {str(e)}'}), 500
+
+
+@app.route('/api/rules-snapshots/<snapshot_id>', methods=['DELETE'])
+@login_required
+@permission_required('iptab_edit')
+def delete_rule_snapshot_api(snapshot_id):
+    snapshot_id = str(snapshot_id or '').strip()
+    if not snapshot_id:
+        return jsonify({'success': False, 'message': 'snapshot_id 不能为空'}), 400
+    if not USE_LOCAL_FILE_STORE:
+        return jsonify({'success': False, 'message': '当前模式不支持删除快照'}), 400
+    snapshots = _read_rule_snapshots_store()
+    before_count = len(snapshots)
+    snapshots = [item for item in snapshots if str(item.get('id', '')).strip() != snapshot_id]
+    if len(snapshots) == before_count:
+        return jsonify({'success': False, 'message': '快照不存在'}), 404
+    _write_rule_snapshots_store(snapshots)
+    return jsonify({'success': True, 'message': '快照记录已删除'})
+
+
+@app.route('/api/port-rules/expire', methods=['POST'])
+@login_required
+@permission_required('iptab_edit')
+def set_port_rules_expire_api():
+    payload = request.get_json(silent=True) or {}
+    rule_ids = payload.get('rule_ids') or payload.get('rule_id') or []
+    if not isinstance(rule_ids, list):
+        rule_ids = [rule_ids]
+    normalized_ids = {str(item).strip() for item in rule_ids if str(item).strip()}
+    if not normalized_ids:
+        return jsonify({'success': False, 'message': 'rule_ids 不能为空'}), 400
+    expires_at = str(payload.get('expires_at') or '').strip()
+    expires_in_minutes = payload.get('expires_in_minutes')
+    if expires_in_minutes not in (None, '') and not expires_at:
+        try:
+            expires_at = (datetime.now() + timedelta(minutes=int(expires_in_minutes))).strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            return jsonify({'success': False, 'message': 'expires_in_minutes 必须是整数'}), 400
+    if not expires_at or not _parse_datetime_text(expires_at):
+        return jsonify({'success': False, 'message': 'expires_at 格式错误，示例: 2026-04-10 18:30:00'}), 400
+    rules = _read_port_rules_store() if USE_LOCAL_FILE_STORE else []
+    updated = 0
+    for idx, item in enumerate(rules):
+        if str(item.get('id', '')).strip() in normalized_ids:
+            rules[idx]['expires_at'] = expires_at
+            rules[idx]['expire_status'] = 'scheduled'
+            rules[idx]['expire_error'] = ''
+            updated += 1
+    if updated:
+        _write_port_rules_store(rules)
+    return jsonify({'success': updated > 0, 'message': f'已设置 {updated} 条规则到期时间', 'updated': updated})
 
 
 # 查看规则

@@ -126,6 +126,7 @@
           </div>
         </div>
       </div>
+
     </div>
   </main>
 </div>
@@ -188,6 +189,15 @@
           <input id="rule-comment" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="规则描述">
         </div>
       </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">到期回收（分钟，可选）</label>
+          <input id="rule-expire-minutes" type="number" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="如 60">
+        </div>
+        <div class="text-xs text-gray-500 flex items-end pb-1">
+          设置后到期自动回收该规则（后台每分钟检查一次）。
+        </div>
+      </div>
       <p class="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
         安全提醒：执行 iptables 需要 root 或 sudo NOPASSWD 权限。
       </p>
@@ -201,12 +211,12 @@
 </div>
 
 <div id="message-dialog" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-[60]">
-  <div id="message-dialog-panel" class="bg-white rounded-xl w-full max-w-md transform transition-all scale-95 border border-gray-200 shadow-xl">
+  <div id="message-dialog-panel" class="bg-white rounded-xl w-[92%] max-w-md transform transition-all scale-95 border border-gray-200 shadow-xl">
     <div class="px-5 py-4 border-b border-gray-200">
       <h3 id="message-dialog-title" class="text-base font-semibold text-dark">提示</h3>
     </div>
     <div class="px-5 py-4">
-      <p id="message-dialog-content" class="text-sm text-gray-700 leading-6 whitespace-pre-line"></p>
+      <p id="message-dialog-content" class="text-sm text-gray-700 leading-6 whitespace-pre-line break-words"></p>
     </div>
     <div class="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
       <button id="message-dialog-cancel" class="px-4 py-2 border border-gray-300 rounded-md text-sm">取消</button>
@@ -268,6 +278,7 @@
   const ruleScope = document.getElementById('rule-scope');
   const ruleInterface = document.getElementById('rule-interface');
   const ruleComment = document.getElementById('rule-comment');
+  const ruleExpireMinutes = document.getElementById('rule-expire-minutes');
   const scopeLabel = document.getElementById('scope-label');
   const messageDialog = document.getElementById('message-dialog');
   const messageDialogPanel = document.getElementById('message-dialog-panel');
@@ -500,8 +511,8 @@
     const risky = ports.filter(port => HIGH_RISK_PORTS.has(Number(port)));
     if (!risky.length) return true;
     return showConfirmDialog(
-      `检测到高风险端口 ${risky.join(', ')}（${String(protocol || 'tcp').toUpperCase()}），关闭后可能影响 SSH/远程访问或业务服务，确认继续？`,
-      '高风险操作确认',
+      `高风险端口：${risky.join(', ')}（${String(protocol || 'tcp').toUpperCase()}），确认继续？`,
+      '高风险操作',
       true
     );
   }
@@ -709,6 +720,7 @@
     ruleScope.value = '0.0.0.0/0';
     ruleInterface.value = '';
     ruleComment.value = mode === 'batch' ? '批量端口规则' : `端口 ${ports[0]} 规则`;
+    ruleExpireMinutes.value = '';
     updateScopeLabel();
     setRuleStatus('');
     openDialog();
@@ -756,7 +768,7 @@
         comment: '一键关闭开放端口'
       });
       setScanStatus(data.message || '规则已添加');
-      if (await showConfirmDialog('规则已添加，是否跳转到规则查看页面？', '操作完成')) {
+      if (await showConfirmDialog('规则已添加，是否跳转规则页？', '完成')) {
         window.location.href = data.rule_view_url || '/rules_in';
         return;
       }
@@ -954,6 +966,10 @@
         interface: ruleInterface.value.trim(),
         comment: ruleComment.value.trim()
       };
+      const expireMinutes = Number(ruleExpireMinutes.value);
+      if (Number.isFinite(expireMinutes) && expireMinutes > 0) {
+        payload.expires_in_minutes = Math.floor(expireMinutes);
+      }
       if (ruleDirection.value === 'INPUT') {
         payload.source_ip = scope;
       } else {
@@ -961,7 +977,7 @@
       }
       const data = await submitRule(payload);
       setRuleStatus(data.message || '规则已添加');
-      if (await showConfirmDialog('规则已添加，是否跳转到规则查看页面？', '操作完成')) {
+      if (await showConfirmDialog('规则已添加，是否跳转规则页？', '完成')) {
         window.location.href = data.rule_view_url || '/rules_in';
         return;
       }

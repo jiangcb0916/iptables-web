@@ -923,32 +923,32 @@ document.querySelectorAll('button:has(.fa-pencil)').forEach(btn => {
 });
 
 
-    // 删除按钮交互
+    // 删除按钮交互：使用浏览器提示框（window.confirm），不使用自定义弹窗
     document.querySelectorAll('button:has(.fa-trash)').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (confirm('确定要删除这台主机吗？')) {
+      btn.addEventListener('click', async () => {
         const row = btn.closest('tr');
-        const idElement = row.querySelector('.host-id'); // 查找当前行内的隐藏id元素
-
-        // 获取host.id的值
-        const hostId = idElement.textContent.trim();
-          // 发送删除请求（通过URL参数传递id）
-          fetch(`/host_del?id=${hostId}`, { // 在URL中携带id参数
-            method: 'DELETE'
-          })
-          .then(response => {
-            if (response.ok) {
-              // 刷新当前页面，重新从后端获取最新数据
-              window.location.reload();
-              showToast('success-toast');
-            } else {
-              showToast('error-toast');
-            }
-          })
-          .catch(error => {
-            console.error('删除请求失败:', error);
-            showToast('error-toast');
-          });
+        const idElement = row?.querySelector('.host-id');
+        const ipText = row?.querySelector('.host-ip')?.textContent?.trim() || '';
+        const hostId = idElement?.textContent?.trim() || '';
+        if (!hostId) {
+          showToast('error-toast', '未获取到主机ID，无法删除');
+          return;
+        }
+        const confirmText = ipText
+          ? `确定要删除主机 ${ipText} 吗？`
+          : '确定要删除这台主机吗？';
+        const confirmed = window.confirm(confirmText);
+        if (!confirmed) return;
+        try {
+          const response = await fetch(`/host_del?id=${hostId}`, { method: 'DELETE' });
+          if (!response.ok) {
+            throw new Error('删除失败');
+          }
+          window.location.reload();
+          showToast('success-toast');
+        } catch (error) {
+          console.error('删除请求失败:', error);
+          showToast('error-toast', error.message || '删除失败');
         }
       });
     });
