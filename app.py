@@ -2797,7 +2797,16 @@ def _build_template_apply_payload(cursor, template_id):
 
     direction = template.get('direction') if USE_LOCAL_FILE_STORE else template['direction']
     cmd_list = []
-    for rule in rules:
+    # 规则顺序非常关键：先放行(ACCEPT)，再兜底拒绝(DROP)。
+    # 否则若先下发 DROP，会导致后续同端口的 ACCEPT 永远无法命中。
+    ordered_rules = sorted(
+        list(rules),
+        key=lambda item: 1 if _normalize_template_policy(
+            item.get('policy') if USE_LOCAL_FILE_STORE else item['policy']
+        ) == 'DROP' else 0
+    )
+
+    for rule in ordered_rules:
         protocol = (rule.get('protocol') if USE_LOCAL_FILE_STORE else rule['protocol'])
         port = (rule.get('port') if USE_LOCAL_FILE_STORE else rule['port'])
         policy = (rule.get('policy') if USE_LOCAL_FILE_STORE else rule['policy'])
