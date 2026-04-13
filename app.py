@@ -130,7 +130,7 @@ PERMISSION_DEFINITIONS = [
     {"id": 14, "code": "temp_add", "name": "添加模板"},
     {"id": 15, "code": "temp_edit", "name": "编辑模板"},
     {"id": 16, "code": "temp_del", "name": "删除模板"},
-    {"id": 17, "code": "hosts_view", "name": "查看主机"},
+    {"id": 17, "code": "hosts_view", "name": "查看主机/客户终端/端口检测"},
     {"id": 18, "code": "hosts_add", "name": "添加主机"},
     {"id": 19, "code": "hosts_edit", "name": "编辑主机"},
     {"id": 20, "code": "hosts_del", "name": "删除主机"},
@@ -139,7 +139,7 @@ PERMISSION_DEFINITIONS = [
     {"id": 23, "code": "iptab_edit", "name": "编辑规则"},
     {"id": 24, "code": "iptab_del", "name": "删除规则"},
     {"id": 25, "code": "log_view", "name": "查看日志"},
-    {"id": 26, "code": "ssh_key_manage", "name": "管理SSH密钥"}
+    {"id": 26, "code": "ssh_key_manage", "name": "管理SSH密钥（含下发向导）"}
 ]
 
 # 配置登录管理器
@@ -7418,18 +7418,26 @@ def user_edit():
             return jsonify({'success': False, 'message': f"更新用户失败: {str(e)}"}), 500
 
 
+def _username_is_reserved_admin(username):
+    """仅用户名为 admin（不区分大小写）的账户不可删除，与所赋角色名称无关。"""
+    return str(username or '').strip().lower() == 'admin'
+
+
 @app.route('/user_del', methods=['DELETE'])
 @login_required
 @permission_required('user_del')
 def user_del():
     user_id = request.args.get('id')
     if USE_LOCAL_FILE_STORE:
+        users_data = _read_users_from_store()
+        target = next((item for item in users_data if str(item.get('id')) == str(user_id)), None)
+        if not target:
+            return jsonify({'success': False, 'message': '用户不存在'}), 404
+        if _username_is_reserved_admin(target.get('username')):
+            return jsonify({'success': False, 'message': '系统内置账户 admin 不可删除'}), 400
         if int(user_id) == int(current_user.id):
             return jsonify({'success': False, 'message': '不能删除当前登录用户'}), 400
-        users_data = _read_users_from_store()
         remained = [item for item in users_data if str(item.get('id')) != str(user_id)]
-        if len(remained) == len(users_data):
-            return jsonify({'success': False, 'message': '用户不存在'}), 404
         _write_users_to_store(remained)
         return jsonify({'success': True, 'message': '用户删除成功'})
 
@@ -7462,6 +7470,8 @@ def user_del():
             )
             return jsonify({'success': False, 'message': '用户不存在'}), 404
         username = user['username']
+        if _username_is_reserved_admin(username):
+            return jsonify({'success': False, 'message': '系统内置账户 admin 不可删除'}), 400
         # 删除用户角色关联
         cursor.execute('DELETE FROM user_roles WHERE user_id = ?', (user_id,))
         # 删除用户
@@ -7597,7 +7607,11 @@ def roles():
             'updated_at': now
         })
         _write_roles_to_store(roles_data)
-        return jsonify({"success": True, "message": "角色添加成功！"}), 200
+        return jsonify({
+            "success": True,
+            "message": "角色添加成功！",
+            "role": {"id": role_id, "role_name": role_name},
+        }), 200
 
     if request.method == 'GET':
         db = get_db()
@@ -7711,7 +7725,11 @@ def roles():
                 }),
                 success=1
             )
-            return jsonify({"success": True, "message": "角色添加成功！"}), 200
+            return jsonify({
+                "success": True,
+                "message": "角色添加成功！",
+                "role": {"id": role_id, "role_name": role_name},
+            }), 200
         except sqlite3.IntegrityError as e:
             db.rollback()
             # 【修复】记录失败日志，确保role_data已初始化

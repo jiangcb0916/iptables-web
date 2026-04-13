@@ -253,9 +253,9 @@
                     {% for user in user_list %}
                       <tr data-user-id="{{ user.id }}" data-username="{{ user.username|lower }}" data-email="{{ user.email|lower }}" data-status="{{ user.status }}" data-roles="{{ user.roles|lower }}">
                         <td class="px-4 py-4">
-                          <input type="checkbox" class="user-row-checkbox rounded border-gray-300 text-primary focus:ring-primary {{ 'opacity-40 cursor-not-allowed' if 'admin' in user.roles else '' }}"
+                          <input type="checkbox" class="user-row-checkbox rounded border-gray-300 text-primary focus:ring-primary {{ 'opacity-40 cursor-not-allowed' if (user.username|lower) == 'admin' else '' }}"
                                  data-id="{{ user.id }}"
-                                 {{ 'disabled' if 'admin' in user.roles else '' }}>
+                                 {{ 'disabled' if (user.username|lower) == 'admin' else '' }}>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ user.id }}</td>
                         <td class="px-6 py-4 whitespace-nowrap">
@@ -287,9 +287,9 @@
 
                             <!-- 【关键修复】使用Jinja2的in运算符替代JavaScript的includes() -->
                             <button class="delete-user px-2 py-1 bg-red-500 text-white rounded text-xs
-                              {{ 'opacity-50 cursor-not-allowed' if 'admin' in user.roles else '' }}"
+                              {{ 'opacity-50 cursor-not-allowed' if (user.username|lower) == 'admin' else '' }}"
                                     data-id="{{ user.id }}"
-                                    {{ 'disabled' if 'admin' in user.roles else '' }}>
+                                    {{ 'disabled' if (user.username|lower) == 'admin' else '' }}>
                               删除
                             </button>
                           </div>
@@ -434,6 +434,15 @@
       </div>
       <input type="hidden" id="permission-role-id" value="">
       <div class="px-6 py-4 overflow-y-auto flex-grow">
+        <div id="permission-preset-bar" class="mb-4 pb-3 border-b border-gray-100 flex flex-wrap gap-2 items-center">
+          <span class="text-xs text-gray-500">快捷勾选（可再微调后保存）：</span>
+          <button type="button" class="perm-preset px-2 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700" data-preset="clear">全不选</button>
+          <button type="button" class="perm-preset px-2 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700" data-preset="readonly">只读巡检</button>
+          <button type="button" class="perm-preset px-2 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700" data-preset="ops">运维操作</button>
+          <button type="button" class="perm-preset px-2 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700" data-preset="org">组织管理</button>
+          <button type="button" class="perm-preset px-2 py-1 text-xs rounded border border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary" data-preset="all">全部权限</button>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">说明：「组织管理」含用户/角色维护（不含删除用户与删除角色）；超级权限请用「全部权限」或勾选单项。</p>
         <div id="permission-list" class="space-y-6">
           <!-- 权限列表将动态渲染 -->
         </div>
@@ -1194,7 +1203,7 @@
     document.querySelectorAll('.delete-user').forEach(btn => {
       btn.addEventListener('click', function() {
         const userId = this.getAttribute('data-id');
-        const userName = this.closest('tr').querySelector('td:nth-child(2)').textContent;
+        const userName = (this.closest('tr').querySelector('td:nth-child(3)') || {}).textContent || '';
 
         // 【美化修改】使用自定义确认模态框替代原生confirm
         document.getElementById('confirm-title').textContent = '确认删除用户';
@@ -1272,6 +1281,13 @@
 
     // 绑定权限分配模态框保存按钮事件
     document.getElementById('save-permission-btn').addEventListener('click', saveRolePermissions);
+
+    document.getElementById('permission-modal').addEventListener('click', (e) => {
+      const btn = e.target.closest('.perm-preset');
+      if (!btn) return;
+      e.preventDefault();
+      applyPermissionPreset(btn.getAttribute('data-preset'));
+    });
 
     // 初始化筛选与批量删除
     initRoleFilters();
@@ -1560,7 +1576,10 @@
     .then(data => {
       closeCommonModal();
       showSuccessToast('角色添加成功');
-      loadRoles(); // 重新加载角色列表
+      loadRoles();
+      if (data.role && data.role.id) {
+        setTimeout(() => openPermissionModal(String(data.role.id), data.role.role_name || ''), 200);
+      }
     })
     .catch(error => {
       showErrorToast('添加失败: ' + error.message);
@@ -1670,6 +1689,31 @@
       });
   }
 
+    function applyPermissionPreset(preset) {
+      const boxes = document.querySelectorAll('#permission-list input[type="checkbox"][data-code]');
+      if (!boxes.length) return;
+      const setChecked = (codes) => {
+        const want = new Set(codes);
+        boxes.forEach((b) => {
+          b.checked = want.has(b.getAttribute('data-code'));
+        });
+      };
+      if (preset === 'all') {
+        boxes.forEach((b) => { b.checked = true; });
+        return;
+      }
+      if (preset === 'clear') {
+        boxes.forEach((b) => { b.checked = false; });
+        return;
+      }
+      const readonly = ['sys_view', 'hosts_view', 'iptab_view', 'temp_view', 'log_view'];
+      const opsExtra = ['hosts_add', 'hosts_edit', 'hosts_del', 'iptab_add', 'iptab_edit', 'iptab_del', 'temp_add', 'temp_edit', 'temp_del', 'ssh_key_manage'];
+      const orgExtra = ['sys_edit', 'user_view', 'user_add', 'user_edit', 'user_assign', 'role_view', 'role_add', 'role_edit', 'role_assign'];
+      if (preset === 'readonly') setChecked(readonly);
+      else if (preset === 'ops') setChecked([...readonly, ...opsExtra]);
+      else if (preset === 'org') setChecked([...readonly, ...opsExtra, ...orgExtra]);
+    }
+
     /**
      * 渲染权限复选框列表
      * @param {Array} permissions - 权限数组
@@ -1682,16 +1726,18 @@
         // 清空现有内容
         permissionContainer.innerHTML = '';
 
-        // 按权限组分类
+        // 按业务域分组（与路由功能一致，便于理解）
         const permissionGroups = {
             '系统设置': [],
             '用户管理': [],
-            '防火墙操作': [],
+            '角色管理': [],
+            '主机与终端': [],
+            '防火墙规则': [],
             '模板管理': [],
-            '审计日志': [],
-            '主机操作': [],
-            '角色管理': []
+            '审计与密钥': []
         };
+
+        const groupOrder = ['系统设置', '用户管理', '角色管理', '主机与终端', '防火墙规则', '模板管理', '审计与密钥'];
 
         // 将权限分配到对应组
         permissions.forEach(perm => {
@@ -1699,21 +1745,41 @@
 
             if (perm.code.startsWith('sys_')) groupName = '系统设置';
             else if (perm.code.startsWith('user_')) groupName = '用户管理';
-            else if (perm.code.startsWith('iptab_')) groupName = '防火墙操作';
-            else if (perm.code.startsWith('temp_')) groupName = '模板操作';
-            else if (perm.code.startsWith('log_')) groupName = '审计日志';
-            else if (perm.code.startsWith('hosts_')) groupName = '主机操作';
             else if (perm.code.startsWith('role_')) groupName = '角色管理';
+            else if (perm.code.startsWith('hosts_')) groupName = '主机与终端';
+            else if (perm.code.startsWith('iptab_')) groupName = '防火墙规则';
+            else if (perm.code.startsWith('temp_')) groupName = '模板管理';
+            else if (perm.code.startsWith('log_') || perm.code === 'ssh_key_manage') groupName = '审计与密钥';
 
             if (!permissionGroups[groupName]) permissionGroups[groupName] = [];
             permissionGroups[groupName].push(perm);
         });
 
-        // 渲染权限组
-        Object.keys(permissionGroups).forEach(groupName => {
+        // 渲染权限组（固定顺序）
+        groupOrder.forEach(groupName => {
             const groupPermissions = permissionGroups[groupName];
-            if (groupPermissions.length === 0) return;
+            if (!groupPermissions || groupPermissions.length === 0) return;
 
+            const groupDiv = document.createElement('div');
+            groupDiv.className = 'permission-group';
+            groupDiv.innerHTML = `
+                <h4 class="font-medium text-gray-700 mb-3">${groupName}</h4>
+                <div class="pl-4 space-y-3">
+                    ${groupPermissions.map(perm => `
+                        <div class="flex items-center">
+                            <input type="checkbox" id="perm-${perm.id}" class="text-primary focus:ring-primary h-4 w-4 mr-2"
+                                  ${perm.has_perm ? 'checked' : ''} data-id="${perm.id}" data-code="${perm.code}">
+                            <label for="perm-${perm.id}" class="text-sm text-gray-600">${perm.name}</label>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            permissionContainer.appendChild(groupDiv);
+        });
+        Object.keys(permissionGroups).forEach((groupName) => {
+            if (groupOrder.includes(groupName)) return;
+            const groupPermissions = permissionGroups[groupName];
+            if (!groupPermissions || groupPermissions.length === 0) return;
             const groupDiv = document.createElement('div');
             groupDiv.className = 'permission-group';
             groupDiv.innerHTML = `
