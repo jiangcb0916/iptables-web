@@ -1,3 +1,23 @@
 {
-  "items": []
+  "items": [
+    {
+      "id": 1,
+      "host_ip": "172.16.80.125",
+      "ssh_port": 22,
+      "target_username": "root",
+      "key_type": "ed25519",
+      "private_key": "enc:gAAAAABp3K_jVhZw1l3ZWhVwiJiKy52gu4pC32OhDTa-XEHWc6L2mn2SVZr678D3C6eCeMCCsJCzMaN2dZREYTuYePIQt3LhEhqlaiPxDVdGAGmKNiwUNTtf80gW8s8SANdFzamPkdmkvyTLFzyFqJ9K7_oUxkH_-3YUd95zsHNUTBSS-IMJ4BBRJ04w6a4dCmNTKPvixPEopVbKYe_vcfqHq9DiKIUlvdr718IieLS6SEjzito471KRiWdnQnukc9kT9gLEhUwqaIyjDNCO3-DwDsvYaq7XXEn6UdBfagJ3GMeN7a-wfGmTqXuSM6nnEGm9NCRjbNhoLnc6lnTr3roRX6nx6IGRA2lfnK2BGnb7-xQ4esKEXH3LLPrrhEQIh4IGznkuzgaUiF3rzAUDD7FR9Ib8PZfE8VCy7Yum2K2JyE8N5TORHY7Vl1g3rKgIdSiwMMx5NhfsZFi_o-N5NdSE-gaLD6ona3kdB4VlaJHguPiTQNqfYoDONkAHpeLy6Ukv4Tz7IMfkD1sAzJskjRDcnkcddA55jkAVIabp6Zee4nYADPRBTMMh9vF-7vKFhvaaZGs6eRA4YWlH6U2K0R3R4MchjQMjYw==",
+      "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINyaqmunQ3abM6BUNL3oLt3hx8V5e5MwoJofCRv52+pn iptables-web-root@172.16.80.125",
+      "private_key_path": "/Users/jiangcb/Desktop/安全/iptables-web/data/ssh_keys/172.16.80.125_ed25519_20260413165706",
+      "public_key_path": "/Users/jiangcb/Desktop/安全/iptables-web/data/ssh_keys/172.16.80.125_ed25519_20260413165706.pub",
+      "setup_status": "success",
+      "error_message": "",
+      "operator_user_id": 1,
+      "operator_username": "admin",
+      "created_at": "2026-04-13 16:57:07",
+      "revoke_status": "active",
+      "revoke_message": "",
+      "revoked_at": ""
+    }
+  ]
 }

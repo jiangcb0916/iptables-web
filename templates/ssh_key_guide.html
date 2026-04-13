@@ -1,307 +1,186 @@
 {% extends 'base.html' %}
 {% block main %}
 <style>
-  .key-page-bg {
-    background: #f8fafc;
-  }
-  .key-ui {
-    font-size: 16px;
-    line-height: 1.58;
-  }
-  .key-glass-header {
-    background: #ffffff;
-  }
-  .key-panel {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
-  }
-  .key-panel-title {
-    color: #0f172a;
-    letter-spacing: 0.2px;
-    font-size: 1.2rem;
-  }
-  .key-hint {
-    color: #64748b;
-    font-size: 1.05rem;
-  }
-  .key-field {
-    border-color: #cfd8e6;
-    background: #fff;
-    transition: all 0.2s ease;
-  }
-  .key-field:focus {
-    outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-  }
-  .key-btn-primary {
-    background: #2563eb;
-    border: 1px solid #2563eb;
-    color: #fff;
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
-  }
-  .key-btn-primary:hover {
-    background: #1d4ed8;
-    border-color: #1d4ed8;
-    transform: translateY(-1px);
-    box-shadow: 0 8px 16px rgba(37, 99, 235, 0.2);
-  }
-  .key-btn-subtle {
-    border: 1px solid #d6deea;
-    background: #fff;
-    color: #334155;
-    transition: all 0.18s ease;
-  }
-  .key-btn-subtle:hover {
-    background: #f8fafc;
-    border-color: #c2cddd;
-  }
-  .key-segment {
-    background: #f8fafc;
-    border: 1px solid #d8e1ee;
-  }
-  .key-segment-btn {
-    color: #475569;
-    transition: all 0.18s ease;
-  }
-  .key-segment-btn.active {
-    background: #2563eb;
-    color: #fff;
-    box-shadow: 0 6px 14px rgba(37, 99, 235, 0.25);
-  }
-  .key-result-box {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-  }
-  .key-table-wrap {
-    border: 1px solid #e6ebf4;
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  .key-table thead {
-    background: #f8fafc;
-  }
-  .key-table thead th {
-    font-weight: 600;
-    color: #475569;
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
-  .key-table tbody tr {
-    border-top: 1px solid #edf2f7;
-  }
-  .key-table tbody tr:nth-child(even) {
-    background: #fcfdff;
-  }
-  .key-table tbody tr:hover {
-    background: #f1f6ff !important;
-  }
-  .key-label {
-    font-size: 1.02rem;
-  }
-  .key-input {
-    font-size: 1.02rem;
-  }
-  .key-help {
-    font-size: 0.92rem;
-  }
-  .key-table {
-    font-size: 1.02rem;
-  }
-  .key-table thead th {
-    font-size: 0.9rem;
-  }
-  .key-badge {
-    font-size: 0.75rem;
-  }
-  .key-status {
+  /* 与全站表单、提示风格一致的状态条 */
+  .ssh-setup-status {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
     border-radius: 10px;
     border: 1px solid transparent;
     font-size: 0.875rem;
     font-weight: 500;
   }
-  .key-status.success {
-    color: #166534;
-    background: #dcfce7;
-    border-color: #86efac;
-  }
-  .key-status.error {
-    color: #b91c1c;
-    background: #fee2e2;
-    border-color: #fca5a5;
-  }
-  .key-status.warning {
-    color: #92400e;
-    background: #fef3c7;
-    border-color: #fcd34d;
-  }
-  .key-status.info {
-    color: #1e40af;
-    background: #dbeafe;
-    border-color: #93c5fd;
-  }
+  .ssh-setup-status.success { color: #166534; background: #dcfce7; border-color: #86efac; }
+  .ssh-setup-status.error { color: #b91c1c; background: #fee2e2; border-color: #fca5a5; }
+  .ssh-setup-status.warning { color: #92400e; background: #fef3c7; border-color: #fcd34d; }
+  .ssh-setup-status.info { color: #1e40af; background: #dbeafe; border-color: #93c5fd; }
 </style>
 
-<div class="key-ui flex-1 flex flex-col overflow-hidden">
-  <header class="key-glass-header border-b border-gray-200 shadow-sm z-10">
-    <div class="max-w-6xl w-full mx-auto h-16 px-6 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-slate-900 flex items-center">
-        <span class="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-blue-50 text-blue-600 mr-2">
+<div class="flex-1 flex flex-col overflow-hidden">
+  <!-- 与主机管理等页一致：顶栏左标题、右操作，整行左对齐 -->
+  <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+    <div class="flex items-center justify-between h-16 px-6 text-left">
+      <div class="flex items-center gap-3 min-w-0 flex-1">
+        <span class="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-primary/10 text-primary flex-shrink-0">
           <i class="fa fa-key"></i>
         </span>
-        SSH 密钥配置
-      </h1>
-        <span class="hidden md:inline-flex items-center px-3 py-1.5 rounded-full text-sm text-blue-700 bg-blue-50 border border-blue-100">
-        一键配置 · 自动验证
-      </span>
+        <div class="min-w-0 text-left">
+          <h1 class="text-lg font-semibold text-gray-900 leading-tight">SSH 密钥配置</h1>
+          <p class="text-xs text-gray-500 mt-0.5">一键生成、下发公钥并验证</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+        <span class="hidden lg:inline text-xs text-gray-500 px-2 py-1 rounded-md bg-gray-50 border border-gray-200 whitespace-nowrap">一键配置 · 自动验证</span>
+        <button type="button" id="refresh-records-header-btn" class="fw-btn-outline px-3 py-2 text-sm font-medium inline-flex items-center gap-1.5 whitespace-nowrap">
+          <i class="fa fa-refresh"></i> 刷新记录
+        </button>
+      </div>
     </div>
   </header>
 
-  <main class="flex-1 overflow-y-auto key-page-bg p-6 fw-page-main">
-    <div class="container mx-auto max-w-6xl space-y-6">
-      <section class="key-panel p-6">
-        <div class="flex items-start justify-between gap-4 mb-5">
+  <main class="flex-1 overflow-y-auto bg-gray-50 p-6 fw-page-main text-left">
+    <div class="w-full max-w-7xl mx-auto space-y-6">
+      <div class="fw-page-hero">
+        <h2 class="fw-page-title">SSH 密钥与主机接入</h2>
+        <p class="fw-page-subtitle">为新增主机生成密钥并下发公钥后，将私钥粘贴到「主机管理 → 添加主机 → SSH 私钥」中保存。</p>
+      </div>
+
+      <!-- 一键配置 -->
+      <section class="fw-card p-6">
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5 border-b border-gray-100 pb-4">
           <div>
-            <h2 class="key-panel-title font-semibold">一键配置参数</h2>
-            <p class="key-hint mt-1">输入目标主机密码后，系统自动完成：生成密钥、下发公钥、验证密钥登录。</p>
+            <h3 class="text-base font-semibold text-gray-900">一键配置参数</h3>
+            <p class="text-sm text-gray-500 mt-1">输入目标主机密码后，系统将自动完成：生成密钥、下发公钥、验证密钥登录。</p>
           </div>
-          <div class="hidden lg:block text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-            <span class="text-red-500">*</span> 为必填项
-          </div>
+          <span class="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 self-start"><span class="text-red-500">*</span> 为必填项</span>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 lg:items-end">
           <div class="lg:col-span-4">
-            <label for="host-ip" class="key-label block font-medium text-gray-700 mb-1">目标主机 IP <span class="text-red-500">*</span></label>
-            <input id="host-ip" type="text" class="key-input key-field h-11 w-full px-3 rounded-xl border" placeholder="">
+            <label for="host-ip" class="block text-sm font-medium text-gray-700 mb-1">目标主机 IP <span class="text-red-500">*</span></label>
+            <input id="host-ip" type="text" class="block w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" placeholder="例如 192.168.1.10" autocomplete="off">
           </div>
-
           <div class="lg:col-span-2">
-            <label for="ssh-port" class="key-label block font-medium text-gray-700 mb-1">SSH 端口</label>
-            <input id="ssh-port" type="number" class="key-input key-field h-11 w-full px-3 rounded-xl border" value="22" min="1" max="65535">
+            <label for="ssh-port" class="block text-sm font-medium text-gray-700 mb-1">SSH 端口</label>
+            <input id="ssh-port" type="number" class="block w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" value="22" min="1" max="65535">
           </div>
-
           <div class="lg:col-span-3">
-            <label for="ssh-username" class="key-label block font-medium text-gray-700 mb-1">SSH 用户名 <span class="text-red-500">*</span></label>
-            <input id="ssh-username" type="text" class="key-input key-field h-11 w-full px-3 rounded-xl border" value="root" placeholder="root">
+            <label for="ssh-username" class="block text-sm font-medium text-gray-700 mb-1">SSH 用户名 <span class="text-red-500">*</span></label>
+            <input id="ssh-username" type="text" class="block w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" value="root" placeholder="root" autocomplete="off">
           </div>
-
           <div class="lg:col-span-3">
-            <label class="key-label block font-medium text-gray-700 mb-1">密钥类型</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">密钥类型</label>
             <input id="key-type" type="hidden" value="ed25519">
-            <div class="key-segment h-11 rounded-xl p-1 flex items-center gap-1">
-              <button type="button" class="key-segment-btn active h-full flex-1 rounded-lg text-sm font-medium" data-key-type="ed25519">
-                ed25519（推荐）
-              </button>
-              <button type="button" class="key-segment-btn h-full flex-1 rounded-lg text-sm font-medium" data-key-type="rsa">
-                rsa
-              </button>
+            <div class="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 h-[38px]">
+              <button type="button" class="key-segment-btn flex-1 rounded-md text-sm font-medium transition-colors bg-white text-primary shadow-sm" data-key-type="ed25519">ed25519（推荐）</button>
+              <button type="button" class="key-segment-btn flex-1 rounded-md text-sm font-medium transition-colors text-gray-600" data-key-type="rsa">RSA</button>
             </div>
           </div>
 
-          <div class="lg:col-span-9">
-            <label for="ssh-password" class="key-label block font-medium text-gray-700 mb-1">目标主机密码 <span class="text-red-500">*</span></label>
+          <div class="md:col-span-2 lg:col-span-8">
+            <label for="ssh-password" class="block text-sm font-medium text-gray-700 mb-1">目标主机密码 <span class="text-red-500">*</span></label>
             <div class="relative">
-              <input id="ssh-password" type="password" class="key-input key-field h-11 w-full px-3 pr-11 rounded-xl border" placeholder="仅用于自动下发公钥，不会保存到该页面">
-              <button id="toggle-password-btn" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 key-btn-subtle h-8 w-8 rounded-lg border text-sm">
-                <i id="toggle-password-icon" class="fa fa-eye"></i>
+              <input id="ssh-password" type="password" class="block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm" placeholder="仅用于本次下发公钥，不保存" autocomplete="new-password">
+              <button id="toggle-password-btn" type="button" class="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-400 hover:text-gray-600">
+                <i id="toggle-password-icon" class="fa fa-eye text-sm"></i>
               </button>
             </div>
-            <p class="key-help text-gray-500 mt-1">该密码仅用于本次自动下发公钥，页面不会显示或保存明文。</p>
+            <p class="text-xs text-gray-500 mt-1">该密码仅用于本次会话，不会在页面或日志中保存明文。</p>
           </div>
 
-          <div class="lg:col-span-3">
-            <button id="setup-btn" class="key-btn-primary h-11 w-full rounded-xl font-semibold text-sm">
+          <div class="md:col-span-2 lg:col-span-4 flex lg:justify-end">
+            <button type="button" id="setup-btn" class="fw-btn-primary w-full lg:w-auto px-6 py-2 text-sm font-medium">
               一键配置并验证
             </button>
           </div>
         </div>
 
-        <div class="mt-4 min-h-11">
-          <div id="setup-status" class="hidden key-status info">
+        <div class="mt-4 min-h-[2.5rem]">
+          <div id="setup-status" class="hidden ssh-setup-status info">
             <i id="setup-status-icon" class="fa fa-info-circle"></i>
             <span id="setup-status-text"></span>
           </div>
         </div>
       </section>
 
-      <section id="result-card" class="hidden key-panel p-6 space-y-4">
-        <h2 class="key-panel-title font-semibold">配置结果</h2>
+      <!-- 配置结果 -->
+      <section id="result-card" class="hidden fw-card p-6 space-y-4">
+        <h3 class="text-base font-semibold text-gray-900 border-b border-gray-100 pb-3">配置结果</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div>
             <div class="text-gray-500 mb-1">私钥保存路径</div>
-            <div id="private-key-path" class="key-result-box text-gray-800 break-all px-3 py-2"></div>
+            <div id="private-key-path" class="text-gray-800 break-all px-3 py-2 rounded-md bg-gray-50 border border-gray-200 text-xs font-mono"></div>
           </div>
           <div>
             <div class="text-gray-500 mb-1">公钥保存路径</div>
-            <div id="public-key-path" class="key-result-box text-gray-800 break-all px-3 py-2"></div>
+            <div id="public-key-path" class="text-gray-800 break-all px-3 py-2 rounded-md bg-gray-50 border border-gray-200 text-xs font-mono"></div>
           </div>
         </div>
-
         <div>
           <div class="flex items-center justify-between mb-1">
-            <h3 class="font-medium text-sm">私钥（复制到“添加主机 -> SSH密钥”）</h3>
-            <button class="copy-btn key-btn-subtle px-3 py-1 text-base rounded-lg" data-target="private-key-text">复制私钥</button>
+            <span class="text-sm font-medium text-gray-700">私钥（粘贴到「添加主机 → SSH 私钥」）</span>
+            <button type="button" class="copy-btn fw-btn-outline px-3 py-1 text-sm" data-target="private-key-text">复制私钥</button>
           </div>
-          <textarea id="private-key-text" rows="10" readonly class="w-full px-3 py-2 border border-gray-200 rounded-xl font-mono text-base bg-gray-50"></textarea>
+          <textarea id="private-key-text" rows="8" readonly class="w-full px-3 py-2 border border-gray-200 rounded-md font-mono text-sm bg-gray-50 focus:outline-none"></textarea>
         </div>
-
         <div>
           <div class="flex items-center justify-between mb-1">
-            <h3 class="font-medium text-sm">公钥（已自动下发）</h3>
-            <button class="copy-btn key-btn-subtle px-3 py-1 text-base rounded-lg" data-target="public-key-text">复制公钥</button>
+            <span class="text-sm font-medium text-gray-700">公钥（已下发至目标机）</span>
+            <button type="button" class="copy-btn fw-btn-outline px-3 py-1 text-sm" data-target="public-key-text">复制公钥</button>
           </div>
-          <textarea id="public-key-text" rows="3" readonly class="w-full px-3 py-2 border border-gray-200 rounded-xl font-mono text-base bg-gray-50"></textarea>
+          <textarea id="public-key-text" rows="3" readonly class="w-full px-3 py-2 border border-gray-200 rounded-md font-mono text-sm bg-gray-50 focus:outline-none"></textarea>
         </div>
       </section>
 
-      <section class="key-panel p-6">
-        <div class="flex flex-col gap-3 mb-4">
-          <div class="flex items-center justify-between">
-            <h2 class="key-panel-title font-semibold">配置记录</h2>
-            <button id="refresh-records-btn" class="key-btn-subtle inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg">
-              <i class="fa fa-refresh"></i>
-              刷新记录
-            </button>
+      <!-- 配置记录 -->
+      <section class="fw-card overflow-hidden text-left">
+        <div class="px-6 py-4 border-b border-gray-100 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-gray-900">配置记录</h3>
+            <p class="text-sm text-gray-500 mt-1">共 <span id="records-total" class="font-medium text-gray-800">0</span> 条记录</p>
           </div>
+          <button type="button" id="refresh-records-btn" class="fw-btn-outline px-3 py-2 text-sm font-medium inline-flex items-center gap-1.5 shrink-0">
+            <i class="fa fa-refresh"></i> 刷新列表
+          </button>
+        </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-5 gap-3">
-            <input id="records-keyword" type="text" class="key-input key-field lg:col-span-2 h-10 w-full px-3 rounded-xl border" placeholder="搜索：IP / 用户 / 密钥类型">
-            <select id="records-status" class="key-input key-field h-10 w-full px-3 rounded-xl border">
+        <div class="px-6 py-3 bg-gray-50 border-b border-gray-100">
+          <label class="block text-xs font-medium text-gray-500 mb-2">筛选</label>
+          <div class="flex flex-col sm:flex-row sm:flex-wrap sm:items-stretch gap-2 sm:gap-3">
+            <div class="relative flex-1 min-w-0 sm:min-w-[220px] sm:max-w-md">
+              <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 pointer-events-none"><i class="fa fa-search text-sm"></i></span>
+              <input id="records-keyword" type="text" class="block w-full h-[38px] pl-9 pr-3 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" placeholder="IP / 用户 / 密钥类型">
+            </div>
+            <select id="records-status" class="h-[38px] w-full sm:w-[11rem] shrink-0 px-3 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
               <option value="all">全部状态</option>
               <option value="active">有效</option>
               <option value="revoked">主机公钥已删除</option>
               <option value="setup_failed">配置失败</option>
               <option value="revoke_failed">删除失败</option>
             </select>
-            <button id="records-search-btn" class="key-btn-primary h-10 w-full rounded-xl text-sm font-medium">搜索</button>
-            <button id="records-clear-btn" class="key-btn-subtle h-10 w-full rounded-xl text-sm">重置</button>
+            <div class="flex flex-row gap-2 shrink-0 w-full sm:w-auto">
+              <button type="button" id="records-search-btn" class="fw-btn-primary flex-1 sm:flex-initial px-4 h-[38px] text-sm font-medium rounded-md">搜索</button>
+              <button type="button" id="records-clear-btn" class="fw-btn-outline flex-1 sm:flex-initial px-4 h-[38px] text-sm font-medium rounded-md">重置</button>
+            </div>
           </div>
-
-          <div class="text-base text-gray-500">共 <span id="records-total">0</span> 条记录</div>
         </div>
 
-        <div class="key-table-wrap">
+        <div class="fw-table-wrap border-0 rounded-none shadow-none">
           <div class="overflow-x-auto">
-            <table class="key-table min-w-full text-sm">
-              <thead>
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+              <thead class="bg-gray-50">
                 <tr>
-                  <th class="px-4 text-left">时间</th>
-                  <th class="px-4 text-left">目标主机</th>
-                  <th class="px-4 text-left">用户</th>
-                  <th class="px-4 text-left">类型</th>
-                  <th class="px-4 text-left">状态</th>
-                  <th class="px-4 text-right">操作</th>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">时间</th>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">目标主机</th>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">用户</th>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">类型</th>
+                  <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">状态</th>
+                  <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
                 </tr>
               </thead>
-              <tbody id="records-tbody"></tbody>
+              <tbody id="records-tbody" class="bg-white divide-y divide-gray-200"></tbody>
             </table>
           </div>
         </div>
@@ -442,20 +321,20 @@
       totalEl.textContent = String(recordsMeta.total || 0);
     }
     if (!setupRecords.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-6 text-center text-gray-500">暂无配置记录</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500">暂无配置记录</td></tr>';
       return;
     }
 
     tbody.innerHTML = setupRecords.map((record) => {
       let statusLabel = '';
       if (record.setup_status !== 'success') {
-        statusLabel = '<span class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-red-100 text-red-700"><i class="fa fa-times-circle"></i>配置失败</span>';
+        statusLabel = '<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700"><i class="fa fa-times-circle"></i>配置失败</span>';
       } else if (record.revoke_status === 'revoked') {
-        statusLabel = '<span class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700"><i class="fa fa-ban"></i>主机公钥已删除</span>';
+        statusLabel = '<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700"><i class="fa fa-ban"></i>主机公钥已删除</span>';
       } else if (record.revoke_status === 'failed') {
-        statusLabel = '<span class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700"><i class="fa fa-exclamation-triangle"></i>删除失败</span>';
+        statusLabel = '<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-800"><i class="fa fa-exclamation-triangle"></i>删除失败</span>';
       } else {
-        statusLabel = '<span class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-700"><i class="fa fa-check-circle"></i>有效</span>';
+        statusLabel = '<span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700"><i class="fa fa-check-circle"></i>有效</span>';
       }
 
       const canRemoveTargetKey = record.setup_status === 'success' && record.revoke_status !== 'revoked';
@@ -464,23 +343,17 @@
         ? '删除该配置记录'
         : '请先删除目标主机密钥，再删除记录';
       return `
-        <tr>
-          <td class="px-4 py-3 whitespace-nowrap">${record.created_at || '-'}</td>
-          <td class="px-4 py-3 whitespace-nowrap">${record.host_ip || '-'}:${record.ssh_port || 22}</td>
-          <td class="px-4 py-3 whitespace-nowrap">${record.target_username || '-'}</td>
-          <td class="px-4 py-3 whitespace-nowrap">${record.key_type || '-'}</td>
+        <tr class="hover:bg-gray-50/80">
+          <td class="px-4 py-3 whitespace-nowrap text-gray-700">${record.created_at || '-'}</td>
+          <td class="px-4 py-3 whitespace-nowrap text-gray-800 font-mono text-xs">${record.host_ip || '-'}:${record.ssh_port || 22}</td>
+          <td class="px-4 py-3 whitespace-nowrap text-gray-700">${record.target_username || '-'}</td>
+          <td class="px-4 py-3 whitespace-nowrap text-gray-700">${record.key_type || '-'}</td>
           <td class="px-4 py-3 whitespace-nowrap">${statusLabel}</td>
           <td class="px-4 py-3 text-right whitespace-nowrap">
-            <div class="inline-flex items-center gap-1.5">
-              <button class="use-record-btn key-btn-subtle px-2 py-1 text-xs rounded-md" data-record-id="${record.id}" title="查看并加载">
-                <i class="fa fa-eye mr-1"></i>查看
-              </button>
-              <button class="revoke-target-key-btn px-2 py-1 text-xs border border-red-300 text-red-600 rounded-md hover:bg-red-50 disabled:opacity-50" data-record-id="${record.id}" ${canRemoveTargetKey ? '' : 'disabled'}>
-                <i class="fa fa-unlink mr-1"></i>删主机密钥
-              </button>
-              <button class="delete-record-btn key-btn-subtle px-2 py-1 text-xs rounded-md disabled:opacity-50" data-record-id="${record.id}" title="${deleteRecordTitle}" ${canDeleteRecord ? '' : 'disabled'}>
-                <i class="fa fa-trash mr-1"></i>删记录
-              </button>
+            <div class="inline-flex flex-wrap items-center justify-end gap-1.5">
+              <button type="button" class="use-record-btn fw-btn-outline px-2 py-1 text-xs" data-record-id="${record.id}" title="查看并加载">查看</button>
+              <button type="button" class="revoke-target-key-btn fw-btn-danger px-2 py-1 text-xs disabled:opacity-50" data-record-id="${record.id}" ${canRemoveTargetKey ? '' : 'disabled'}>删主机密钥</button>
+              <button type="button" class="delete-record-btn fw-btn-outline px-2 py-1 text-xs disabled:opacity-50" data-record-id="${record.id}" title="${deleteRecordTitle}" ${canDeleteRecord ? '' : 'disabled'}>删记录</button>
             </div>
           </td>
         </tr>
@@ -622,8 +495,12 @@
       btn.addEventListener('click', function () {
         const keyType = btn.dataset.keyType;
         hiddenInput.value = keyType;
-        segmentButtons.forEach(item => item.classList.remove('active'));
-        btn.classList.add('active');
+        segmentButtons.forEach((item) => {
+          item.classList.remove('active', 'bg-white', 'text-primary', 'shadow-sm');
+          item.classList.add('text-gray-600');
+        });
+        btn.classList.add('active', 'bg-white', 'text-primary', 'shadow-sm');
+        btn.classList.remove('text-gray-600');
       });
     });
   }
@@ -668,7 +545,7 @@
 
       setupBtn.disabled = true;
       const originalText = setupBtn.textContent;
-      setupBtn.textContent = '配置中...';
+      setupBtn.textContent = '配置中…';
       showStatus('正在生成密钥并安装公钥，请稍候...', 'info');
       try {
         const response = await fetch('/ssh_key_setup', {
@@ -700,9 +577,12 @@
       });
     });
 
-    document.getElementById('refresh-records-btn').addEventListener('click', function () {
+    function bindRefresh() {
       loadRecords();
-    });
+    }
+    document.getElementById('refresh-records-btn').addEventListener('click', bindRefresh);
+    const headerRefresh = document.getElementById('refresh-records-header-btn');
+    if (headerRefresh) headerRefresh.addEventListener('click', bindRefresh);
 
     document.getElementById('records-search-btn').addEventListener('click', function () {
       loadRecords();
