@@ -2033,13 +2033,19 @@
 
   // 点击模态框外部关闭
   document.getElementById('common-modal').addEventListener('click', (e) => {
-    if (e.target === document.getElementById('common-modal')) closeCommonModal();
+    if (e.target === document.getElementById('common-modal')) {
+      // 统一规范：不允许点击遮罩关闭
+    }
   });
   document.getElementById('permission-modal').addEventListener('click', (e) => {
-    if (e.target === document.getElementById('permission-modal')) closePermissionModal();
+    if (e.target === document.getElementById('permission-modal')) {
+      // 统一规范：不允许点击遮罩关闭
+    }
   });
   document.getElementById('confirm-modal').addEventListener('click', (e) => {
-    if (e.target === document.getElementById('confirm-modal')) closeConfirmModal();
+    if (e.target === document.getElementById('confirm-modal')) {
+      // 统一规范：不允许点击遮罩关闭
+    }
   });
 </script>
 {% endblock script %}

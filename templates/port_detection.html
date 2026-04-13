@@ -1007,7 +1007,9 @@
   closeRuleDialog.addEventListener('click', closeDialog);
   cancelRuleDialog.addEventListener('click', closeDialog);
   ruleDialog.addEventListener('click', (event) => {
-    if (event.target === ruleDialog) closeDialog();
+    if (event.target === ruleDialog) {
+      // 统一规范：不允许点击遮罩关闭，避免误触导致状态丢失
+    }
   });
   messageDialogCancel.addEventListener('click', () => closeMessageDialog(false));
   messageDialogConfirm.addEventListener('click', () => closeMessageDialog(true));

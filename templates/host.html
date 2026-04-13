@@ -683,7 +683,7 @@ if (clearSearchBtn) {
   // 点击模态框外部关闭
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
-      closeModal();
+      // 统一规范：不允许点击遮罩关闭，避免误触丢失表单输入
     }
   });
 

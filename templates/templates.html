@@ -644,7 +644,7 @@
     // 点击模板模态框外部关闭
     templateModal.addEventListener('click', (e) => {
       if (e.target === templateModal) {
-        closeTemplateModal();
+        // 统一规范：不允许点击遮罩关闭，避免误触丢失编辑内容
       }
     });
 
@@ -909,7 +909,7 @@
     // 点击添加规则模态框外部关闭
     addRuleModal.addEventListener('click', (e) => {
       if (e.target === addRuleModal) {
-        closeAddRuleModal();
+        // 统一规范：不允许点击遮罩关闭
       }
     });
 
@@ -1131,7 +1131,7 @@
     // 点击应用模板模态框外部关闭
     applyTemplateModal.addEventListener('click', (e) => {
       if (e.target === applyTemplateModal) {
-        closeApplyModal();
+        // 统一规范：不允许点击遮罩关闭
       }
     });
 

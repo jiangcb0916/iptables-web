@@ -787,7 +787,9 @@
     closeModalBtn.addEventListener('click', closeModal);
     cancelBtn.addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) closeModal();
+      if (e.target === modal) {
+        // 统一规范：不允许点击遮罩关闭，避免误触丢失编辑内容
+      }
     });
 
     // 编辑按钮交互：回显数据到模态框
@@ -986,17 +988,23 @@
     closeRollbackModalBtn?.addEventListener('click', closeRollbackModal);
     cancelRollbackBtn?.addEventListener('click', closeRollbackModal);
     rollbackModal?.addEventListener('click', (event) => {
-      if (event.target === rollbackModal) closeRollbackModal();
+      if (event.target === rollbackModal) {
+        // 统一规范：确认/回滚类弹窗不允许点遮罩关闭
+      }
     });
     closeCreateSnapshotModalBtn?.addEventListener('click', closeCreateSnapshotModal);
     cancelCreateSnapshotBtn?.addEventListener('click', closeCreateSnapshotModal);
     createSnapshotModal?.addEventListener('click', (event) => {
-      if (event.target === createSnapshotModal) closeCreateSnapshotModal();
+      if (event.target === createSnapshotModal) {
+        // 统一规范：确认类弹窗不允许点遮罩关闭
+      }
     });
     pageConfirmCancel?.addEventListener('click', () => closePageConfirmDialog(false));
     pageConfirmOk?.addEventListener('click', () => closePageConfirmDialog(true));
     pageConfirmModal?.addEventListener('click', (event) => {
-      if (event.target === pageConfirmModal) closePageConfirmDialog(false);
+      if (event.target === pageConfirmModal) {
+        // 统一规范：提示框必须显式点击按钮关闭
+      }
     });
 
     loadSnapshotsToPage();
