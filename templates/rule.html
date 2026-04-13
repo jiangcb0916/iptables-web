@@ -242,6 +242,31 @@
             </div>
 
             <div class="md:col-span-2">
+              <label for="authorized-user-select" class="block text-sm font-medium text-gray-700 mb-1">授权用户</label>
+              <div class="space-y-2">
+                <input type="text" id="authorized-user-search" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="搜索姓名、手机号或IP地址">
+                <select id="authorized-user-select" name="authorized-user-select" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                  <option value="">请选择授权用户（可选）</option>
+                </select>
+                <div id="authorized-user-multi-panel" class="hidden border border-gray-200 rounded-md bg-gray-50">
+                  <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200">
+                    <span id="authorized-user-selected-count" class="text-xs text-gray-600">已选 0 个</span>
+                    <div class="flex items-center gap-2">
+                      <button type="button" id="authorized-user-select-all-btn" class="text-xs text-primary hover:underline">全选当前结果</button>
+                      <button type="button" id="authorized-user-clear-btn" class="text-xs text-gray-500 hover:underline">清空</button>
+                    </div>
+                  </div>
+                  <div id="authorized-user-multi-list" class="max-h-44 overflow-y-auto p-2 space-y-1"></div>
+                </div>
+                <label class="inline-flex items-center text-sm text-gray-600">
+                  <input type="checkbox" id="authorized-user-multi-toggle" class="mr-2 rounded border-gray-300 text-primary focus:ring-primary">
+                  启用多选（自动用逗号拼接IP）
+                </label>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">选择后将自动填充授权对象IP，仍可手动修改。</p>
+            </div>
+
+            <div class="md:col-span-2">
               <label for="auth-object" class="block text-sm font-medium text-gray-700 mb-1">授权对象</label>
               <input type="text" id="auth-object" name="auth-object" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="IP地址或网段，例如: 192.168.1.0/24">
             </div>
@@ -437,6 +462,14 @@
     const authPolicySelect = document.getElementById('auth-policy');
     const protocolSelect = document.getElementById('protocol');
     const portInput = document.getElementById('port');
+    const authorizedUserSearchInput = document.getElementById('authorized-user-search');
+    const authorizedUserSelect = document.getElementById('authorized-user-select');
+    const authorizedUserMultiToggle = document.getElementById('authorized-user-multi-toggle');
+    const authorizedUserMultiPanel = document.getElementById('authorized-user-multi-panel');
+    const authorizedUserMultiList = document.getElementById('authorized-user-multi-list');
+    const authorizedUserSelectedCount = document.getElementById('authorized-user-selected-count');
+    const authorizedUserSelectAllBtn = document.getElementById('authorized-user-select-all-btn');
+    const authorizedUserClearBtn = document.getElementById('authorized-user-clear-btn');
     const authObjectInput = document.getElementById('auth-object');
     const descriptionTextarea = document.getElementById('description');
     // 新增：获取限速相关元素
@@ -467,10 +500,239 @@
     const pageConfirmOk = document.getElementById('page-confirm-ok');
     let latestSnapshots = [];
     let confirmResolver = null;
+    let selectedAuthorizedIps = new Set();
+    let currentFilteredAuthorizedUsers = [];
+    let authorizedUsersCache = { items: [], fetchedAt: 0 };
+    let authorizedUserSearchTimer = null;
+    const AUTHORIZED_USER_CACHE_TTL = 5 * 60 * 1000;
     const policyHintEl = document.createElement('p');
     policyHintEl.className = 'text-xs text-amber-600 mt-1';
     policyHintEl.textContent = '保存时会自动优化顺序：允许规则优先于拒绝规则，避免被前置拒绝覆盖。';
     authPolicySelect.parentElement.appendChild(policyHintEl);
+
+    function isValidIpv4(value) {
+      if (!value || typeof value !== 'string') return false;
+      const parts = value.trim().split('.');
+      if (parts.length !== 4) return false;
+      return parts.every(part => /^\d+$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
+    }
+
+    function collectSelectedIpsFromSelect() {
+      if (authorizedUserMultiToggle?.checked) {
+        return Array.from(selectedAuthorizedIps);
+      }
+      return Array.from(authorizedUserSelect.selectedOptions || [])
+        .map(option => (option.value || '').trim())
+        .filter(Boolean);
+    }
+
+    function syncAuthObjectFromAuthorizedUsers(keepExistingWhenEmpty = true) {
+      const selectedIps = collectSelectedIpsFromSelect();
+      if (!selectedIps.length) {
+        if (!keepExistingWhenEmpty) {
+          authObjectInput.value = '';
+        }
+        return;
+      }
+      if (authorizedUserMultiToggle?.checked) {
+        authObjectInput.value = selectedIps.join(',');
+      } else {
+        authObjectInput.value = selectedIps[0];
+      }
+    }
+
+    function setAuthorizedUserMode(isMulti) {
+      if (isMulti) {
+        authorizedUserSelect.classList.add('hidden');
+        authorizedUserMultiPanel.classList.remove('hidden');
+      } else {
+        authorizedUserSelect.classList.remove('hidden');
+        authorizedUserMultiPanel.classList.add('hidden');
+        if (selectedAuthorizedIps.size > 1) {
+          const firstIp = Array.from(selectedAuthorizedIps)[0];
+          selectedAuthorizedIps = new Set(firstIp ? [firstIp] : []);
+        }
+      }
+    }
+
+    function filterAuthorizedUsersByKeyword(items, keyword) {
+      if (!keyword) return items;
+      const key = keyword.toLowerCase();
+      return items.filter(item => {
+        const name = (item.name || '').toLowerCase();
+        const phone = (item.phone || '').toLowerCase();
+        const ip = (item.ip || '').toLowerCase();
+        return name.includes(key) || phone.includes(key) || ip.includes(key);
+      });
+    }
+
+    function renderAuthorizedUserOptions(items) {
+      const currentSelected = new Set([
+        ...selectedAuthorizedIps,
+        ...collectSelectedIpsFromSelect()
+      ]);
+      const list = Array.isArray(items) ? items : [];
+      currentFilteredAuthorizedUsers = list;
+      authorizedUserSelect.innerHTML = '';
+      if (!authorizedUserMultiToggle?.checked) {
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '请选择授权用户（可选）';
+        authorizedUserSelect.appendChild(defaultOption);
+      }
+      if (!list.length) {
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.disabled = true;
+        emptyOption.textContent = '暂无用户数据';
+        authorizedUserSelect.appendChild(emptyOption);
+        return;
+      }
+      list.forEach(item => {
+        const name = item.name || '未知用户';
+        const phone = item.phone || '无手机号';
+        const ip = item.ip || '';
+        const option = document.createElement('option');
+        option.value = ip;
+        option.textContent = `${name}（${phone}） - ${ip}`;
+        if (currentSelected.has(ip)) {
+          option.selected = true;
+        }
+        authorizedUserSelect.appendChild(option);
+      });
+      if (!authorizedUserMultiToggle?.checked && !authorizedUserSelect.value) {
+        const firstMatched = list.find(item => currentSelected.has(item.ip));
+        authorizedUserSelect.value = firstMatched ? firstMatched.ip : '';
+      }
+      selectedAuthorizedIps = new Set(collectSelectedIpsFromSelect());
+      renderAuthorizedUserMultiList(list);
+    }
+
+    function renderAuthorizedUserMultiList(items) {
+      const list = Array.isArray(items) ? items : [];
+      authorizedUserMultiList.innerHTML = '';
+      if (!list.length) {
+        const empty = document.createElement('div');
+        empty.className = 'text-xs text-gray-500 px-2 py-3 text-center';
+        empty.textContent = '暂无用户数据';
+        authorizedUserMultiList.appendChild(empty);
+        updateAuthorizedUserSelectedCount();
+        return;
+      }
+      list.forEach(item => {
+        const ip = (item.ip || '').trim();
+        const wrapper = document.createElement('label');
+        wrapper.className = 'flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white cursor-pointer';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'rounded border-gray-300 text-primary focus:ring-primary';
+        checkbox.value = ip;
+        checkbox.checked = selectedAuthorizedIps.has(ip);
+        const text = document.createElement('span');
+        text.className = 'text-sm text-gray-700';
+        text.textContent = `${item.name || '未知用户'}（${item.phone || '无手机号'}） - ${ip}`;
+        checkbox.addEventListener('change', () => {
+          if (checkbox.checked) {
+            selectedAuthorizedIps.add(ip);
+          } else {
+            selectedAuthorizedIps.delete(ip);
+          }
+          updateAuthorizedUserSelectSelectionBySet();
+          updateAuthorizedUserSelectedCount();
+          syncAuthObjectFromAuthorizedUsers(true);
+        });
+        wrapper.appendChild(checkbox);
+        wrapper.appendChild(text);
+        authorizedUserMultiList.appendChild(wrapper);
+      });
+      updateAuthorizedUserSelectedCount();
+    }
+
+    function updateAuthorizedUserSelectSelectionBySet() {
+      const isMulti = authorizedUserMultiToggle?.checked;
+      Array.from(authorizedUserSelect.options || []).forEach(option => {
+        if (!option.value) {
+          option.selected = !isMulti && selectedAuthorizedIps.size === 0;
+          return;
+        }
+        option.selected = selectedAuthorizedIps.has(option.value);
+      });
+      if (!isMulti) {
+        const firstIp = Array.from(selectedAuthorizedIps)[0] || '';
+        authorizedUserSelect.value = firstIp;
+      }
+    }
+
+    function updateAuthorizedUserSelectedCount() {
+      if (!authorizedUserSelectedCount) return;
+      authorizedUserSelectedCount.textContent = `已选 ${selectedAuthorizedIps.size} 个`;
+    }
+
+    async function fetchAuthorizedUsersByPage(page) {
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: '200'
+      });
+      const response = await fetch(`/api/customer-terminals?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || '获取授权用户失败');
+      }
+      return data;
+    }
+
+    async function fetchAllAuthorizedUsers() {
+      const allItems = [];
+      let page = 1;
+      let total = 0;
+      do {
+        const data = await fetchAuthorizedUsersByPage(page);
+        const pageItems = Array.isArray(data.items) ? data.items : [];
+        total = Number(data.total || 0);
+        allItems.push(...pageItems);
+        page += 1;
+      } while (allItems.length < total && page <= 20);
+      const deduped = [];
+      const seen = new Set();
+      allItems.forEach(item => {
+        const ip = (item.ip || '').trim();
+        if (!isValidIpv4(ip)) return;
+        const key = `${item.name || ''}|${item.phone || ''}|${ip}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push({ ...item, ip });
+        }
+      });
+      return deduped;
+    }
+
+    async function loadAuthorizedUsers(options = {}) {
+      const { forceRefresh = false, keyword = '' } = options;
+      const now = Date.now();
+      const shouldUseCache = !forceRefresh
+        && authorizedUsersCache.items.length
+        && (now - authorizedUsersCache.fetchedAt) < AUTHORIZED_USER_CACHE_TTL;
+      authorizedUserSelect.disabled = true;
+      authorizedUserSelect.innerHTML = '<option value="">授权用户加载中...</option>';
+      try {
+        let users = authorizedUsersCache.items;
+        if (!shouldUseCache) {
+          users = await fetchAllAuthorizedUsers();
+          authorizedUsersCache = {
+            items: users,
+            fetchedAt: Date.now()
+          };
+        }
+        renderAuthorizedUserOptions(filterAuthorizedUsersByKeyword(users, keyword));
+        updateAuthorizedUserSelectedCount();
+      } catch (error) {
+        authorizedUserSelect.innerHTML = '<option value="">暂无用户数据</option>';
+        authorizedUserMultiList.innerHTML = '<div class="text-xs text-gray-500 px-2 py-3 text-center">暂无用户数据</div>';
+        showErrorToast(error.message || '加载授权用户失败');
+      } finally {
+        authorizedUserSelect.disabled = false;
+      }
+    }
 
     function openPageConfirmDialog(options) {
       const opts = typeof options === 'string'
@@ -759,6 +1021,12 @@
       const dataCount = {{ data_list|length }};
       modalTitle.textContent = '新增规则';
       ruleForm.reset(); // 重置表单
+      selectedAuthorizedIps = new Set();
+      authorizedUserSearchInput.value = '';
+      authorizedUserSelect.value = '';
+      authorizedUserMultiToggle.checked = false;
+      setAuthorizedUserMode(false);
+      updateAuthorizedUserSelectedCount();
       ruleIdInput.value = dataCount + 1; // 自动生成ID
       originalRuleIdInput.value = '';
       isEditing = false; // 标记为“新增”状态
@@ -771,6 +1039,7 @@
         modal.querySelector('div').classList.add('scale-100');
         modal.querySelector('div').classList.remove('scale-95');
       }, 10);
+      loadAuthorizedUsers({ forceRefresh: true });
     });
 
     // 关闭模态框
@@ -815,6 +1084,12 @@
         portInput.value = ruleData.port; // 回显端口
         authObjectInput.value = ruleData.source; // 回显授权对象
         descriptionTextarea.value = ruleData.comment; // 回显描述
+        selectedAuthorizedIps = new Set();
+        authorizedUserSearchInput.value = '';
+        authorizedUserSelect.value = '';
+        authorizedUserMultiToggle.checked = false;
+        setAuthorizedUserMode(false);
+        updateAuthorizedUserSelectedCount();
 
         // 修改：回显限速数值（移除kb/s单位，只保留数字）
         speedLimitInput.value = ruleData.limit ? ruleData.limit.replace(/kb\/s$/, '').trim() : ''
@@ -830,7 +1105,51 @@
           modal.querySelector('div').classList.add('scale-100');
           modal.querySelector('div').classList.remove('scale-95');
         }, 10);
+        loadAuthorizedUsers({ forceRefresh: true });
       });
+    });
+
+    authorizedUserSearchInput?.addEventListener('input', (event) => {
+      clearTimeout(authorizedUserSearchTimer);
+      authorizedUserSearchTimer = setTimeout(() => {
+        const keyword = (event.target.value || '').trim();
+        loadAuthorizedUsers({ keyword });
+      }, 300);
+    });
+
+    authorizedUserMultiToggle?.addEventListener('change', () => {
+      selectedAuthorizedIps = new Set(collectSelectedIpsFromSelect());
+      setAuthorizedUserMode(authorizedUserMultiToggle.checked);
+      loadAuthorizedUsers({ keyword: (authorizedUserSearchInput.value || '').trim() });
+      setTimeout(() => {
+        updateAuthorizedUserSelectSelectionBySet();
+        updateAuthorizedUserSelectedCount();
+        syncAuthObjectFromAuthorizedUsers(true);
+      }, 0);
+    });
+
+    authorizedUserSelect?.addEventListener('change', () => {
+      selectedAuthorizedIps = new Set(collectSelectedIpsFromSelect());
+      updateAuthorizedUserSelectedCount();
+      if (!selectedAuthorizedIps.size) return;
+      syncAuthObjectFromAuthorizedUsers(true);
+    });
+
+    authorizedUserSelectAllBtn?.addEventListener('click', () => {
+      if (!authorizedUserMultiToggle?.checked || !currentFilteredAuthorizedUsers.length) return;
+      currentFilteredAuthorizedUsers.forEach(item => {
+        if (item.ip) selectedAuthorizedIps.add(item.ip);
+      });
+      updateAuthorizedUserSelectSelectionBySet();
+      renderAuthorizedUserMultiList(currentFilteredAuthorizedUsers);
+      syncAuthObjectFromAuthorizedUsers(true);
+    });
+
+    authorizedUserClearBtn?.addEventListener('click', () => {
+      selectedAuthorizedIps = new Set();
+      updateAuthorizedUserSelectSelectionBySet();
+      renderAuthorizedUserMultiList(currentFilteredAuthorizedUsers);
+      syncAuthObjectFromAuthorizedUsers(true);
     });
 
     // 保存按钮：提交新增/编辑请求

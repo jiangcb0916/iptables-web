@@ -2362,19 +2362,23 @@ def _detect_rule_conflicts(rule_list):
 
 def _validate_auth_object(auth_object):
     """
-    校验授权对象格式，支持 IPv4 和 CIDR。
+    校验授权对象格式，支持单个/多个 IPv4 与 CIDR（逗号或分号分隔）。
     返回 None 表示通过，返回字符串表示错误信息。
     """
     value = (auth_object or '').strip()
     if not value:
         return '授权对象不能为空'
-    try:
-        if '/' in value:
-            ipaddress.ip_network(value, strict=False)
-        else:
-            ipaddress.ip_address(value)
-    except ValueError:
-        return f'授权对象格式错误: {value}（示例: 172.16.0.0/16 或 192.168.1.10）'
+    tokens = [item.strip() for item in re.split(r'[;,]', value) if item and item.strip()]
+    if not tokens:
+        return '授权对象不能为空'
+    for token in tokens:
+        try:
+            if '/' in token:
+                ipaddress.ip_network(token, strict=False)
+            else:
+                ipaddress.ip_address(token)
+        except ValueError:
+            return f'授权对象格式错误: {token}（示例: 172.16.0.0/16 或 192.168.1.10）'
     return None
 
 
