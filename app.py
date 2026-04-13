@@ -4256,36 +4256,13 @@ def _build_dingtalk_phone_name_map(phones, file_map):
     return merged, meta
 
 
-_CJK_PERSON_NAME_RE = re.compile(r'^[\u4e00-\u9fff]{2,10}$')
-
-
-def _looks_like_computer_hostname(text):
-    if not text or not str(text).strip():
-        return True
-    s = str(text).strip()
-    if _CJK_PERSON_NAME_RE.match(s):
-        return False
-    sl = s.lower()
-    if re.search(r'[\u4e00-\u9fff]', s):
-        return False
-    hints = ('desktop', 'laptop', 'macbook', 'win-', 'surface', 'thinkpad', 'lenovo', 'dell', 'pc-')
-    if any(h in sl for h in hints):
-        return True
-    if re.match(r'^[a-z0-9][a-z0-9.\-_]{5,}$', sl):
-        return True
-    return False
-
-
 def _resolve_customer_terminal_name(raw_dev_name, phone_key, ding_map):
-    if phone_key and phone_key in ding_map:
-        return ding_map[phone_key]
+    """钉钉有映射则用钉钉姓名，否则沿用联软 strdevname（主机名等），不再做尾号类占位转换。"""
+    if phone_key:
+        mapped = ding_map.get(phone_key)
+        if mapped and str(mapped).strip():
+            return str(mapped).strip()
     rn = (raw_dev_name or '').strip()
-    if _CJK_PERSON_NAME_RE.match(rn):
-        return rn
-    if _looks_like_computer_hostname(rn):
-        if _terminal_phone_is_cn_mobile(phone_key):
-            return f'尾号{phone_key[-4:]}'
-        return '未知'
     return rn or '未知'
 
 
