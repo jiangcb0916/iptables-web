@@ -130,7 +130,7 @@ PERMISSION_DEFINITIONS = [
     {"id": 14, "code": "temp_add", "name": "添加模板"},
     {"id": 15, "code": "temp_edit", "name": "编辑模板"},
     {"id": 16, "code": "temp_del", "name": "删除模板"},
-    {"id": 17, "code": "hosts_view", "name": "查看主机/客户终端/端口检测"},
+    {"id": 17, "code": "hosts_view", "name": "查看主机/客户终端/端口检测/访问来源"},
     {"id": 18, "code": "hosts_add", "name": "添加主机"},
     {"id": 19, "code": "hosts_edit", "name": "编辑主机"},
     {"id": 20, "code": "hosts_del", "name": "删除主机"},
@@ -916,6 +916,167 @@ def _run_remote_shell(host, cmd):
         private_key_str=host['private_key'],
         cmd=cmd
     )
+
+
+def _run_remote_shell_try(host, cmd):
+    """执行远端命令；失败时返回 (stdout, 错误信息)。"""
+    try:
+        return _run_remote_shell(host, cmd), None
+    except RuntimeError as e:
+        return '', str(e)
+
+
+def _remote_bash_lc(host, inner_script):
+    """在远端用 bash -lc 执行一段脚本（支持重定向、|| true 等）。"""
+    return _run_remote_shell(host, 'bash -lc ' + shlex.quote(inner_script))
+
+
+def _ci_normalize_ip(addr):
+    if not addr:
+        return ''
+    s = addr.strip()
+    if s.startswith('[') and ']' in s:
+        s = s[1:s.index(']')]
+    if '%' in s and ':' in s:
+        s = s.split('%', 1)[0]
+    if s.startswith('::ffff:'):
+        tail = s[7:]
+        try:
+            return str(ipaddress.ip_address(tail))
+        except ValueError:
+            pass
+    try:
+        return str(ipaddress.ip_address(s))
+    except ValueError:
+        return s
+
+
+def _ci_ip_scope_label(addr):
+    try:
+        ip = ipaddress.ip_address(addr)
+        if ip.is_loopback:
+            return 'loopback'
+        if ip.is_private:
+            return 'private'
+        if ip.is_link_local:
+            return 'link_local'
+        if ip.is_multicast:
+            return 'multicast'
+        return 'public'
+    except ValueError:
+        return 'unknown'
+
+
+def _ci_split_ss_endpoint(token):
+    tok = (token or '').strip()
+    if not tok:
+        return None, None
+    if tok.startswith('['):
+        m = re.match(r'^\[([^\]]+)\]:(\d+|\*)$', tok)
+        if m:
+            return m.group(1), m.group(2)
+        return None, None
+    if tok.count(':') >= 2:
+        idx = tok.rfind(':')
+        host, port = tok[:idx], tok[idx + 1:]
+        if port.isdigit() or port == '*':
+            return host, port
+        return None, None
+    if ':' in tok:
+        host, port = tok.rsplit(':', 1)
+        return host, port
+    return None, None
+
+
+def _ci_parse_ss_block(output, protocol):
+    rows = []
+    for raw in (output or '').splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 5 and not parts[0].isdigit():
+            parts = parts[1:]
+        if len(parts) < 4:
+            continue
+        recv_q, send_q, loc_tok, peer_tok = parts[0], parts[1], parts[2], parts[3]
+        try:
+            rq, sq = int(recv_q), int(send_q)
+        except ValueError:
+            continue
+        loc_ip, loc_port = _ci_split_ss_endpoint(loc_tok)
+        peer_ip, peer_port = _ci_split_ss_endpoint(peer_tok)
+        if not loc_ip or not peer_ip:
+            continue
+        if peer_port in ('*',) or not str(peer_port).isdigit():
+            continue
+        lp = int(loc_port) if str(loc_port).isdigit() else None
+        if lp is None:
+            continue
+        pp = int(peer_port)
+        nip = _ci_normalize_ip(peer_ip)
+        nil = _ci_normalize_ip(loc_ip)
+        rows.append({
+            'protocol': protocol,
+            'recv_q': rq,
+            'send_q': sq,
+            'local_ip': nil,
+            'local_port': lp,
+            'peer_ip': nip,
+            'peer_port': pp,
+            'peer_scope': _ci_ip_scope_label(nip),
+            'local_scope': _ci_ip_scope_label(nil),
+            'packets': None,
+            'bytes': None,
+        })
+    return rows
+
+
+def _ci_parse_conntrack(output):
+    stats = {}
+    for line in (output or '').splitlines():
+        line = line.strip()
+        if ' src=' not in line or not re.search(r'\b(udp|tcp)\b', line):
+            continue
+        srcs = re.findall(r'\bsrc=([^\s]+)', line)
+        dsts = re.findall(r'\bdst=([^\s]+)', line)
+        sports = re.findall(r'\bsport=(\d+)', line)
+        dports = re.findall(r'\bdport=(\d+)', line)
+        if len(srcs) < 1 or len(dsts) < 1 or len(sports) < 1 or len(dports) < 1:
+            continue
+        try:
+            osp, odp = int(sports[0]), int(dports[0])
+        except ValueError:
+            continue
+        osrc = _ci_normalize_ip(srcs[0])
+        odst = _ci_normalize_ip(dsts[0])
+        key = (osrc, osp, odst, odp)
+        pk = re.search(r'\bpackets=(\d+)', line)
+        bt = re.search(r'\bbytes=(\d+)', line)
+        pval = int(pk.group(1)) if pk else None
+        bval = int(bt.group(1)) if bt else None
+        prev = stats.get(key)
+        if prev:
+            if pval is not None:
+                prev['packets'] = (prev.get('packets') or 0) + pval
+            if bval is not None:
+                prev['bytes'] = (prev.get('bytes') or 0) + bval
+        else:
+            stats[key] = {'packets': pval, 'bytes': bval}
+    return stats
+
+
+def _ci_merge_conntrack(rows, ct_stats):
+    matched = 0
+    for r in rows:
+        key = (r['peer_ip'], r['peer_port'], r['local_ip'], r['local_port'])
+        st = ct_stats.get(key)
+        if not st:
+            continue
+        matched += 1
+        r['packets'] = st.get('packets')
+        r['bytes'] = st.get('bytes')
+    return matched
 
 
 def _persist_host_firewall_rules(host):
@@ -2949,6 +3110,98 @@ def port_detection():
         return render_template('port_detection.html', host_options=host_options, default_ports=default_ports)
     except Exception as e:
         return f"加载端口检测页面失败: {str(e)}", 500
+
+
+@app.route('/connection_insight', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def connection_insight():
+    try:
+        cursor = None
+        if not USE_LOCAL_FILE_STORE:
+            db = get_db()
+            cursor = db.cursor()
+        host_options = _get_rule_view_hosts(cursor)
+        return render_template('connection_insight.html', host_options=host_options)
+    except Exception as e:
+        return f"加载访问来源页面失败: {str(e)}", 500
+
+
+@app.route('/api/host-connection-insight', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def host_connection_insight_api():
+    host_id = request.args.get('host_id')
+    if not str(host_id).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    host = _load_host_connection_info(int(host_id))
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+
+    notices = []
+    try:
+        out_tcp = _run_remote_shell(host, 'ss -H -tn state established')
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+    rows = _ci_parse_ss_block(out_tcp, 'tcp')
+
+    out_udp, udp_err = _run_remote_shell_try(host, 'ss -H -un state connected')
+    if udp_err:
+        notices.append('UDP 已连接套接字获取失败（部分系统不支持该状态过滤），已跳过。')
+    else:
+        rows.extend(_ci_parse_ss_block(out_udp, 'udp'))
+
+    ct_stats = {}
+    conntrack_ran = False
+    conntrack_has_lines = False
+    out_ct = ''
+    try:
+        out_ct = _remote_bash_lc(
+            host,
+            'command -v conntrack >/dev/null 2>&1 && timeout 15 conntrack -L -o extended 2>/dev/null || true'
+        )
+        conntrack_ran = True
+        conntrack_has_lines = bool(out_ct.strip())
+        ct_stats = _ci_parse_conntrack(out_ct)
+    except RuntimeError as e:
+        notices.append(f'连接跟踪命令执行异常：{e}')
+
+    matched = _ci_merge_conntrack(rows, ct_stats)
+    has_packet_field = any(re.search(r'packets=\d+', line) for line in (out_ct or '').splitlines()) if conntrack_has_lines else False
+
+    if conntrack_ran and not conntrack_has_lines:
+        notices.append(
+            'conntrack 无输出：可能未安装 conntrack-tools、内核未加载 nf_conntrack，或当前无跟踪条目；包量/字节列为空。'
+        )
+    elif conntrack_has_lines and not has_packet_field:
+        notices.append('conntrack 已列出条目，但本机内核输出中未包含 packets/bytes 扩展字段，统计列可能为空。')
+    elif conntrack_has_lines and matched == 0 and rows:
+        notices.append(
+            'ss 与 conntrack 未能按四元组对齐（常见于 NAT）；当前连接仍可从左侧列表查看，包量可能显示为「—」。'
+        )
+
+    def _sort_key(r):
+        p = r.get('packets')
+        b = r.get('bytes')
+        p = p if isinstance(p, int) else -1
+        b = b if isinstance(b, int) else -1
+        return (-p, -b, r['peer_ip'], r['local_port'])
+
+    rows.sort(key=_sort_key)
+
+    return jsonify({
+        'success': True,
+        'host_id': int(host_id),
+        'host_ip': host.get('ip_address'),
+        'collected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'row_count': len(rows),
+        'conntrack_ran': conntrack_ran,
+        'conntrack_entry_lines': len([ln for ln in (out_ct or '').splitlines() if ln.strip()]),
+        'conntrack_stats_matched': matched,
+        'notices': notices,
+        'connections': rows,
+    })
 
 
 @app.route('/api/port-detection/scan', methods=['POST'])

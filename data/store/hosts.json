@@ -1,3 +1,21 @@
 {
-  "items": []
+  "items": [
+    {
+      "id": 1,
+      "host_name": "虚拟机",
+      "host_identifier": "Prometheus",
+      "ip_address": "172.16.80.132",
+      "operating_system": "centos",
+      "ssh_port": 22,
+      "username": "root",
+      "auth_method": "password",
+      "password": "enc:gAAAAABp3NNj7kq2ZTP5W-IdBPbAlHRKTm8DMQrNwcyA3suu9sWLMSguoq-BC3HOvEsePJHUkp7eQ99RHUrxWxLU9lvjeWFpTw==",
+      "private_key": "",
+      "status": "online",
+      "last_checked_at": "2026-04-13 19:28:38",
+      "last_check_error": "",
+      "created_at": "2026-04-13 19:28:35",
+      "updated_at": "2026-04-13 19:28:39"
+    }
+  ]
 }
