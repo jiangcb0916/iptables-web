@@ -179,6 +179,29 @@
         <label id="scope-label" class="block text-sm text-gray-700 mb-1">源IP地址</label>
         <input id="rule-scope" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" value="0.0.0.0/0" placeholder="单IP / CIDR / 0.0.0.0/0">
       </div>
+      <div>
+        <label for="authorized-user-select" class="block text-sm text-gray-700 mb-1">授权用户</label>
+        <div class="space-y-2">
+          <input id="authorized-user-search" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="搜索姓名、手机号或IP地址">
+          <select id="authorized-user-select" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+            <option value="">请选择授权用户（可选）</option>
+          </select>
+          <div id="authorized-user-multi-panel" class="hidden border border-gray-200 rounded-md bg-gray-50">
+            <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200">
+              <span id="authorized-user-selected-count" class="text-xs text-gray-600">已选 0 个</span>
+              <div class="flex items-center gap-2">
+                <button type="button" id="authorized-user-select-all-btn" class="text-xs text-primary hover:underline">全选当前结果</button>
+                <button type="button" id="authorized-user-clear-btn" class="text-xs text-gray-500 hover:underline">清空</button>
+              </div>
+            </div>
+            <div id="authorized-user-multi-list" class="max-h-44 overflow-y-auto p-2 space-y-1"></div>
+          </div>
+          <label class="inline-flex items-center text-xs text-gray-600">
+            <input type="checkbox" id="authorized-user-multi-toggle" class="mr-2 rounded border-gray-300 text-primary focus:ring-primary">
+            启用多选（自动用逗号拼接IP）
+          </label>
+        </div>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label class="block text-sm text-gray-700 mb-1">目标网卡（可选）</label>
@@ -276,6 +299,14 @@
   const ruleProtocol = document.getElementById('rule-protocol');
   const rulePorts = document.getElementById('rule-ports');
   const ruleScope = document.getElementById('rule-scope');
+  const authorizedUserSearchInput = document.getElementById('authorized-user-search');
+  const authorizedUserSelect = document.getElementById('authorized-user-select');
+  const authorizedUserMultiToggle = document.getElementById('authorized-user-multi-toggle');
+  const authorizedUserMultiPanel = document.getElementById('authorized-user-multi-panel');
+  const authorizedUserMultiList = document.getElementById('authorized-user-multi-list');
+  const authorizedUserSelectedCount = document.getElementById('authorized-user-selected-count');
+  const authorizedUserSelectAllBtn = document.getElementById('authorized-user-select-all-btn');
+  const authorizedUserClearBtn = document.getElementById('authorized-user-clear-btn');
   const ruleInterface = document.getElementById('rule-interface');
   const ruleComment = document.getElementById('rule-comment');
   const ruleExpireMinutes = document.getElementById('rule-expire-minutes');
@@ -296,6 +327,12 @@
   let pendingPorts = [];
   let messageDialogResolver = null;
   let allowBackdropCloseForMessageDialog = false;
+  let selectedAuthorizedIps = new Set();
+  let currentFilteredAuthorizedUsers = [];
+  let authorizedUsersCache = { items: [], fetchedAt: 0 };
+  let authorizedUserSearchTimer = null;
+  let ruleScopeSyncTimer = null;
+  const AUTHORIZED_USER_CACHE_TTL = 5 * 60 * 1000;
   const defaultTcpPorts = '{{ default_ports }}';
   const defaultUdpPorts = '53,67,68,69,123,137,138,161,162,500,514,1900';
   const HIGH_RISK_PORTS = new Set([21, 22, 23, 25, 53, 80, 443, 3306, 3389, 5432, 6379]);
@@ -714,6 +751,272 @@
     scopeLabel.textContent = ruleDirection.value === 'INPUT' ? '源IP地址' : '目的IP地址';
   }
 
+  function isValidIpv4(value) {
+    if (!value || typeof value !== 'string') return false;
+    const parts = value.trim().split('.');
+    if (parts.length !== 4) return false;
+    return parts.every(part => /^\d+$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
+  }
+
+  function collectSelectedIpsFromSelect() {
+    if (authorizedUserMultiToggle?.checked) {
+      return Array.from(selectedAuthorizedIps);
+    }
+    return Array.from(authorizedUserSelect.selectedOptions || [])
+      .map(option => (option.value || '').trim())
+      .filter(Boolean);
+  }
+
+  function updateAuthorizedUserSelectedCount() {
+    if (!authorizedUserSelectedCount) return;
+    authorizedUserSelectedCount.textContent = `已选 ${selectedAuthorizedIps.size} 个`;
+  }
+
+  function syncRuleScopeFromAuthorizedUsers(keepExistingWhenEmpty = true) {
+    const selectedIps = collectSelectedIpsFromSelect();
+    if (!selectedIps.length) {
+      if (!keepExistingWhenEmpty) {
+        ruleScope.value = '';
+      }
+      return;
+    }
+    if (authorizedUserMultiToggle?.checked) {
+      ruleScope.value = selectedIps.join(',');
+    } else {
+      ruleScope.value = selectedIps[0];
+    }
+  }
+
+  function parseScopeTokens(value) {
+    return String(value || '')
+      .split(/[;,]/)
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+
+  async function syncAuthorizedUsersFromRuleScope() {
+    const scopeValue = String(ruleScope.value || '').trim();
+    if (!scopeValue || scopeValue === '0.0.0.0/0') {
+      selectedAuthorizedIps = new Set();
+      updateAuthorizedUserSelectSelectionBySet();
+      renderAuthorizedUserMultiList(currentFilteredAuthorizedUsers);
+      updateAuthorizedUserSelectedCount();
+      return;
+    }
+
+    if (!authorizedUsersCache.items.length) {
+      await loadAuthorizedUsers({ forceRefresh: false, keyword: (authorizedUserSearchInput.value || '').trim() });
+    }
+    const knownIps = new Set((authorizedUsersCache.items || []).map(item => (item.ip || '').trim()).filter(Boolean));
+    const matchedIps = parseScopeTokens(scopeValue)
+      .filter(item => isValidIpv4(item) && knownIps.has(item));
+
+    if (!matchedIps.length) {
+      selectedAuthorizedIps = new Set();
+      updateAuthorizedUserSelectSelectionBySet();
+      renderAuthorizedUserMultiList(currentFilteredAuthorizedUsers);
+      updateAuthorizedUserSelectedCount();
+      return;
+    }
+
+    if (matchedIps.length > 1 && !authorizedUserMultiToggle?.checked) {
+      authorizedUserMultiToggle.checked = true;
+      setAuthorizedUserMode(true);
+    }
+    selectedAuthorizedIps = authorizedUserMultiToggle?.checked
+      ? new Set(matchedIps)
+      : new Set([matchedIps[0]]);
+    updateAuthorizedUserSelectSelectionBySet();
+    renderAuthorizedUserMultiList(currentFilteredAuthorizedUsers);
+    updateAuthorizedUserSelectedCount();
+  }
+
+  function updateAuthorizedUserSelectSelectionBySet() {
+    const isMulti = authorizedUserMultiToggle?.checked;
+    Array.from(authorizedUserSelect.options || []).forEach(option => {
+      if (!option.value) {
+        option.selected = !isMulti && selectedAuthorizedIps.size === 0;
+        return;
+      }
+      option.selected = selectedAuthorizedIps.has(option.value);
+    });
+    if (!isMulti) {
+      const firstIp = Array.from(selectedAuthorizedIps)[0] || '';
+      authorizedUserSelect.value = firstIp;
+    }
+  }
+
+  function setAuthorizedUserMode(isMulti) {
+    if (isMulti) {
+      authorizedUserSelect.classList.add('hidden');
+      authorizedUserMultiPanel.classList.remove('hidden');
+    } else {
+      authorizedUserSelect.classList.remove('hidden');
+      authorizedUserMultiPanel.classList.add('hidden');
+      if (selectedAuthorizedIps.size > 1) {
+        const firstIp = Array.from(selectedAuthorizedIps)[0];
+        selectedAuthorizedIps = new Set(firstIp ? [firstIp] : []);
+      }
+    }
+  }
+
+  function filterAuthorizedUsersByKeyword(items, keyword) {
+    if (!keyword) return items;
+    const key = String(keyword || '').trim().toLowerCase();
+    return items.filter(item => {
+      const name = (item.name || '').toLowerCase();
+      const phone = (item.phone || '').toLowerCase();
+      const ip = (item.ip || '').toLowerCase();
+      return name.includes(key) || phone.includes(key) || ip.includes(key);
+    });
+  }
+
+  function renderAuthorizedUserMultiList(items) {
+    const list = Array.isArray(items) ? items : [];
+    authorizedUserMultiList.innerHTML = '';
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'text-xs text-gray-500 px-2 py-3 text-center';
+      empty.textContent = '暂无用户数据';
+      authorizedUserMultiList.appendChild(empty);
+      updateAuthorizedUserSelectedCount();
+      return;
+    }
+    list.forEach(item => {
+      const ip = (item.ip || '').trim();
+      const wrapper = document.createElement('label');
+      wrapper.className = 'flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white cursor-pointer';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'rounded border-gray-300 text-primary focus:ring-primary';
+      checkbox.value = ip;
+      checkbox.checked = selectedAuthorizedIps.has(ip);
+      const text = document.createElement('span');
+      text.className = 'text-sm text-gray-700';
+      text.textContent = `${item.name || '未知用户'}（${item.phone || '无手机号'}） - ${ip}`;
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          selectedAuthorizedIps.add(ip);
+        } else {
+          selectedAuthorizedIps.delete(ip);
+        }
+        updateAuthorizedUserSelectSelectionBySet();
+        updateAuthorizedUserSelectedCount();
+        syncRuleScopeFromAuthorizedUsers(true);
+      });
+      wrapper.appendChild(checkbox);
+      wrapper.appendChild(text);
+      authorizedUserMultiList.appendChild(wrapper);
+    });
+    updateAuthorizedUserSelectedCount();
+  }
+
+  function renderAuthorizedUserOptions(items) {
+    const currentSelected = new Set([
+      ...selectedAuthorizedIps,
+      ...collectSelectedIpsFromSelect()
+    ]);
+    const list = Array.isArray(items) ? items : [];
+    currentFilteredAuthorizedUsers = list;
+    authorizedUserSelect.innerHTML = '';
+    if (!authorizedUserMultiToggle?.checked) {
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = '请选择授权用户（可选）';
+      authorizedUserSelect.appendChild(defaultOption);
+    }
+    if (!list.length) {
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.disabled = true;
+      emptyOption.textContent = '暂无用户数据';
+      authorizedUserSelect.appendChild(emptyOption);
+      renderAuthorizedUserMultiList([]);
+      return;
+    }
+    list.forEach(item => {
+      const option = document.createElement('option');
+      option.value = item.ip || '';
+      option.textContent = `${item.name || '未知用户'}（${item.phone || '无手机号'}） - ${item.ip || ''}`;
+      if (currentSelected.has(option.value)) {
+        option.selected = true;
+      }
+      authorizedUserSelect.appendChild(option);
+    });
+    if (!authorizedUserMultiToggle?.checked && !authorizedUserSelect.value) {
+      const firstMatched = list.find(item => currentSelected.has(item.ip));
+      authorizedUserSelect.value = firstMatched ? firstMatched.ip : '';
+    }
+    selectedAuthorizedIps = new Set(collectSelectedIpsFromSelect());
+    renderAuthorizedUserMultiList(list);
+  }
+
+  async function fetchAuthorizedUsersByPage(page) {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: '200'
+    });
+    const response = await fetch(`/api/customer-terminals?${params.toString()}`);
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || '获取授权用户失败');
+    }
+    return data;
+  }
+
+  async function fetchAllAuthorizedUsers() {
+    const allItems = [];
+    let page = 1;
+    let total = 0;
+    do {
+      const data = await fetchAuthorizedUsersByPage(page);
+      const pageItems = Array.isArray(data.items) ? data.items : [];
+      total = Number(data.total || 0);
+      allItems.push(...pageItems);
+      page += 1;
+    } while (allItems.length < total && page <= 20);
+    const deduped = [];
+    const seen = new Set();
+    allItems.forEach(item => {
+      const ip = (item.ip || '').trim();
+      if (!isValidIpv4(ip)) return;
+      const key = `${item.name || ''}|${item.phone || ''}|${ip}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push({ ...item, ip });
+      }
+    });
+    return deduped;
+  }
+
+  async function loadAuthorizedUsers(options = {}) {
+    const { forceRefresh = false, keyword = '' } = options;
+    const now = Date.now();
+    const shouldUseCache = !forceRefresh
+      && authorizedUsersCache.items.length
+      && (now - authorizedUsersCache.fetchedAt) < AUTHORIZED_USER_CACHE_TTL;
+    authorizedUserSelect.disabled = true;
+    authorizedUserSelect.innerHTML = '<option value="">授权用户加载中...</option>';
+    try {
+      let users = authorizedUsersCache.items;
+      if (!shouldUseCache) {
+        users = await fetchAllAuthorizedUsers();
+        authorizedUsersCache = {
+          items: users,
+          fetchedAt: Date.now()
+        };
+      }
+      renderAuthorizedUserOptions(filterAuthorizedUsersByKeyword(users, keyword));
+      updateAuthorizedUserSelectedCount();
+    } catch (error) {
+      authorizedUserSelect.innerHTML = '<option value="">暂无用户数据</option>';
+      authorizedUserMultiList.innerHTML = '<div class="text-xs text-gray-500 px-2 py-3 text-center">暂无用户数据</div>';
+      setRuleStatus(error.message || '加载授权用户失败', true);
+    } finally {
+      authorizedUserSelect.disabled = false;
+    }
+  }
+
   function openRuleDialog(mode, ports, protocol) {
     if (!latestScan.host_id) {
       showAlertDialog('添加规则必须选择系统内主机');
@@ -731,11 +1034,18 @@
     ruleProtocol.value = protocol || protocolSelect.value || 'tcp';
     rulePorts.value = ports.join(',');
     ruleScope.value = '0.0.0.0/0';
+    selectedAuthorizedIps = new Set();
+    authorizedUserSearchInput.value = '';
+    authorizedUserSelect.value = '';
+    authorizedUserMultiToggle.checked = false;
+    setAuthorizedUserMode(false);
+    updateAuthorizedUserSelectedCount();
     ruleInterface.value = '';
     ruleComment.value = mode === 'batch' ? '批量端口规则' : `端口 ${ports[0]} 规则`;
     ruleExpireMinutes.value = '';
     updateScopeLabel();
     setRuleStatus('');
+    loadAuthorizedUsers({ forceRefresh: true });
     openDialog();
   }
 
@@ -743,9 +1053,11 @@
     const input = String(value || '').trim();
     if (!input) return false;
     if (input === '0.0.0.0/0') return true;
+    const tokens = input.split(/[;,]/).map(item => item.trim()).filter(Boolean);
+    if (!tokens.length) return false;
     const ipV4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
     const hostName = /^[a-zA-Z0-9.-]+$/;
-    return ipV4.test(input) || hostName.test(input);
+    return tokens.every(token => ipV4.test(token) || hostName.test(token));
   }
 
   async function submitRule(payload) {
@@ -947,6 +1259,53 @@
   });
 
   ruleDirection.addEventListener('change', updateScopeLabel);
+  authorizedUserSearchInput?.addEventListener('input', (event) => {
+    clearTimeout(authorizedUserSearchTimer);
+    authorizedUserSearchTimer = setTimeout(() => {
+      const keyword = (event.target.value || '').trim();
+      loadAuthorizedUsers({ keyword });
+    }, 300);
+  });
+  authorizedUserMultiToggle?.addEventListener('change', () => {
+    selectedAuthorizedIps = new Set(collectSelectedIpsFromSelect());
+    setAuthorizedUserMode(authorizedUserMultiToggle.checked);
+    loadAuthorizedUsers({ keyword: (authorizedUserSearchInput.value || '').trim() });
+    setTimeout(() => {
+      updateAuthorizedUserSelectSelectionBySet();
+      updateAuthorizedUserSelectedCount();
+      syncRuleScopeFromAuthorizedUsers(true);
+    }, 0);
+  });
+  authorizedUserSelect?.addEventListener('change', () => {
+    selectedAuthorizedIps = new Set(collectSelectedIpsFromSelect());
+    updateAuthorizedUserSelectedCount();
+    if (!selectedAuthorizedIps.size) return;
+    syncRuleScopeFromAuthorizedUsers(true);
+  });
+  authorizedUserSelectAllBtn?.addEventListener('click', () => {
+    if (!authorizedUserMultiToggle?.checked || !currentFilteredAuthorizedUsers.length) return;
+    currentFilteredAuthorizedUsers.forEach(item => {
+      if (item.ip) selectedAuthorizedIps.add(item.ip);
+    });
+    updateAuthorizedUserSelectSelectionBySet();
+    renderAuthorizedUserMultiList(currentFilteredAuthorizedUsers);
+    syncRuleScopeFromAuthorizedUsers(true);
+  });
+  authorizedUserClearBtn?.addEventListener('click', () => {
+    selectedAuthorizedIps = new Set();
+    updateAuthorizedUserSelectSelectionBySet();
+    renderAuthorizedUserMultiList(currentFilteredAuthorizedUsers);
+    syncRuleScopeFromAuthorizedUsers(true);
+  });
+  ruleScope?.addEventListener('input', () => {
+    clearTimeout(ruleScopeSyncTimer);
+    ruleScopeSyncTimer = setTimeout(() => {
+      syncAuthorizedUsersFromRuleScope().catch(() => {});
+    }, 250);
+  });
+  ruleScope?.addEventListener('blur', () => {
+    syncAuthorizedUsersFromRuleScope().catch(() => {});
+  });
 
   confirmRuleBtn.addEventListener('click', async () => {
     if (!latestScan.host_id) {
