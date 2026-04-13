@@ -988,47 +988,108 @@ def _ci_split_ss_endpoint(token):
     return None, None
 
 
+def _ci_parse_one_ss_row(line, protocol):
+    """解析 ss 单行套接字摘要（Recv-Q Send-Q Local Peer …）。"""
+    line = (line or '').strip()
+    if not line:
+        return None
+    parts = line.split()
+    if len(parts) >= 5 and not parts[0].isdigit():
+        parts = parts[1:]
+    if len(parts) < 4:
+        return None
+    recv_q, send_q, loc_tok, peer_tok = parts[0], parts[1], parts[2], parts[3]
+    try:
+        rq, sq = int(recv_q), int(send_q)
+    except ValueError:
+        return None
+    loc_ip, loc_port = _ci_split_ss_endpoint(loc_tok)
+    peer_ip, peer_port = _ci_split_ss_endpoint(peer_tok)
+    if not loc_ip or not peer_ip:
+        return None
+    if peer_port in ('*',) or not str(peer_port).isdigit():
+        return None
+    lp = int(loc_port) if str(loc_port).isdigit() else None
+    if lp is None:
+        return None
+    pp = int(peer_port)
+    nip = _ci_normalize_ip(peer_ip)
+    nil = _ci_normalize_ip(loc_ip)
+    return {
+        'protocol': protocol,
+        'recv_q': rq,
+        'send_q': sq,
+        'local_ip': nil,
+        'local_port': lp,
+        'peer_ip': nip,
+        'peer_port': pp,
+        'peer_scope': _ci_ip_scope_label(nip),
+        'local_scope': _ci_ip_scope_label(nil),
+        'packets': None,
+        'bytes': None,
+    }
+
+
+def _ci_parse_ss_tcp_info_line(line):
+    """从 ss -i 续行解析 TCP_INFO 中的字节与分段数。"""
+    ba = re.search(r'\bbytes_acked:(\d+)', line)
+    br = re.search(r'\bbytes_received:(\d+)', line)
+    si = re.search(r'\bsegs_in:(\d+)', line)
+    so = re.search(r'\bsegs_out:(\d+)', line)
+    return {
+        'bytes_acked': int(ba.group(1)) if ba else None,
+        'bytes_received': int(br.group(1)) if br else None,
+        'segs_in': int(si.group(1)) if si else None,
+        'segs_out': int(so.group(1)) if so else None,
+    }
+
+
+def _ci_apply_tcp_info_to_row(row, info):
+    if not row or not info:
+        return
+    ba = info.get('bytes_acked')
+    br = info.get('bytes_received')
+    si = info.get('segs_in')
+    so = info.get('segs_out')
+    if ba is not None or br is not None:
+        row['bytes'] = (ba or 0) + (br or 0)
+    if si is not None or so is not None:
+        row['packets'] = (si or 0) + (so or 0)
+
+
+def _ci_parse_ss_tcp_with_tcp_info(output):
+    """
+    解析 `ss -tin state established` 多行输出：套接字行 + 缩进的 TCP_INFO 续行。
+    字节 ≈ bytes_acked + bytes_received；包数 ≈ segs_in + segs_out（TCP 段数，近似包数）。
+    """
+    rows = []
+    current = None
+    for raw in (output or '').splitlines():
+        if not raw.strip():
+            continue
+        row = _ci_parse_one_ss_row(raw, 'tcp')
+        if row is not None:
+            if current is not None:
+                rows.append(current)
+            current = row
+            if re.search(r'\bbytes_acked:|\bbytes_received:|\bsegs_in:|\bsegs_out:', raw):
+                _ci_apply_tcp_info_to_row(current, _ci_parse_ss_tcp_info_line(raw))
+            continue
+        if current is None:
+            continue
+        if re.search(r'\bbytes_acked:|\bbytes_received:|\bsegs_in:|\bsegs_out:', raw):
+            _ci_apply_tcp_info_to_row(current, _ci_parse_ss_tcp_info_line(raw))
+    if current is not None:
+        rows.append(current)
+    return rows
+
+
 def _ci_parse_ss_block(output, protocol):
     rows = []
     for raw in (output or '').splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        parts = line.split()
-        if len(parts) >= 5 and not parts[0].isdigit():
-            parts = parts[1:]
-        if len(parts) < 4:
-            continue
-        recv_q, send_q, loc_tok, peer_tok = parts[0], parts[1], parts[2], parts[3]
-        try:
-            rq, sq = int(recv_q), int(send_q)
-        except ValueError:
-            continue
-        loc_ip, loc_port = _ci_split_ss_endpoint(loc_tok)
-        peer_ip, peer_port = _ci_split_ss_endpoint(peer_tok)
-        if not loc_ip or not peer_ip:
-            continue
-        if peer_port in ('*',) or not str(peer_port).isdigit():
-            continue
-        lp = int(loc_port) if str(loc_port).isdigit() else None
-        if lp is None:
-            continue
-        pp = int(peer_port)
-        nip = _ci_normalize_ip(peer_ip)
-        nil = _ci_normalize_ip(loc_ip)
-        rows.append({
-            'protocol': protocol,
-            'recv_q': rq,
-            'send_q': sq,
-            'local_ip': nil,
-            'local_port': lp,
-            'peer_ip': nip,
-            'peer_port': pp,
-            'peer_scope': _ci_ip_scope_label(nip),
-            'local_scope': _ci_ip_scope_label(nil),
-            'packets': None,
-            'bytes': None,
-        })
+        r = _ci_parse_one_ss_row(raw, protocol)
+        if r:
+            rows.append(r)
     return rows
 
 
@@ -3138,18 +3199,16 @@ def host_connection_insight_api():
     if not host:
         return jsonify({'success': False, 'message': '主机不存在'}), 404
 
-    notices = []
     try:
-        out_tcp = _run_remote_shell(host, 'ss -H -tn state established')
+        # -i：TCP_INFO，可在无 conntrack 条目时仍显示字节/分段（近似包数）
+        out_tcp = _run_remote_shell(host, 'ss -H -tin state established')
     except RuntimeError as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
-    rows = _ci_parse_ss_block(out_tcp, 'tcp')
+    rows = _ci_parse_ss_tcp_with_tcp_info(out_tcp)
 
     out_udp, udp_err = _run_remote_shell_try(host, 'ss -H -un state connected')
-    if udp_err:
-        notices.append('UDP 已连接套接字获取失败（部分系统不支持该状态过滤），已跳过。')
-    else:
+    if not udp_err:
         rows.extend(_ci_parse_ss_block(out_udp, 'udp'))
 
     ct_stats = {}
@@ -3157,29 +3216,25 @@ def host_connection_insight_api():
     conntrack_has_lines = False
     out_ct = ''
     try:
+        # root 经 SSH 非交互 shell 时 PATH 常不含 /usr/sbin，勿仅用 command -v conntrack
         out_ct = _remote_bash_lc(
             host,
-            'command -v conntrack >/dev/null 2>&1 && timeout 15 conntrack -L -o extended 2>/dev/null || true'
+            '( test -x /usr/sbin/conntrack && timeout 15 /usr/sbin/conntrack -L -o extended 2>/dev/null ) || '
+            '( test -x /sbin/conntrack && timeout 15 /sbin/conntrack -L -o extended 2>/dev/null ) || '
+            '( command -v conntrack >/dev/null 2>&1 && timeout 15 conntrack -L -o extended 2>/dev/null ) || true'
         )
         conntrack_ran = True
         conntrack_has_lines = bool(out_ct.strip())
         ct_stats = _ci_parse_conntrack(out_ct)
-    except RuntimeError as e:
-        notices.append(f'连接跟踪命令执行异常：{e}')
+    except RuntimeError:
+        pass
 
     matched = _ci_merge_conntrack(rows, ct_stats)
-    has_packet_field = any(re.search(r'packets=\d+', line) for line in (out_ct or '').splitlines()) if conntrack_has_lines else False
 
-    if conntrack_ran and not conntrack_has_lines:
-        notices.append(
-            'conntrack 无输出：可能未安装 conntrack-tools、内核未加载 nf_conntrack，或当前无跟踪条目；包量/字节列为空。'
-        )
-    elif conntrack_has_lines and not has_packet_field:
-        notices.append('conntrack 已列出条目，但本机内核输出中未包含 packets/bytes 扩展字段，统计列可能为空。')
-    elif conntrack_has_lines and matched == 0 and rows:
-        notices.append(
-            'ss 与 conntrack 未能按四元组对齐（常见于 NAT）；当前连接仍可从左侧列表查看，包量可能显示为「—」。'
-        )
+    tcp_info_rows = sum(
+        1 for r in rows
+        if r.get('protocol') == 'tcp' and (r.get('bytes') is not None or r.get('packets') is not None)
+    )
 
     def _sort_key(r):
         p = r.get('packets')
@@ -3199,7 +3254,8 @@ def host_connection_insight_api():
         'conntrack_ran': conntrack_ran,
         'conntrack_entry_lines': len([ln for ln in (out_ct or '').splitlines() if ln.strip()]),
         'conntrack_stats_matched': matched,
-        'notices': notices,
+        'tcp_info_rows': tcp_info_rows,
+        'notices': [],
         'connections': rows,
     })
 
