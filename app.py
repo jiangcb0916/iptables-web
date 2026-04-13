@@ -6872,6 +6872,32 @@ def load_user(user_id):
         return None
 
 
+def _login_template_context(**extra):
+    """登录页展示名称与系统设置中的「系统名称」一致。"""
+    title = '防火墙管理系统'
+    if USE_LOCAL_FILE_STORE:
+        try:
+            cfg = _read_system_config_store() or {}
+            t = (cfg.get('system_name') or '').strip()
+            if t:
+                title = t
+        except Exception:
+            pass
+    else:
+        try:
+            db = get_db()
+            row = db.execute('SELECT system_name FROM system_config ORDER BY id DESC LIMIT 1').fetchone()
+            if row is not None and row['system_name']:
+                t = str(row['system_name']).strip()
+                if t:
+                    title = t
+        except Exception:
+            pass
+    ctx = {'system_name': title}
+    ctx.update(extra)
+    return ctx
+
+
 # 登录路由
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -6898,12 +6924,12 @@ def login():
         if not user_data:
             return jsonify(success=False, message='用户名不存在') if request.headers.get(
                 'X-Requested-With') == 'XMLHttpRequest' else \
-                render_template('login.html', error='用户名不存在')
+                render_template('login.html', **_login_template_context(error='用户名不存在'))
 
         if user_data.get('status') != 'active':
             return jsonify(success=False, message='用户已被禁用') if request.headers.get(
                 'X-Requested-With') == 'XMLHttpRequest' else \
-                render_template('login.html', error='用户已被禁用')
+                render_template('login.html', **_login_template_context(error='用户已被禁用'))
 
         try:
             password_ok = verify_user_password(user_data.get('password', ''), password)
@@ -6911,12 +6937,12 @@ def login():
             app.logger.error(f"登录密码校验失败: {str(verify_error)}")
             return jsonify(success=False, message=str(verify_error)) if request.headers.get(
                 'X-Requested-With') == 'XMLHttpRequest' else \
-                render_template('login.html', error=str(verify_error))
+                render_template('login.html', **_login_template_context(error=str(verify_error)))
 
         if not password_ok:
             return jsonify(success=False, message='密码不正确') if request.headers.get(
                 'X-Requested-With') == 'XMLHttpRequest' else \
-                render_template('login.html', error='密码不正确')
+                render_template('login.html', **_login_template_context(error='密码不正确'))
 
         # 加载用户角色信息
         user = load_user(user_data.get('id'))
@@ -6927,7 +6953,7 @@ def login():
             'X-Requested-With') == 'XMLHttpRequest' else \
             redirect(url_for('hosts', page=1))
 
-    return render_template('login.html')
+    return render_template('login.html', **_login_template_context())
 
 
 @app.route('/users', methods=['GET', 'POST'])
