@@ -12,6 +12,8 @@ import re
 import ipaddress
 from urllib import request as urllib_request
 from urllib import error as urllib_error
+from urllib.parse import urlencode, quote
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import uuid
 import socket
 import platform
@@ -60,14 +62,46 @@ FIREWALL_RULE_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'firewall_rules.json')
 PORT_RULES_STORE_FILE = os.path.join(app.root_path, 'data', 'rules.json')
 RULE_SNAPSHOTS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'rule_snapshots.json')
 _STORE_THREAD_LOCK = threading.RLock()
-PROMETHEUS_METRICS_URL = os.getenv(
-    'PROMETHEUS_METRICS_URL',
-    'http://172.16.80.125:9191/metrics'
+LEAGSOFT_TERMINAL_QUERY_URL = os.getenv(
+    'LEAGSOFT_TERMINAL_QUERY_URL',
+    'http://172.16.80.6:30098/terminal?act=queryDevByParams'
 ).strip()
-PROMETHEUS_TERMINAL_METRIC_NAMES_RAW = os.getenv(
-    'PROMETHEUS_TERMINAL_METRIC_NAMES',
-    'sfUserName,fUserName'
+CUSTOMER_TERMINAL_DEPT_FILTER_RAW = os.getenv(
+    'CUSTOMER_TERMINAL_DEPT_FILTER',
+    'LDAP'
 ).strip()
+DINGTALK_PHONE_NAME_MAP_FILE = os.getenv(
+    'DINGTALK_PHONE_NAME_MAP_FILE',
+    os.path.join(LOCAL_STORE_DIR, 'dingtalk_phone_name_map.json')
+).strip()
+LEAGSOFT_TERMINAL_CACHE_SECONDS = int(os.getenv('LEAGSOFT_TERMINAL_CACHE_SECONDS', '60') or '60')
+_CUSTOMER_TERMINAL_ITEMS_CACHE = {'items': None, 'ts': 0.0, 'ding_meta': {}}
+
+DINGTALK_APP_KEY = (os.getenv('DINGTALK_APP_KEY') or os.getenv('DD_APPKEY') or '').strip()
+DINGTALK_APP_SECRET = (os.getenv('DINGTALK_APP_SECRET') or os.getenv('DD_APPSECRET') or '').strip()
+DINGTALK_CREDENTIALS_FILE = os.getenv(
+    'DINGTALK_CREDENTIALS_FILE',
+    os.path.join(LOCAL_STORE_DIR, 'dingtalk_credentials.json')
+).strip()
+DINGTALK_TOKEN_TTL_CAP = int(os.getenv('DINGTALK_TOKEN_TTL', os.getenv('TOKEN_TTL', '7000')) or '7000')
+DINGTALK_HTTP_TIMEOUT = int(os.getenv('DINGTALK_HTTP_TIMEOUT', os.getenv('TIMEOUT', '5')) or '5')
+DINGTALK_API_GET_TOKEN = os.getenv('DINGTALK_API_GET_TOKEN', 'https://oapi.dingtalk.com/gettoken').strip()
+DINGTALK_API_MOBILE_TO_UID = os.getenv(
+    'DINGTALK_API_MOBILE_TO_UID',
+    os.getenv('API_MOBILE_TO_UID', 'https://oapi.dingtalk.com/topapi/v2/user/getbymobile')
+).strip()
+DINGTALK_API_UID_TO_NAME = os.getenv(
+    'DINGTALK_API_UID_TO_NAME',
+    os.getenv('API_UID_TO_NAME', 'https://oapi.dingtalk.com/topapi/v2/user/get')
+).strip()
+DINGTALK_RESOLVE_WORKERS = max(1, min(32, int(os.getenv('DINGTALK_RESOLVE_WORKERS', '8') or '8')))
+DINGTALK_FAIL_CACHE_SECONDS = int(os.getenv('DINGTALK_FAIL_CACHE_SECONDS', '86400') or '86400')
+_DINGTALK_LOCK = threading.RLock()
+_DINGTALK_TOKEN_CACHE = {'access_token': None, 'expires_at': 0.0}
+_DINGTALK_API_NAME_CACHE = {}
+_DINGTALK_API_FAIL_UNTIL = {}
+_DINGTALK_FILE_CREDENTIALS_MTIME = 0.0
+_DINGTALK_FILE_KEY_SECRET = ('', '')
 
 DEFAULT_PERMISSION_CODES = [
     'sys_view', 'sys_edit',
@@ -3978,76 +4012,386 @@ def _is_valid_ip(ip_text):
         return False
 
 
-def _parse_prometheus_labels(labels_blob):
-    labels = {}
-    for match in re.finditer(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"\\])*)"', labels_blob or ''):
-        key = match.group(1)
-        value = match.group(2).replace(r'\"', '"').replace(r'\\', '\\').strip()
-        if key not in labels:
-            labels[key] = value
-    return labels
+def _customer_terminal_dept_filters_upper():
+    parts = [p.strip() for p in CUSTOMER_TERMINAL_DEPT_FILTER_RAW.split(',') if p.strip()]
+    return [p.upper() for p in parts] or ['LDAP']
 
 
-def _get_prometheus_metric_names():
-    names = [item.strip() for item in PROMETHEUS_TERMINAL_METRIC_NAMES_RAW.split(',')]
-    return set([item for item in names if item])
+def _normalize_terminal_phone(value):
+    if value is None:
+        return ''
+    digits = re.sub(r'\D', '', str(value))
+    if len(digits) == 11 and digits.startswith('1'):
+        return digits
+    if len(digits) >= 11 and digits.startswith('86'):
+        tail = digits[-11:]
+        if len(tail) == 11 and tail.startswith('1'):
+            return tail
+    return digits
 
 
-def _extract_customer_terminal_items_from_metrics(text):
-    metric_names = _get_prometheus_metric_names()
-    if not metric_names:
-        metric_names = {'sfUserName', 'fUserName'}
+def _load_dingtalk_phone_name_map():
+    path = DINGTALK_PHONE_NAME_MAP_FILE
+    if not path or not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {}
+        out = {}
+        for k, v in data.items():
+            nk = _normalize_terminal_phone(k)
+            if nk and isinstance(v, str) and v.strip():
+                out[nk] = v.strip()
+        return out
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}
 
-    items = []
-    pattern = re.compile(
-        r'^([a-zA-Z_:][a-zA-Z0-9_:]*)\{([^}]*)\}\s+[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$'
+
+def _dingtalk_credentials_from_file():
+    global _DINGTALK_FILE_CREDENTIALS_MTIME, _DINGTALK_FILE_KEY_SECRET
+    path = DINGTALK_CREDENTIALS_FILE
+    if not path or not os.path.isfile(path):
+        return '', ''
+    try:
+        mtime = os.path.getmtime(path)
+        if mtime == _DINGTALK_FILE_CREDENTIALS_MTIME and (_DINGTALK_FILE_KEY_SECRET[0] or _DINGTALK_FILE_KEY_SECRET[1]):
+            return _DINGTALK_FILE_KEY_SECRET
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return '', ''
+        k = (data.get('app_key') or data.get('appkey') or data.get('DINGTALK_APP_KEY') or '').strip()
+        s = (data.get('app_secret') or data.get('appsecret') or data.get('DINGTALK_APP_SECRET') or '').strip()
+        _DINGTALK_FILE_CREDENTIALS_MTIME = mtime
+        _DINGTALK_FILE_KEY_SECRET = (k, s)
+        return k, s
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return '', ''
+
+
+def _dingtalk_effective_key_secret():
+    k = (os.getenv('DINGTALK_APP_KEY') or os.getenv('DD_APPKEY') or DINGTALK_APP_KEY or '').strip()
+    s = (os.getenv('DINGTALK_APP_SECRET') or os.getenv('DD_APPSECRET') or DINGTALK_APP_SECRET or '').strip()
+    if k and s:
+        return k, s
+    return _dingtalk_credentials_from_file()
+
+
+def _dingtalk_errcode_ok(data):
+    if not isinstance(data, dict):
+        return False
+    c = data.get('errcode')
+    try:
+        return int(c) == 0
+    except (TypeError, ValueError):
+        return str(c).strip() in ('0', '')
+
+
+def _terminal_phone_is_cn_mobile(phone):
+    return bool(phone) and len(phone) == 11 and phone.startswith('1')
+
+
+def _get_dingtalk_access_token():
+    app_key, app_secret = _dingtalk_effective_key_secret()
+    if not app_key or not app_secret:
+        return None
+    now = time.time()
+    with _DINGTALK_LOCK:
+        tok = _DINGTALK_TOKEN_CACHE.get('access_token')
+        exp = float(_DINGTALK_TOKEN_CACHE.get('expires_at') or 0)
+        if tok and now < exp - 60:
+            return tok
+    qs = urlencode({
+        'appkey': app_key,
+        'appsecret': app_secret,
+    })
+    url = f'{DINGTALK_API_GET_TOKEN}?{qs}'
+    req = urllib_request.Request(url, headers={'User-Agent': 'iptables-web/1.0'})
+    try:
+        with urllib_request.urlopen(req, timeout=DINGTALK_HTTP_TIMEOUT) as resp:
+            data = json.loads(resp.read().decode('utf-8', errors='replace'))
+    except (urllib_error.URLError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    if not _dingtalk_errcode_ok(data):
+        return None
+    token = data.get('access_token')
+    if not token:
+        return None
+    expires_in = int(data.get('expires_in') or 7200)
+    ttl = min(max(expires_in - 120, 300), DINGTALK_TOKEN_TTL_CAP)
+    with _DINGTALK_LOCK:
+        _DINGTALK_TOKEN_CACHE['access_token'] = token
+        _DINGTALK_TOKEN_CACHE['expires_at'] = now + ttl
+    return token
+
+
+def _dingtalk_post_json(url, payload, timeout):
+    body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    req = urllib_request.Request(
+        url,
+        data=body,
+        headers={
+            'Content-Type': 'application/json; charset=utf-8',
+            'User-Agent': 'iptables-web/1.0',
+        },
+        method='POST',
     )
-    for raw_line in (text or '').splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith('#'):
-            continue
-        match = pattern.match(line)
-        if not match:
-            continue
-        metric_name = match.group(1)
-        if metric_name not in metric_names:
-            continue
+    try:
+        with urllib_request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode('utf-8', errors='replace'))
+    except urllib_error.HTTPError as e:
+        try:
+            raw = e.read().decode('utf-8', errors='replace')
+            return json.loads(raw)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return {'errcode': e.code, 'errmsg': getattr(e, 'reason', None) or str(e)}
 
-        labels = _parse_prometheus_labels(match.group(2))
-        ip = str(labels.get('sfStaIp') or labels.get('sfsTaIp') or labels.get('ip') or '').strip()
+
+def _dingtalk_name_by_mobile_once(access_token, mobile):
+    if not access_token or not mobile:
+        return None
+    enc = quote(str(access_token), safe='')
+    url_mobile = f'{DINGTALK_API_MOBILE_TO_UID}?access_token={enc}'
+    try:
+        r1 = _dingtalk_post_json(url_mobile, {'mobile': str(mobile)}, DINGTALK_HTTP_TIMEOUT)
+    except (urllib_error.URLError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    if not _dingtalk_errcode_ok(r1):
+        return None
+    uid = (r1.get('result') or {}).get('userid')
+    if not uid:
+        return None
+    url_user = f'{DINGTALK_API_UID_TO_NAME}?access_token={enc}'
+    try:
+        r2 = _dingtalk_post_json(url_user, {'userid': str(uid)}, DINGTALK_HTTP_TIMEOUT)
+    except (urllib_error.URLError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    if not _dingtalk_errcode_ok(r2):
+        return None
+    res2 = r2.get('result') or {}
+    for key in ('name', 'nick', 'title'):
+        val = res2.get(key)
+        if val is not None and str(val).strip():
+            return str(val).strip()
+    return None
+
+
+def _build_dingtalk_phone_name_map(phones, file_map):
+    """合并钉钉 API 与本地 JSON；本地文件中的键覆盖 API 结果。返回 (merged_map, status_dict)。"""
+    file_map = file_map or {}
+    now = time.time()
+    app_key, app_secret = _dingtalk_effective_key_secret()
+    meta = {
+        'credentials_configured': bool(app_key and app_secret),
+        'token_ok': None,
+        'queried_phones': 0,
+        'newly_resolved': 0,
+        'mobile_phones': 0,
+        'names_mapped': 0,
+    }
+    mobile_phones_list = [p for p in phones if _terminal_phone_is_cn_mobile(p)]
+    meta['mobile_phones'] = len(set(mobile_phones_list))
+
+    if not app_key or not app_secret:
+        out = {}
+        with _DINGTALK_LOCK:
+            for p in phones:
+                if p in _DINGTALK_API_NAME_CACHE:
+                    out[p] = _DINGTALK_API_NAME_CACHE[p]
+        out.update(file_map)
+        meta['names_mapped'] = sum(1 for p in set(mobile_phones_list) if out.get(p))
+        meta['token_ok'] = False
+        return out, meta
+
+    merged = {}
+    to_fetch = []
+    with _DINGTALK_LOCK:
+        for p in phones:
+            if not _terminal_phone_is_cn_mobile(p):
+                continue
+            if p in file_map:
+                continue
+            if p in _DINGTALK_API_NAME_CACHE:
+                merged[p] = _DINGTALK_API_NAME_CACHE[p]
+                continue
+            if now < float(_DINGTALK_API_FAIL_UNTIL.get(p, 0)):
+                continue
+            to_fetch.append(p)
+
+    to_fetch = list(dict.fromkeys(to_fetch))
+    meta['queried_phones'] = len(to_fetch)
+    newly_resolved = 0
+    if to_fetch:
+        token = _get_dingtalk_access_token()
+        meta['token_ok'] = bool(token)
+        if token:
+            workers = min(DINGTALK_RESOLVE_WORKERS, len(to_fetch))
+
+            def _one(ph):
+                return ph, _dingtalk_name_by_mobile_once(token, ph)
+
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                future_to_phone = {pool.submit(_one, ph): ph for ph in to_fetch}
+                for fut in as_completed(future_to_phone):
+                    ph = future_to_phone[fut]
+                    try:
+                        _, name = fut.result()
+                    except Exception:
+                        name = None
+                    with _DINGTALK_LOCK:
+                        if name:
+                            _DINGTALK_API_NAME_CACHE[ph] = name
+                            merged[ph] = name
+                            newly_resolved += 1
+                        else:
+                            _DINGTALK_API_FAIL_UNTIL[ph] = now + DINGTALK_FAIL_CACHE_SECONDS
+    else:
+        meta['token_ok'] = True
+
+    meta['newly_resolved'] = newly_resolved
+    merged.update(file_map)
+    meta['names_mapped'] = sum(1 for p in set(mobile_phones_list) if merged.get(p))
+    return merged, meta
+
+
+_CJK_PERSON_NAME_RE = re.compile(r'^[\u4e00-\u9fff]{2,10}$')
+
+
+def _looks_like_computer_hostname(text):
+    if not text or not str(text).strip():
+        return True
+    s = str(text).strip()
+    if _CJK_PERSON_NAME_RE.match(s):
+        return False
+    sl = s.lower()
+    if re.search(r'[\u4e00-\u9fff]', s):
+        return False
+    hints = ('desktop', 'laptop', 'macbook', 'win-', 'surface', 'thinkpad', 'lenovo', 'dell', 'pc-')
+    if any(h in sl for h in hints):
+        return True
+    if re.match(r'^[a-z0-9][a-z0-9.\-_]{5,}$', sl):
+        return True
+    return False
+
+
+def _resolve_customer_terminal_name(raw_dev_name, phone_key, ding_map):
+    if phone_key and phone_key in ding_map:
+        return ding_map[phone_key]
+    rn = (raw_dev_name or '').strip()
+    if _CJK_PERSON_NAME_RE.match(rn):
+        return rn
+    if _looks_like_computer_hostname(rn):
+        if _terminal_phone_is_cn_mobile(phone_key):
+            return f'尾号{phone_key[-4:]}'
+        return '未知'
+    return rn or '未知'
+
+
+def _dingtalk_sync_hint(meta):
+    if not meta:
+        return ''
+    if not meta.get('credentials_configured'):
+        return (
+            '未配置钉钉：请设置环境变量 DINGTALK_APP_KEY / DINGTALK_APP_SECRET，'
+            '或在 data/store/dingtalk_credentials.json 写入 {"app_key":"…","app_secret":"…"}（已加入 .gitignore，勿提交仓库）。'
+        )
+    if meta.get('queried_phones') and meta.get('token_ok') is False:
+        return '钉钉 access_token 获取失败，请核对密钥与服务器能否访问 https://oapi.dingtalk.com 。'
+    if meta.get('mobile_phones') and meta.get('names_mapped', 0) == 0 and meta.get('token_ok'):
+        return (
+            '钉钉已连通，但手机号均未匹配到姓名：请为应用开通通讯录相关权限，并确认员工手机号与联软一致。'
+        )
+    return ''
+
+
+def _fetch_leagsoft_terminal_rows(timeout_seconds=30):
+    url = LEAGSOFT_TERMINAL_QUERY_URL
+    req = urllib_request.Request(
+        url,
+        data=b'{}',
+        headers={
+            'Content-Type': 'application/json',
+            'User-Agent': 'iptables-web/1.0',
+            'Accept': 'application/json',
+        },
+        method='POST'
+    )
+    with urllib_request.urlopen(req, timeout=timeout_seconds) as resp:
+        text = resp.read().decode('utf-8', errors='replace')
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError('联软接口返回格式异常')
+    rows = data.get('rows')
+    if not isinstance(rows, list):
+        raise ValueError('联软接口缺少终端列表 rows')
+    return rows
+
+
+def _customer_terminal_status_from_ip(ip_text):
+    if _is_valid_ip(ip_text):
+        return 'online', '在线'
+    return 'offline', '离线'
+
+
+def _fetch_customer_terminal_items(timeout_seconds=30):
+    global _CUSTOMER_TERMINAL_ITEMS_CACHE
+    now = time.time()
+    if (
+        LEAGSOFT_TERMINAL_CACHE_SECONDS > 0
+        and _CUSTOMER_TERMINAL_ITEMS_CACHE['items'] is not None
+        and (now - _CUSTOMER_TERMINAL_ITEMS_CACHE['ts']) < LEAGSOFT_TERMINAL_CACHE_SECONDS
+    ):
+        return (
+            _CUSTOMER_TERMINAL_ITEMS_CACHE['items'],
+            _CUSTOMER_TERMINAL_ITEMS_CACHE.get('ding_meta') or {},
+        )
+
+    rows = _fetch_leagsoft_terminal_rows(timeout_seconds=timeout_seconds)
+    dept_ok = set(_customer_terminal_dept_filters_upper())
+    file_name_map = _load_dingtalk_phone_name_map()
+    raw_items = []
+    for row in rows:
+        dept = (row.get('strdeptname') or '').strip().upper()
+        if dept not in dept_ok:
+            continue
+        ip = (row.get('strdevip') or '').strip()
         if not _is_valid_ip(ip):
             continue
+        phone = _normalize_terminal_phone(row.get('strusername') or row.get('struserdes') or '')
+        raw_name = row.get('strdevname') or ''
+        raw_items.append({'phone': phone, 'raw_name': raw_name, 'ip': ip})
 
-        name = str(labels.get('sfUserName') or labels.get('sfsUserName') or labels.get('name') or '').strip() or '未知'
-        phone = str(labels.get('sfUserPhone') or labels.get('sfsPhone') or labels.get('phone') or '').strip()
+    phones = {item['phone'] for item in raw_items if item.get('phone')}
+    ding_map, ding_meta = _build_dingtalk_phone_name_map(phones, file_name_map)
+    items = []
+    for it in raw_items:
+        name = _resolve_customer_terminal_name(it['raw_name'], it['phone'], ding_map)
+        st, st_text = _customer_terminal_status_from_ip(it['ip'])
         items.append({
             'name': name,
-            'phone': phone,
-            'ip': ip,
-            'status': 'online',
-            'status_text': '在线'
+            'phone': it['phone'],
+            'ip': it['ip'],
+            'status': st,
+            'status_text': st_text
         })
 
     deduplicated = []
     seen = set()
     for item in items:
-        key = (item['name'], item['phone'], item['ip'])
+        key = (item['phone'], item['ip'])
         if key in seen:
             continue
         seen.add(key)
         deduplicated.append(item)
-    return deduplicated
+    deduplicated.sort(key=lambda x: (x.get('name') or '', x.get('phone') or '', x.get('ip') or ''))
 
-
-def _fetch_customer_terminal_items(timeout_seconds=5):
-    req = urllib_request.Request(
-        PROMETHEUS_METRICS_URL,
-        headers={'User-Agent': 'iptables-web/1.0', 'Accept': 'text/plain'}
-    )
-    with urllib_request.urlopen(req, timeout=timeout_seconds) as resp:
-        raw = resp.read()
-    text = raw.decode('utf-8', errors='replace')
-    return _extract_customer_terminal_items_from_metrics(text)
+    if LEAGSOFT_TERMINAL_CACHE_SECONDS > 0:
+        _CUSTOMER_TERMINAL_ITEMS_CACHE['items'] = deduplicated
+        _CUSTOMER_TERMINAL_ITEMS_CACHE['ts'] = now
+        _CUSTOMER_TERMINAL_ITEMS_CACHE['ding_meta'] = ding_meta
+    return deduplicated, ding_meta
 
 
 @app.route("/customer_terminals", methods=['GET'])
@@ -4076,11 +4420,11 @@ def customer_terminals_api():
         page_size = 10
 
     try:
-        items = _fetch_customer_terminal_items(timeout_seconds=5)
+        items, ding_meta = _fetch_customer_terminal_items(timeout_seconds=45)
     except urllib_error.URLError:
         return jsonify({
             'success': False,
-            'message': '获取客户终端列表失败，请检查Prometheus服务',
+            'message': '获取客户终端列表失败，请检查联软准入接口网络与 LEAGSOFT_TERMINAL_QUERY_URL',
             'items': [],
             'total': 0,
             'page': page,
@@ -4089,7 +4433,7 @@ def customer_terminals_api():
     except PermissionError as e:
         return jsonify({
             'success': False,
-            'message': f'Prometheus接口访问被拒绝: {str(e)}',
+            'message': f'联软接口访问被拒绝: {str(e)}',
             'items': [],
             'total': 0,
             'page': page,
@@ -4098,7 +4442,7 @@ def customer_terminals_api():
     except ValueError as e:
         return jsonify({
             'success': False,
-            'message': f'Prometheus数据解析异常: {str(e)}',
+            'message': f'联软数据解析异常: {str(e)}',
             'items': [],
             'total': 0,
             'page': page,
@@ -4127,13 +4471,23 @@ def customer_terminals_api():
     end = start + page_size
     paged_items = items[start:end] if start < total else []
 
+    hint = _dingtalk_sync_hint(ding_meta)
     return jsonify({
         'success': True,
         'message': 'ok',
         'items': paged_items,
         'total': total,
         'page': page,
-        'page_size': page_size
+        'page_size': page_size,
+        'dingtalk': {
+            'credentials_configured': ding_meta.get('credentials_configured'),
+            'token_ok': ding_meta.get('token_ok'),
+            'mobile_phones': ding_meta.get('mobile_phones'),
+            'names_mapped': ding_meta.get('names_mapped'),
+            'queried_phones': ding_meta.get('queried_phones'),
+            'newly_resolved': ding_meta.get('newly_resolved'),
+            'hint': hint,
+        }
     })
 
 

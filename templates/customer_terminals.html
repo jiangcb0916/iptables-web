@@ -173,13 +173,16 @@
       const response = await fetch(`/api/customer-terminals?${params.toString()}`);
       const data = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.message || '获取客户终端列表失败，请检查准入API服务');
+        throw new Error(data.message || '获取客户终端列表失败，请检查联软准入接口');
       }
       state.items = Array.isArray(data.items) ? data.items : [];
       state.total = Number(data.total || 0);
       renderRows();
       renderPagination();
-      if (!state.items.length) {
+      const dtHint = data.dingtalk && data.dingtalk.hint;
+      if (dtHint) {
+        showAlert(dtHint, 'info');
+      } else if (!state.items.length) {
         showAlert('无有效数据', 'info');
       }
     } catch (error) {
@@ -187,7 +190,7 @@
       state.total = 0;
       renderRows();
       renderPagination();
-      showAlert(error.message || '获取客户终端列表失败，请检查准入API服务', 'error');
+      showAlert(error.message || '获取客户终端列表失败，请检查联软准入接口', 'error');
     } finally {
       refreshBtn.disabled = false;
       refreshBtn.innerHTML = '<i class="fa fa-refresh mr-1"></i> 刷新';
