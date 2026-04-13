@@ -12,10 +12,23 @@
     <style>
       .template-card {
         box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+        border: 1px solid #e8eef7;
+        border-left-width: 5px;
+        border-left-color: transparent;
+      }
+      .template-card:hover {
+        box-shadow: 0 16px 30px rgba(15, 23, 42, 0.09);
+      }
+      .template-card.dir-input {
+        border-left-color: #10b981;
+      }
+      .template-card.dir-output {
+        border-left-color: #f59e0b;
       }
       .template-card .template-title {
         line-height: 1.25;
         letter-spacing: 0.01em;
+        word-break: break-word;
       }
       .template-badge {
         border-radius: 9999px;
@@ -42,6 +55,48 @@
         padding: 0.28rem 0.62rem;
         font-size: 0.82rem;
         font-weight: 500;
+      }
+      .template-action-main {
+        border-radius: 10px;
+        padding: 0.42rem 0.85rem;
+        font-size: 0.84rem;
+        font-weight: 600;
+      }
+      .template-meta-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        margin-top: 0.65rem;
+      }
+      .template-footer {
+        margin-top: 1rem;
+        padding-top: 0.95rem;
+        border-top: 1px dashed #d9e2ef;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.85rem;
+        flex-wrap: wrap;
+      }
+      .template-footer-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+      }
+      .template-subtle-btn {
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        padding: 0.32rem 0.62rem;
+      }
+      .template-identifier {
+        color: #64748b;
+        margin-top: 0.35rem;
+        font-size: 0.85rem;
+        line-height: 1.4;
+        word-break: break-all;
       }
       .template-hero {
         border: 1px solid #e2e8f0;
@@ -205,31 +260,27 @@
           </div>
           {% endif %}
           <!-- 模板列表 - 卡片视图 -->
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div class="grid grid-cols-1 gap-6">
             {% for data in data_list %}
             <!-- 模板卡片 -->
-            <div class="template-card bg-white rounded-xl border border-gray-100 card-shadow overflow-hidden hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200" data-template-id="{{ data.template_id }}" data-direction="{{ data.direction }}">
-              <div class="p-5 border-b border-gray-100">
-                <div class="flex justify-between items-start mb-3">
+            <div class="template-card {% if data.direction == 'INPUT' %}dir-input{% else %}dir-output{% endif %} bg-white rounded-xl border border-gray-100 card-shadow overflow-hidden hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200" data-template-id="{{ data.template_id }}" data-direction="{{ data.direction }}">
+              <div class="p-5 md:p-6">
+                <div class="min-w-0">
                   <div>
-                    <h3 class="template-title font-semibold text-lg text-slate-800">{{ data.template_name }}</h3>
-                    <p class="text-sm text-secondary mt-1">{{ data.template_identifier }} </p>
+                    <h3 class="template-title font-semibold text-xl text-slate-800">{{ data.template_name }}</h3>
+                    <p class="template-identifier">{{ data.template_identifier }}</p>
                   </div>
-                </div>
 
-                <div class="flex flex-wrap gap-2 mb-4">
+                <div class="template-meta-row">
                   <span class="template-tag template-badge bg-purple-100 text-purple-800">{{ data.rules|length }} 条规则</span>
-                  <span class="template-tag template-badge bg-green-100 text-green-800">
+                  <span class="template-tag template-badge {% if data.direction == 'INPUT' %}bg-emerald-100 text-emerald-700{% else %}bg-amber-100 text-amber-700{% endif %}">
                     {% if data.direction == 'INPUT' %}入方向{% else %}出方向{% endif %}
+                  </span>
+                  <span class="inline-flex items-center text-xs text-gray-500">
+                    <i class="fa fa-calendar-o mr-1"></i> 更新于 {{ data.updated_at }}
                   </span>
                 </div>
 
-                <div class="flex items-center text-sm text-secondary">
-                  <div class="flex items-center mr-4">
-                    <i class="fa fa-calendar-o mr-1"></i>
-                    <span>更新于 {{ data.updated_at }}</span>
-                  </div>
-                </div>
                 <div class="mt-3 pt-3 border-t border-dashed border-gray-200">
                   <p class="text-xs font-medium text-gray-500 mb-2">规则预览</p>
                   <div class="template-preview-box">
@@ -247,30 +298,30 @@
                     {% endif %}
                   </div>
                 </div>
-              </div>
 
-              <div class="p-4 bg-gray-50 flex justify-between items-center border-t border-gray-100">
-                <!-- 查看详情按钮 - 添加data属性存储模板数据 -->
-                <button class="text-primary hover:text-primary/80 text-sm font-medium transition-colors view-detail-btn"
-                        data-template-id="{{ data.template_id }}"
-                        data-template-name="{{ data.template_name }}"
-                        data-template-desc="{{ data.description|default('') }}"
-                        data-template-direction="{{ data.direction|default('INPUT') }}">
-                  <i class="fa fa-eye mr-1"></i> 查看详情
-                </button>
-                <div class="flex gap-2">
-                  <button class="template-action bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors copy-template-btn">
-                    <i class="fa fa-clone mr-1"></i> 复制
+                <div class="template-footer">
+                  <!-- 查看详情按钮 - 添加data属性存储模板数据 -->
+                  <button class="template-action-main bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors view-detail-btn"
+                          data-template-id="{{ data.template_id }}"
+                          data-template-name="{{ data.template_name }}"
+                          data-template-desc="{{ data.description|default('') }}"
+                          data-template-direction="{{ data.direction|default('INPUT') }}">
+                    <i class="fa fa-eye mr-1"></i> 查看详情
                   </button>
-                  <button class="template-action bg-red-50 text-red-600 hover:bg-red-100 transition-colors delete-template-btn">
-                    <i class="fa fa-trash mr-1"></i> 删除
-                  </button>
-                  <button class="template-action bg-primary text-white hover:bg-primary/90 transition-colors apply-template-btn">
-                    <i class="fa fa-rocket mr-1"></i> 应用
-                  </button>
+                  <div class="template-footer-actions">
+                    <button class="template-subtle-btn bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors copy-template-btn">
+                      <i class="fa fa-clone mr-1"></i> 复制
+                    </button>
+                    <button class="template-subtle-btn bg-red-50 text-red-600 hover:bg-red-100 transition-colors delete-template-btn">
+                      <i class="fa fa-trash mr-1"></i> 删除
+                    </button>
+                    <button class="template-action-main bg-primary text-white hover:bg-primary/90 transition-colors apply-template-btn">
+                      <i class="fa fa-rocket mr-1"></i> 应用
+                    </button>
+                  </div>
                 </div>
               </div>
-          </div>
+            </div>
             {% endfor %}
         </div>
 
@@ -1287,8 +1338,8 @@
 
           if (response.ok && result.success) {
             showToast('模板删除成功', 'success');
-            // 从页面中移除模板卡片
-            templateCard.remove();
+            // 删除后立即刷新当前页面，确保模板列表与统计数据同步
+            window.location.reload();
           } else {
             showToast(`删除失败: ${result.message || '服务器处理错误'}`);
           }
