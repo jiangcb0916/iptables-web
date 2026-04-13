@@ -11,19 +11,29 @@
     {% endfor %}
     <style>
       .template-card {
+        position: relative;
         box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
         border: 1px solid #e8eef7;
-        border-left-width: 5px;
-        border-left-color: transparent;
+      }
+      .template-card::before {
+        content: '';
+        position: absolute;
+        left: 0.55rem;
+        top: 0.75rem;
+        bottom: 0.75rem;
+        width: 4px;
+        border-radius: 999px;
+        background: transparent;
+        pointer-events: none;
       }
       .template-card:hover {
         box-shadow: 0 16px 30px rgba(15, 23, 42, 0.09);
       }
-      .template-card.dir-input {
-        border-left-color: #10b981;
+      .template-card.dir-input::before {
+        background: #10b981;
       }
-      .template-card.dir-output {
-        border-left-color: #f59e0b;
+      .template-card.dir-output::before {
+        background: #f59e0b;
       }
       .template-card .template-title {
         line-height: 1.25;
