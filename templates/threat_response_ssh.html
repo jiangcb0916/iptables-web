@@ -23,6 +23,23 @@
   #threat-confirm-message {
     white-space: pre-line;
   }
+  /* 封禁按钮：超阈值 = 深红（优先处理）；未超阈值 = 石板灰（仍可封禁） */
+  button.threat-ban-btn.ban-btn-over:not(:disabled) {
+    background-color: #b91c1c;
+    color: #fff;
+    border: 1px solid #7f1d1d;
+  }
+  button.threat-ban-btn.ban-btn-over:not(:disabled):hover {
+    background-color: #991b1b;
+  }
+  button.threat-ban-btn.ban-btn-normal:not(:disabled) {
+    background-color: #64748b;
+    color: #fff;
+    border: 1px solid #475569;
+  }
+  button.threat-ban-btn.ban-btn-normal:not(:disabled):hover {
+    background-color: #475569;
+  }
 </style>
 <div class="flex-1 flex flex-col overflow-hidden">
   <header class="bg-white border-b border-gray-200 shadow-sm z-10">
@@ -133,6 +150,7 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">来源 IP</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">姓名</th>
                 <th class="px-4 py-3 text-right text-xs text-secondary uppercase font-medium">失败次数</th>
                 <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">状态</th>
                 <th class="px-4 py-3 text-right text-xs text-secondary uppercase font-medium">操作</th>
@@ -140,7 +158,7 @@
             </thead>
             <tbody id="cand-body" class="bg-white divide-y divide-gray-200 text-sm">
               <tr>
-                <td colspan="4" class="px-4 py-10 text-center text-gray-500">暂无数据</td>
+                <td colspan="5" class="px-4 py-10 text-center text-gray-500">暂无数据</td>
               </tr>
             </tbody>
           </table>
@@ -167,6 +185,7 @@
               <tr>
                 <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">ID</th>
                 <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">来源 IP</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">姓名</th>
                 <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">封禁时段</th>
                 <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">操作人</th>
                 <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">有效</th>
@@ -175,7 +194,7 @@
             </thead>
             <tbody id="bans-body" class="bg-white divide-y divide-gray-200 text-sm">
               <tr>
-                <td colspan="6" class="px-4 py-10 text-center text-gray-500">请选择主机后刷新</td>
+                <td colspan="7" class="px-4 py-10 text-center text-gray-500">请选择主机后刷新</td>
               </tr>
             </tbody>
           </table>
@@ -401,27 +420,34 @@
       .replace(/"/g, '&quot;');
   }
 
-  /** 展示封禁起止时间（时间段语义） */
-  function formatBanPeriod(createdAt, expiresAt, isActive) {
+  /** 展示封禁起止：有效时显示预计到期；失效时优先实际结束时间 ended_at */
+  function formatBanPeriod(createdAt, expiresAt, isActive, endedAt) {
     const start = (createdAt || '').trim();
-    const endRaw = (expiresAt || '').trim();
+    const exp = (expiresAt || '').trim();
+    const ended = (endedAt || '').trim();
+    let endLabel = '结束';
     let endText;
-    if (endRaw) {
-      endText = endRaw;
-    } else if (isActive) {
-      endText = '无固定到期时间（待策略到期或手动解封）';
+    if (isActive) {
+      endLabel = '结束（预计）';
+      if (exp) endText = exp;
+      else endText = '无固定到期时间（待手动解封或规则同步失效）';
     } else {
-      endText = '已结束（无到期记录或已解封）';
+      endLabel = '结束（实际）';
+      if (ended) endText = ended;
+      else if (exp) endText = exp + '（仅计划到期时间，提前解封/同步时间未单独记录）';
+      else endText = '已结束（无时间记录）';
     }
     if (!start) {
       return '<span class="text-gray-400">—</span>';
     }
     return (
-      '<div class="text-xs leading-snug max-w-[18rem]">' +
+      '<div class="text-xs leading-snug max-w-md">' +
       '<div><span class="text-gray-500">开始</span> <span class="font-mono text-gray-900">' +
       escapeHtml(start) +
       '</span></div>' +
-      '<div class="mt-1"><span class="text-gray-500">结束</span> <span class="font-mono text-gray-800">' +
+      '<div class="mt-1"><span class="text-gray-500">' +
+      escapeHtml(endLabel) +
+      '</span> <span class="font-mono text-gray-800">' +
       escapeHtml(endText) +
       '</span></div></div>'
     );
@@ -468,7 +494,7 @@
   function renderCandidates(rows) {
     if (!rows || !rows.length) {
       candBody.innerHTML =
-        '<tr><td colspan="4" class="px-4 py-10 text-center text-gray-500">未发现 IPv4 SSH 失败记录，或日志不可读</td></tr>';
+        '<tr><td colspan="5" class="px-4 py-10 text-center text-gray-500">未发现 IPv4 SSH 失败记录，或日志不可读</td></tr>';
       updateBanBatchButton();
       return;
     }
@@ -483,9 +509,12 @@
         const titleNoPerm = '需要「威胁响应」或「添加规则」权限才可封禁';
         const titleBanned = '该 IP 已在封禁有效期内';
         const btnTitle = banned ? titleBanned : !CAN_IP_BAN ? titleNoPerm : '封禁该来源 IP（INPUT DROP）';
-        const banCell =
-          '<td class="px-4 py-3 text-right whitespace-nowrap align-middle">' +
-          '<button type="button" class="threat-ban-btn text-sm font-medium px-3 py-2 rounded-md shadow-sm inline-flex items-center justify-center min-w-[5rem] bg-danger text-white border border-danger/20 hover:bg-danger/90"' +
+        const custName = escapeHtml(r.customer_name != null && r.customer_name !== '' ? r.customer_name : '虚拟钉钉用户');
+        const banBtnVariant = r.over_threshold ? 'ban-btn-over' : 'ban-btn-normal';
+        const banBtnHtml =
+          '<button type="button" class="threat-ban-btn ' +
+          banBtnVariant +
+          ' text-sm font-medium px-3 py-2 rounded-md shadow-sm inline-flex items-center justify-center min-w-[5rem]"' +
           ' style="min-width:5rem"' +
           btnDisabled +
           ' title="' +
@@ -494,9 +523,12 @@
           escapeHtml(ipStr) +
           '" data-ban-count="' +
           Number(r.count) +
-          '">封禁</button></td>';
+          '">封禁</button>';
+        const banCell =
+          '<td class="px-4 py-3 text-right whitespace-nowrap align-middle">' + banBtnHtml + '</td>';
         return `<tr class="hover:bg-gray-50">
         <td class="px-4 py-3 font-mono text-xs">${escapeHtml(ipStr)}</td>
+        <td class="px-4 py-3 text-sm text-gray-800 max-w-md">${custName}</td>
         <td class="px-4 py-3 text-right font-mono text-xs">${r.count}</td>
         <td class="px-4 py-3">${badges.join(' ') || '—'}</td>
         ${banCell}
@@ -510,29 +542,47 @@
   function renderBans(rows) {
     if (!rows || !rows.length) {
       bansBody.innerHTML =
-        '<tr><td colspan="6" class="px-4 py-10 text-center text-gray-500">暂无登记记录</td></tr>';
+        '<tr><td colspan="7" class="px-4 py-10 text-center text-gray-500">暂无登记记录</td></tr>';
       return;
     }
     bansBody.innerHTML = rows
       .map((r) => {
         const active = r.active ? '是' : '否';
         const activeCls = r.active ? 'text-green-700' : 'text-gray-500';
-        const periodHtml = formatBanPeriod(r.created_at, r.expires_at, !!r.active);
+        const periodHtml = formatBanPeriod(r.created_at, r.expires_at, !!r.active, r.ended_at);
         let unban;
+        const delBtn =
+          '<button type="button" class="text-sm px-3 py-1.5 rounded-md border border-red-200 text-red-700 bg-red-50 hover:bg-red-100" data-delete-ban-id="' +
+          r.id +
+          '" data-delete-active="' +
+          (r.active ? '1' : '0') +
+          '">删除</button>';
         if (!CAN_IP_BAN) {
-          unban = '<td class="px-4 py-3 text-right text-xs text-gray-500 max-w-[10rem]">需「威胁响应」或「添加规则」权限</td>';
+          unban =
+            '<td class="px-4 py-3 text-right text-xs text-gray-500 max-w-md">需「威胁响应」或「添加规则」权限</td>';
         } else if (r.active) {
           unban =
             '<td class="px-4 py-3 text-right whitespace-nowrap">' +
+            '<div class="inline-flex flex-wrap justify-end gap-2">' +
             '<button type="button" class="text-sm px-3 py-1.5 rounded-md border border-gray-300 text-gray-800 hover:bg-gray-50" data-unban-id="' +
             r.id +
-            '">解封</button></td>';
+            '">解封</button>' +
+            delBtn +
+            '</div></td>';
         } else {
-          unban = '<td class="px-4 py-3 text-right text-xs text-gray-400">—</td>';
+          unban =
+            '<td class="px-4 py-3 text-right whitespace-nowrap">' +
+            '<div class="inline-flex flex-wrap justify-end gap-2">' +
+            delBtn +
+            '</div></td>';
         }
+        const banCustName = escapeHtml(
+          r.customer_name != null && r.customer_name !== '' ? r.customer_name : '虚拟钉钉用户'
+        );
         return `<tr class="hover:bg-gray-50">
         <td class="px-4 py-3 font-mono text-xs">${r.id}</td>
         <td class="px-4 py-3 font-mono text-xs">${escapeHtml(r.ip)}</td>
+        <td class="px-4 py-3 text-sm text-gray-800 max-w-md">${banCustName}</td>
         <td class="px-4 py-3 align-top">${periodHtml}</td>
         <td class="px-4 py-3 text-xs">${escapeHtml(r.created_by || '')}</td>
         <td class="px-4 py-3 text-xs ${activeCls}">${active}</td>
@@ -541,12 +591,24 @@
       })
       .join('');
 
-    if (CAN_IP_BAN) {
-      bansBody.querySelectorAll('button[data-unban-id]').forEach((btn) => {
-        btn.addEventListener('click', () => doUnban(parseInt(btn.getAttribute('data-unban-id'), 10)));
-      });
-    }
   }
+
+  bansBody.addEventListener('click', function (e) {
+    const unb = e.target && e.target.closest && e.target.closest('button[data-unban-id]');
+    if (unb && bansBody.contains(unb)) {
+      if (!CAN_IP_BAN) return;
+      doUnban(parseInt(unb.getAttribute('data-unban-id'), 10));
+      return;
+    }
+    const del = e.target && e.target.closest && e.target.closest('button[data-delete-ban-id]');
+    if (del && bansBody.contains(del)) {
+      if (!CAN_IP_BAN) return;
+      doDeleteBanRecord(
+        parseInt(del.getAttribute('data-delete-ban-id'), 10),
+        del.getAttribute('data-delete-active') === '1'
+      );
+    }
+  });
 
   async function runScan() {
     const hostId = hostSelect.value;
@@ -580,7 +642,7 @@
       updateBanBatchButton();
       scanStatus.textContent = e.message || '分析失败';
       candBody.innerHTML =
-        '<tr><td colspan="4" class="px-4 py-10 text-center text-red-600">' +
+        '<tr><td colspan="5" class="px-4 py-10 text-center text-red-600">' +
         escapeHtml(e.message || '失败') +
         '</td></tr>';
     } finally {
@@ -745,6 +807,41 @@
     }
   }
 
+  async function doDeleteBanRecord(banId, isActive) {
+    if (!CAN_IP_BAN) return;
+    const msg = isActive
+      ? '该条仍为「有效」封禁：将尝试从目标机删除 iptables DROP，并永久删除本地历史记录（不可恢复）。确定？'
+      : '将永久删除本条封禁历史记录（不可恢复）。确定？';
+    if (
+      !(await showThreatConfirm({
+        title: '删除记录',
+        message: msg,
+        danger: true,
+        confirmText: '删除'
+      }))
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/threat-response/ban-record/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': CSRF_TOKEN
+        },
+        body: JSON.stringify({ ban_id: banId })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '删除失败');
+      if (data.warning) showThreatWarnToast(data.message || '已删除，但远端删规则可能失败');
+      else showThreatSuccessToast('已删除');
+      loadBans();
+      runScan();
+    } catch (e) {
+      showThreatErrorToast(e.message || '删除失败');
+    }
+  }
+
   scanBtn.addEventListener('click', runScan);
   bansRefreshBtn.addEventListener('click', loadBans);
   if (banBatchBtn) banBatchBtn.addEventListener('click', banBatch);
@@ -754,15 +851,15 @@
     latestCandidates = [];
     updateBanBatchButton();
     candBody.innerHTML =
-      '<tr><td colspan="4" class="px-4 py-10 text-center text-gray-500">请点击「分析」</td></tr>';
+      '<tr><td colspan="5" class="px-4 py-10 text-center text-gray-500">请点击「分析」</td></tr>';
     bansBody.innerHTML =
-      '<tr><td colspan="6" class="px-4 py-10 text-center text-gray-500">正在加载封禁历史…</td></tr>';
+      '<tr><td colspan="7" class="px-4 py-10 text-center text-gray-500">正在加载封禁历史…</td></tr>';
     scanStatus.textContent = '选择主机后点击「分析」。';
     bansStatus.textContent = '加载中…';
     if (hostSelect.value) loadBans();
     else {
       bansBody.innerHTML =
-        '<tr><td colspan="6" class="px-4 py-10 text-center text-gray-500">请选择主机</td></tr>';
+        '<tr><td colspan="7" class="px-4 py-10 text-center text-gray-500">请选择主机</td></tr>';
       bansStatus.textContent = '请选择主机后点击「刷新封禁列表」加载。';
     }
   });

@@ -157,7 +157,6 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = '请先登录以访问该页面'
 
-ssh = paramiko.SSHClient()
 DATABASE = 'firewall_management.db'
 # 确保静态文件目录正确配置
 app.static_folder = 'static'
@@ -447,7 +446,15 @@ def _threat_bh_ensure_schema(conn):
     )
     conn.execute('CREATE INDEX IF NOT EXISTS idx_block_history_host ON block_history(host_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_block_history_host_active ON block_history(host_id, is_active)')
+    cur = conn.execute('PRAGMA table_info(block_history)')
+    _bh_cols = {row[1] for row in cur.fetchall()}
+    if 'ended_at' not in _bh_cols:
+        conn.execute('ALTER TABLE block_history ADD COLUMN ended_at TEXT')
     conn.commit()
+
+
+def _threat_bh_now_shanghai_str():
+    return datetime.now(pytz.timezone('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def _threat_bh_row_active(rd, now=None):
@@ -566,6 +573,8 @@ def _threat_sync_block_history_with_iptables(host, hid, sync_operator='system'):
         try:
             _threat_bh_ensure_schema(conn)
             cur = conn.cursor()
+            tz = pytz.timezone('Asia/Shanghai')
+            now_s = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
             cur.execute(
                 'SELECT * FROM block_history WHERE host_id=? AND is_active=1',
                 (int(hid),),
@@ -576,10 +585,20 @@ def _threat_sync_block_history_with_iptables(host, hid, sync_operator='system'):
                 ip = str(rd.get('ip') or '')
                 if tok:
                     if tok not in by_token:
-                        cur.execute('UPDATE block_history SET is_active=0 WHERE id=?', (rd['id'],))
+                        cur.execute(
+                            '''UPDATE block_history SET is_active=0,
+                               ended_at = CASE WHEN ended_at IS NOT NULL AND TRIM(ended_at) != "" THEN ended_at ELSE ? END
+                               WHERE id=?''',
+                            (now_s, rd['id']),
+                        )
                 else:
                     if ip and ip not in ips_with_drop:
-                        cur.execute('UPDATE block_history SET is_active=0 WHERE id=?', (rd['id'],))
+                        cur.execute(
+                            '''UPDATE block_history SET is_active=0,
+                               ended_at = CASE WHEN ended_at IS NOT NULL AND TRIM(ended_at) != "" THEN ended_at ELSE ? END
+                               WHERE id=?''',
+                            (now_s, rd['id']),
+                        )
 
             cur.execute(
                 'SELECT comment_token FROM block_history WHERE host_id=? AND is_active=1',
@@ -587,8 +606,6 @@ def _threat_sync_block_history_with_iptables(host, hid, sync_operator='system'):
             )
             known_toks = {str(row[0]) for row in cur.fetchall() if row[0]}
 
-            tz = pytz.timezone('Asia/Shanghai')
-            now_s = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
             op = str(sync_operator or '').strip() or 'system'
             for d in drops:
                 t = d.get('token')
@@ -1791,7 +1808,12 @@ def _expire_due_threat_bans():
                         app.logger.warning(
                             f"威胁响应：到期解封 iptables 失败 host_ip={rd.get('host_ip')} src={ip} err={e}"
                         )
-                cur.execute('UPDATE block_history SET is_active=0 WHERE id=?', (rd['id'],))
+                cur.execute(
+                    '''UPDATE block_history SET is_active=0,
+                       ended_at = CASE WHEN ended_at IS NOT NULL AND TRIM(ended_at) != "" THEN ended_at ELSE ? END
+                       WHERE id=?''',
+                    (exp, rd['id']),
+                )
                 removed += 1
             conn.commit()
         finally:
@@ -3079,23 +3101,23 @@ def init_db():
 
 
 def pwd_shell_cmd(hostname, port, user, pwd, cmd):
+    """每次命令使用独立 SSHClient，避免全局连接被并发请求关闭导致 No existing session。"""
     stdin = None
     stdout = None
     stderr = None
+    ssh_client = None
     try:
         pwd = decrypt_host_secret(pwd)
+        ssh_client = paramiko.SSHClient()
         _connect_with_password_fallback(
-            ssh_client=ssh,
+            ssh_client=ssh_client,
             hostname=hostname,
             port=port,
             username=user,
             password=pwd,
             timeout=5
         )
-        # stdin, stdout, stderr = ssh.exec_command('iptables -nL IN_public_allow --line-number -t filter -v')
-        stdin, stdout, stderr = ssh.exec_command(cmd)
-        # stdin, stdout, stderr = ssh.exec_command('iptables -nL INPUT --line-number -t filter -v')
-        # 读取输出（确保数据被完全读取）
+        stdin, stdout, stderr = ssh_client.exec_command(cmd)
         output = stdout.read().decode()
         error = stderr.read().decode()
         exit_code = stdout.channel.recv_exit_status()
@@ -3105,16 +3127,14 @@ def pwd_shell_cmd(hostname, port, user, pwd, cmd):
     except Exception as e:
         raise RuntimeError(f"SSH 操作失败: {str(e)}")
     finally:
-        # 先关闭流对象（关键步骤）
         if stdin:
             stdin.close()
         if stdout:
             stdout.close()
         if stderr:
             stderr.close()
-        # 再关闭 SSH 连接
-        if ssh:
-            ssh.close()
+        if ssh_client:
+            ssh_client.close()
 
 
 def _connect_with_password_fallback(ssh_client, hostname, port, username, password, timeout=8):
@@ -3386,14 +3406,26 @@ def remove_public_key_with_private_key(hostname, port, user, private_key_str, pu
 
 
 def sshkey_shell_cmd(hostname, port, user, private_key_str, cmd):
+    """每次命令使用独立 SSHClient，避免多请求共享全局连接被 close 后触发 No existing session。"""
+    stdin = None
+    stdout = None
+    stderr = None
+    ssh_client = None
     try:
         private_key_str = decrypt_host_secret(private_key_str)
-        ssh.set_missing_host_key_policy(AutoAddPolicy())
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(AutoAddPolicy())
         pkey = load_private_key(private_key_str)
-        ssh.connect(hostname=hostname, port=port, username=user, pkey=pkey, timeout=5,
-                    look_for_keys=False,
-                    allow_agent=False)
-        stdin, stdout, stderr = ssh.exec_command(cmd)
+        ssh_client.connect(
+            hostname=hostname,
+            port=port,
+            username=user,
+            pkey=pkey,
+            timeout=5,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        stdin, stdout, stderr = ssh_client.exec_command(cmd)
         output = stdout.read().decode()
         error = stderr.read().decode()
         exit_code = stdout.channel.recv_exit_status()
@@ -3403,9 +3435,14 @@ def sshkey_shell_cmd(hostname, port, user, private_key_str, cmd):
     except Exception as e:
         raise RuntimeError(f"SSH 操作失败: {str(e)}")
     finally:
-        # 再关闭 SSH 连接
-        if ssh:
-            ssh.close()
+        if stdin:
+            stdin.close()
+        if stdout:
+            stdout.close()
+        if stderr:
+            stderr.close()
+        if ssh_client:
+            ssh_client.close()
 
 
 def get_rule(iptables_output):
@@ -4331,12 +4368,14 @@ def threat_response_ssh_scan():
     except RuntimeError as e:
         return jsonify({'success': False, 'message': str(e)}), 500
     rows = _threat_parse_ssh_fail_counts(raw)
+    ip_name_map = _threat_customer_ip_to_name_map(timeout_seconds=15)
     enriched = []
     for r in rows:
         ip = r['ip']
         active = _threat_active_ban_for_host_ip(int(host_id), ip)
         enriched.append({
             'ip': ip,
+            'customer_name': _threat_customer_display_name(ip, ip_name_map),
             'count': r['count'],
             'whitelisted': False,
             'banned': bool(active),
@@ -4550,6 +4589,7 @@ def threat_response_bans_get():
         except Exception as e:
             app.logger.warning(f"威胁响应 iptables 同步失败 host_id={hid}: {e}")
     now = datetime.now()
+    ip_name_map = _threat_customer_ip_to_name_map(timeout_seconds=15)
     out = []
     with _THREAT_BH_LOCK:
         conn = _threat_bh_conn()
@@ -4567,16 +4607,19 @@ def threat_response_bans_get():
             )
             for r in cur.fetchall():
                 rd = dict(r)
+                bip = rd.get('ip') or ''
                 row = {
                     'id': rd['id'],
                     'host_id': rd['host_id'],
                     'host_ip': rd['host_ip'],
                     'ip': rd['ip'],
+                    'customer_name': _threat_customer_display_name(bip, ip_name_map),
                     'reason': rd['reason'],
                     'source_count': rd['source_count'],
                     'comment_token': rd['comment_token'],
                     'created_at': rd['created_at'],
                     'expires_at': rd['expires_at'],
+                    'ended_at': rd.get('ended_at'),
                     'created_by': rd['operator'],
                     'active': _threat_bh_row_active(rd, now),
                 }
@@ -4740,7 +4783,13 @@ def threat_response_unban_post():
                     _persist_host_firewall_rules(host)
                 except RuntimeError as e:
                     err = str(e)
-            cur.execute('UPDATE block_history SET is_active=0 WHERE id=?', (ban_id,))
+            ended = _threat_bh_now_shanghai_str()
+            cur.execute(
+                '''UPDATE block_history SET is_active=0,
+                   ended_at = CASE WHEN ended_at IS NOT NULL AND TRIM(ended_at) != "" THEN ended_at ELSE ? END
+                   WHERE id=?''',
+                (ended, ban_id),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -4758,6 +4807,64 @@ def threat_response_unban_post():
             'success': True,
             'message': f'记录已标记为失效，但远端删除 iptables 规则失败: {err}',
             'warning': err,
+        })
+    return jsonify({'success': True})
+
+
+@app.route('/api/threat-response/ban-record/delete', methods=['POST'])
+@login_required
+@permission_required_any(['threat_manage', 'iptab_add'])
+def threat_response_ban_record_delete():
+    """从本地库删除封禁登记；若仍有效则先尝试删除远端 iptables DROP。"""
+    try:
+        validate_csrf_request()
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    payload = request.get_json(silent=True) or {}
+    if not str(payload.get('ban_id')).isdigit():
+        return jsonify({'success': False, 'message': '缺少有效 ban_id'}), 400
+    ban_id = int(payload['ban_id'])
+    found = None
+    ipt_err = None
+    with _THREAT_BH_LOCK:
+        conn = _threat_bh_conn()
+        try:
+            _threat_bh_ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute('SELECT * FROM block_history WHERE id=?', (ban_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': '记录不存在'}), 404
+            found = dict(row)
+            hid = int(found.get('host_id') or 0)
+            host = _load_host_connection_info(hid)
+            ip = str(found.get('ip', '') or '')
+            token = str(found.get('comment_token', '') or '')
+            active = int(found.get('is_active') or 0) == 1
+            if active and host and ip and token:
+                try:
+                    _run_remote_shell(host, _threat_iptables_ban_delete_cmd(ip, token))
+                    _persist_host_firewall_rules(host)
+                except RuntimeError as e:
+                    ipt_err = str(e)
+            cur.execute('DELETE FROM block_history WHERE id=?', (ban_id,))
+            conn.commit()
+        finally:
+            conn.close()
+    log_operation(
+        user_id=current_user.id,
+        username=current_user.username,
+        operation_type='删除',
+        operation_object='威胁响应封禁登记',
+        operation_summary=f"删除封禁历史 id={ban_id} IP={found.get('ip')} 主机={found.get('host_ip')}",
+        operation_details=json.dumps({'ban_id': ban_id, 'iptables_error': ipt_err}, ensure_ascii=False),
+        success=1 if not ipt_err else 0,
+    )
+    if ipt_err:
+        return jsonify({
+            'success': True,
+            'message': f'本地记录已删除，但远端删除 iptables 规则失败: {ipt_err}',
+            'warning': ipt_err,
         })
     return jsonify({'success': True})
 
@@ -6180,6 +6287,37 @@ def _fetch_customer_terminal_items(timeout_seconds=30):
         _CUSTOMER_TERMINAL_ITEMS_CACHE['ts'] = now
         _CUSTOMER_TERMINAL_ITEMS_CACHE['ding_meta'] = ding_meta
     return deduplicated, ding_meta
+
+
+THREAT_CUSTOMER_NAME_FALLBACK = '虚拟钉钉用户'
+
+
+def _threat_customer_ip_to_name_map(timeout_seconds=15):
+    """客户终端 IPv4 -> 展示姓名（与 /api/customer-terminals 同源）。失败返回空 dict。"""
+    try:
+        items, _ = _fetch_customer_terminal_items(timeout_seconds=timeout_seconds)
+    except Exception as e:
+        app.logger.warning('威胁响应：客户终端姓名映射拉取失败: %s', e)
+        return {}
+    m = {}
+    for it in items or []:
+        ip = (it.get('ip') or '').strip()
+        name = (it.get('name') or '').strip()
+        if not ip or not name:
+            continue
+        m.setdefault(ip, name)
+    return m
+
+
+def _threat_customer_display_name(ip, ip_to_name):
+    """按客户终端 IP 匹配姓名，否则为虚拟钉钉用户。"""
+    k = (ip or '').strip()
+    if not k:
+        return THREAT_CUSTOMER_NAME_FALLBACK
+    n = (ip_to_name or {}).get(k)
+    if n and str(n).strip():
+        return str(n).strip()
+    return THREAT_CUSTOMER_NAME_FALLBACK
 
 
 @app.route("/customer_terminals", methods=['GET'])
