@@ -12,7 +12,7 @@ import re
 import ipaddress
 from urllib import request as urllib_request
 from urllib import error as urllib_error
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode, quote, unquote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import uuid
 import socket
@@ -61,6 +61,13 @@ PORT_SCAN_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'port_scan_records.json')
 FIREWALL_RULE_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'firewall_rules.json')
 PORT_RULES_STORE_FILE = os.path.join(app.root_path, 'data', 'rules.json')
 RULE_SNAPSHOTS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'rule_snapshots.json')
+DYNAMIC_BANS_STORE_FILE = os.path.join(LOCAL_STORE_DIR, 'dynamic_bans.json')
+# 威胁响应封禁历史（独立 SQLite，与 USE_LOCAL_FILE_STORE 无关；重启不丢失）
+THREAT_HISTORY_DB = os.path.join(LOCAL_STORE_DIR, 'threat_block_history.db')
+THREAT_BAN_COMMENT_PREFIX = 'fwb:'
+_THREAT_BH_LOCK = threading.RLock()
+FW_HARD_COMMENT_INVALID = 'fw-hard:invalid'
+FW_HARD_COMMENT_SYN = 'fw-hard:syn'
 _STORE_THREAD_LOCK = threading.RLock()
 LEAGSOFT_TERMINAL_QUERY_URL = os.getenv(
     'LEAGSOFT_TERMINAL_QUERY_URL',
@@ -111,7 +118,8 @@ DEFAULT_PERMISSION_CODES = [
     'hosts_view', 'hosts_add', 'hosts_edit', 'hosts_del',
     'iptab_view', 'iptab_add', 'iptab_edit', 'iptab_del',
     'log_view',
-    'ssh_key_manage'
+    'ssh_key_manage',
+    'threat_manage'
 ]
 PERMISSION_DEFINITIONS = [
     {"id": 1, "code": "sys_view", "name": "查看系统设置"},
@@ -130,7 +138,7 @@ PERMISSION_DEFINITIONS = [
     {"id": 14, "code": "temp_add", "name": "添加模板"},
     {"id": 15, "code": "temp_edit", "name": "编辑模板"},
     {"id": 16, "code": "temp_del", "name": "删除模板"},
-    {"id": 17, "code": "hosts_view", "name": "查看主机/客户终端/端口检测/访问来源"},
+    {"id": 17, "code": "hosts_view", "name": "查看主机/客户终端/端口检测/访问来源/威胁扫描"},
     {"id": 18, "code": "hosts_add", "name": "添加主机"},
     {"id": 19, "code": "hosts_edit", "name": "编辑主机"},
     {"id": 20, "code": "hosts_del", "name": "删除主机"},
@@ -139,7 +147,8 @@ PERMISSION_DEFINITIONS = [
     {"id": 23, "code": "iptab_edit", "name": "编辑规则"},
     {"id": 24, "code": "iptab_del", "name": "删除规则"},
     {"id": 25, "code": "log_view", "name": "查看日志"},
-    {"id": 26, "code": "ssh_key_manage", "name": "管理SSH密钥（含下发向导）"}
+    {"id": 26, "code": "ssh_key_manage", "name": "管理SSH密钥（含下发向导）"},
+    {"id": 27, "code": "threat_manage", "name": "威胁响应（SSH/内核分析、策略、防火墙加固与封禁）"}
 ]
 
 # 配置登录管理器
@@ -233,6 +242,19 @@ def _ensure_local_store_files():
         _write_store_json(PORT_RULES_STORE_FILE, {"items": []})
     if not os.path.exists(RULE_SNAPSHOTS_STORE_FILE):
         _write_store_json(RULE_SNAPSHOTS_STORE_FILE, {"items": []})
+    if not os.path.exists(DYNAMIC_BANS_STORE_FILE):
+        _write_store_json(DYNAMIC_BANS_STORE_FILE, {
+            "items": [],
+            "settings": {
+                "failure_threshold": 8,
+                "ban_ttl_hours": 2,
+                "threat_settings_version": 2,
+                "whitelist_cidrs": "",
+                "kernel_drop_threshold": 30,
+                "fw_syn_hashlimit_rate": "25/sec",
+                "fw_syn_hashlimit_burst": 50
+            }
+        })
 
 
 def _read_store_json(path, default):
@@ -368,6 +390,237 @@ def _write_port_scan_records_store(items):
     _write_store_json(PORT_SCAN_STORE_FILE, {"items": items})
 
 
+def _read_dynamic_bans_bundle():
+    data = _read_store_json(DYNAMIC_BANS_STORE_FILE, {"items": [], "settings": {}})
+    if not isinstance(data, dict):
+        return {"items": [], "settings": {}}
+    items = data.get("items", [])
+    if not isinstance(items, list):
+        items = []
+    items = [x for x in items if isinstance(x, dict)]
+    settings = data.get("settings", {})
+    if not isinstance(settings, dict):
+        settings = {}
+    return {"items": items, "settings": settings}
+
+
+def _write_dynamic_bans_bundle(bundle):
+    if not isinstance(bundle, dict):
+        bundle = {"items": [], "settings": {}}
+    items = bundle.get("items", [])
+    if not isinstance(items, list):
+        items = []
+    settings = bundle.get("settings", {})
+    if not isinstance(settings, dict):
+        settings = {}
+    _write_store_json(DYNAMIC_BANS_STORE_FILE, {"items": items, "settings": settings})
+
+
+def _threat_bh_conn():
+    os.makedirs(os.path.dirname(THREAT_HISTORY_DB) or '.', exist_ok=True)
+    conn = sqlite3.connect(THREAT_HISTORY_DB, check_same_thread=False, timeout=25.0)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute('PRAGMA journal_mode=WAL')
+    except Exception:
+        pass
+    return conn
+
+
+def _threat_bh_ensure_schema(conn):
+    conn.execute(
+        '''
+    CREATE TABLE IF NOT EXISTS block_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        host_id INTEGER NOT NULL,
+        host_ip TEXT,
+        ip TEXT NOT NULL,
+        comment_token TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT,
+        operator TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        reason TEXT,
+        source_count INTEGER DEFAULT 0
+    )
+    '''
+    )
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_block_history_host ON block_history(host_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_block_history_host_active ON block_history(host_id, is_active)')
+    conn.commit()
+
+
+def _threat_bh_row_active(rd, now=None):
+    if now is None:
+        now = datetime.now()
+    if int(rd.get('is_active') or 0) != 1:
+        return False
+    exp = rd.get('expires_at') or ''
+    if not exp:
+        return True
+    try:
+        return datetime.strptime(str(exp), '%Y-%m-%d %H:%M:%S') > now
+    except ValueError:
+        return True
+
+
+def _threat_bh_migrate_json_items_if_needed():
+    """将 dynamic_bans.json 中的 items 一次性迁入 block_history，并清空 JSON 中的 items。"""
+    with _THREAT_BH_LOCK:
+        conn = _threat_bh_conn()
+        try:
+            _threat_bh_ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute('SELECT COUNT(1) FROM block_history')
+            n = int(cur.fetchone()[0] or 0)
+            bundle = _read_dynamic_bans_bundle()
+            jitems = [x for x in (bundle.get('items') or []) if isinstance(x, dict)]
+            if n > 0 or not jitems:
+                return
+            for rec in jitems:
+                try:
+                    rid = int(rec.get('id') or 0) or None
+                except (TypeError, ValueError):
+                    rid = None
+                is_act = 1
+                exp = str(rec.get('expires_at') or '')
+                if exp:
+                    try:
+                        if datetime.strptime(exp, '%Y-%m-%d %H:%M:%S') <= datetime.now():
+                            is_act = 0
+                    except ValueError:
+                        pass
+                vals = (
+                    rid,
+                    int(rec.get('host_id') or 0),
+                    str(rec.get('host_ip') or ''),
+                    str(rec.get('ip') or ''),
+                    str(rec.get('comment_token') or ''),
+                    str(rec.get('created_at') or ''),
+                    str(rec.get('expires_at') or ''),
+                    str(rec.get('created_by') or 'system'),
+                    is_act,
+                    str(rec.get('reason') or 'manual'),
+                    int(rec.get('source_count') or 0),
+                )
+                if rid:
+                    cur.execute(
+                        '''
+                        INSERT OR REPLACE INTO block_history
+                        (id, host_id, host_ip, ip, comment_token, created_at, expires_at, operator, is_active, reason, source_count)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                        ''',
+                        vals,
+                    )
+                else:
+                    cur.execute(
+                        '''
+                        INSERT INTO block_history
+                        (host_id, host_ip, ip, comment_token, created_at, expires_at, operator, is_active, reason, source_count)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                        ''',
+                        vals[1:],
+                    )
+            bundle['items'] = []
+            _write_dynamic_bans_bundle(bundle)
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _threat_parse_input_drop_lines(iptables_save_text):
+    """从 iptables-save 解析 INPUT 链上针对 IPv4 的 DROP（含可选 fwb: 注释）。"""
+    out = []
+    for line in (iptables_save_text or '').splitlines():
+        line = line.strip()
+        if not line.startswith('-A INPUT ') or not line.endswith('-j DROP'):
+            continue
+        if '-s ' not in line:
+            continue
+        m_s = re.search(r'-s ([\d.]+)(/\d+)?\s', line)
+        if not m_s:
+            continue
+        ip = m_s.group(1)
+        tok = None
+        mc = re.search(r'--comment\s+(\S+)', line)
+        if mc:
+            raw_c = mc.group(1).strip('"\'')
+            if raw_c.startswith(THREAT_BAN_COMMENT_PREFIX):
+                tok = raw_c[len(THREAT_BAN_COMMENT_PREFIX) :]
+        out.append({'ip': ip, 'token': tok, 'raw': line})
+    return out
+
+
+def _threat_sync_block_history_with_iptables(host, hid, sync_operator='system'):
+    """将远端 INPUT DROP 与本系统登记对齐：缺失规则则标记失效；发现带 fwb: 且库中无登记则补一条导入记录。
+    sync_operator：补录行的操作人，取当前登录用户。"""
+    save_out, err = _run_remote_shell_try(host, 'iptables-save -t filter')
+    if err or not save_out:
+        return
+    drops = _threat_parse_input_drop_lines(save_out)
+    by_token = {d['token']: d for d in drops if d.get('token')}
+    ips_with_drop = {d['ip'] for d in drops}
+
+    with _THREAT_BH_LOCK:
+        conn = _threat_bh_conn()
+        try:
+            _threat_bh_ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute(
+                'SELECT * FROM block_history WHERE host_id=? AND is_active=1',
+                (int(hid),),
+            )
+            for r in cur.fetchall():
+                rd = dict(r)
+                tok = str(rd.get('comment_token') or '')
+                ip = str(rd.get('ip') or '')
+                if tok:
+                    if tok not in by_token:
+                        cur.execute('UPDATE block_history SET is_active=0 WHERE id=?', (rd['id'],))
+                else:
+                    if ip and ip not in ips_with_drop:
+                        cur.execute('UPDATE block_history SET is_active=0 WHERE id=?', (rd['id'],))
+
+            cur.execute(
+                'SELECT comment_token FROM block_history WHERE host_id=? AND is_active=1',
+                (int(hid),),
+            )
+            known_toks = {str(row[0]) for row in cur.fetchall() if row[0]}
+
+            tz = pytz.timezone('Asia/Shanghai')
+            now_s = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+            op = str(sync_operator or '').strip() or 'system'
+            for d in drops:
+                t = d.get('token')
+                if not t or t in known_toks:
+                    continue
+                cur.execute('SELECT id FROM block_history WHERE comment_token=? LIMIT 1', (t,))
+                if cur.fetchone():
+                    continue
+                cur.execute(
+                    '''
+                    INSERT INTO block_history
+                    (host_id, host_ip, ip, comment_token, created_at, expires_at, operator, is_active, reason, source_count)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                    ''',
+                    (
+                        int(hid),
+                        str(host.get('ip_address') or ''),
+                        str(d['ip']),
+                        str(t),
+                        now_s,
+                        None,
+                        op,
+                        1,
+                        'sync_import',
+                        0,
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+
 def _read_firewall_rules_store():
     data = _read_store_json(FIREWALL_RULE_STORE_FILE, {"items": []})
     items = data.get('items', []) if isinstance(data, dict) else []
@@ -460,14 +713,135 @@ def _build_permission_response(role_permission_codes):
     return response
 
 
+def _threat_default_settings_dict():
+    return {
+        'failure_threshold': 8,
+        'ban_ttl_hours': 2,
+        'whitelist_cidrs': '',
+        'kernel_drop_threshold': 30,
+        'fw_syn_hashlimit_rate': '25/sec',
+        'fw_syn_hashlimit_burst': 50,
+        'threat_settings_version': 2,
+    }
+
+
+def _fw_hard_normalize_syn_rate(value):
+    s = str(value or '').strip().lower()
+    if not s:
+        return '25/sec'
+    if '/' in s:
+        if re.match(r'^\d+/(sec|second|s|min|minute|m|hour|h|day|d)$', s):
+            return s.replace('second', 'sec').replace('minute', 'min').replace('hour', 'h')
+        return '25/sec'
+    try:
+        n = max(1, min(100000, int(s)))
+        return f'{n}/sec'
+    except (TypeError, ValueError):
+        return '25/sec'
+
+
+def _fw_hard_rate_for_iptables(rate_ui):
+    """将 UI 速率转为 iptables hashlimit 常用单位（second/minute/hour/day）。"""
+    r = str(rate_ui or '25/sec').strip().lower()
+    if '/' not in r:
+        return '25/second'
+    num, _, unit = r.partition('/')
+    if not num.isdigit():
+        return '25/second'
+    umap = {
+        'sec': 'second', 'second': 'second', 's': 'second',
+        'min': 'minute', 'minute': 'minute', 'm': 'minute',
+        'h': 'hour', 'hour': 'hour',
+        'd': 'day', 'day': 'day',
+    }
+    ipt_u = umap.get(unit.strip(), 'second')
+    return '%s/%s' % (num, ipt_u)
+
+
+def _threat_normalize_settings_dict(raw):
+    d = _threat_default_settings_dict()
+    if isinstance(raw, dict):
+        try:
+            ft = int(raw.get('failure_threshold', d['failure_threshold']))
+            d['failure_threshold'] = max(1, min(9999, ft))
+        except (TypeError, ValueError):
+            pass
+        try:
+            bt = int(raw.get('ban_ttl_hours', d['ban_ttl_hours']))
+            d['ban_ttl_hours'] = max(1, min(8760, bt))
+        except (TypeError, ValueError):
+            pass
+        wc = raw.get('whitelist_cidrs', d['whitelist_cidrs'])
+        d['whitelist_cidrs'] = str(wc if wc is not None else '')
+        try:
+            kd = int(raw.get('kernel_drop_threshold', d['kernel_drop_threshold']))
+            d['kernel_drop_threshold'] = max(1, min(999999, kd))
+        except (TypeError, ValueError):
+            pass
+        d['fw_syn_hashlimit_rate'] = _fw_hard_normalize_syn_rate(
+            raw.get('fw_syn_hashlimit_rate', d['fw_syn_hashlimit_rate'])
+        )
+        try:
+            sb = int(raw.get('fw_syn_hashlimit_burst', d['fw_syn_hashlimit_burst']))
+            d['fw_syn_hashlimit_burst'] = max(1, min(100000, sb))
+        except (TypeError, ValueError):
+            pass
+        # 旧版默认封禁 168 小时；无版本号的配置若仍为 168，按新产品默认改为 2（已带 threat_settings_version 的不再改写）
+        ver = raw.get('threat_settings_version')
+        if ver is None and int(d.get('ban_ttl_hours') or 0) == 168:
+            d['ban_ttl_hours'] = 2
+        try:
+            vnum = int(ver) if ver is not None else 2
+        except (TypeError, ValueError):
+            vnum = 2
+        d['threat_settings_version'] = max(2, vnum)
+    return d
+
+
+def _normalize_dynamic_bans_store(now):
+    """威胁响应封禁记录与策略（独立 JSON，与主机是否走 SQLite 无关）。"""
+    dbundle = _read_dynamic_bans_bundle()
+    d_items = []
+    for item in dbundle.get('items', []):
+        if not isinstance(item, dict):
+            continue
+        rec = dict(item)
+        try:
+            rec['id'] = int(rec.get('id', 0) or 0)
+        except (TypeError, ValueError):
+            rec['id'] = 0
+        rec['host_id'] = int(rec.get('host_id', 0) or 0)
+        rec['host_ip'] = str(rec.get('host_ip', '') or '')
+        rec['ip'] = str(rec.get('ip', '') or '')
+        rec['reason'] = str(rec.get('reason', 'manual') or 'manual')
+        try:
+            rec['source_count'] = int(rec.get('source_count', 0) or 0)
+        except (TypeError, ValueError):
+            rec['source_count'] = 0
+        rec['comment_token'] = str(rec.get('comment_token', '') or '')
+        rec['created_at'] = str(rec.get('created_at', now) or now)
+        rec['expires_at'] = str(rec.get('expires_at', '') or '')
+        rec['created_by'] = str(rec.get('created_by', '') or '')
+        d_items.append(rec)
+    d_settings = _threat_normalize_settings_dict(dbundle.get('settings', {}))
+    new_bundle = {'items': d_items, 'settings': d_settings}
+    if new_bundle['items'] != dbundle.get('items', []) or new_bundle['settings'] != dbundle.get('settings', {}):
+        _write_dynamic_bans_bundle(new_bundle)
+
+
 def _normalize_local_store_data():
     """
     启动时规范化本地存储结构，避免历史数据字段缺失导致运行期异常。
     """
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    _normalize_dynamic_bans_store(now)
+    try:
+        _threat_bh_migrate_json_items_if_needed()
+    except Exception as e:
+        app.logger.error(f"威胁响应封禁历史迁移失败: {e}")
+
     if not USE_LOCAL_FILE_STORE:
         return
-
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     # hosts
     hosts = _read_hosts_from_store()
@@ -552,7 +926,10 @@ def _normalize_local_store_data():
         permission_codes = role.get('permission_codes', [])
         if not isinstance(permission_codes, list):
             permission_codes = [permission_codes]
-        role['permission_codes'] = sorted(set(_permission_codes_from_payload(permission_codes)))
+        code_set = set(_permission_codes_from_payload(permission_codes))
+        if str(role.get('role_name', '')).lower() == 'admin':
+            code_set.update(DEFAULT_PERMISSION_CODES)
+        role['permission_codes'] = sorted(code_set)
         role['created_at'] = str(role.get('created_at', now) or now)
         role['updated_at'] = str(role.get('updated_at', now) or now)
         norm_roles.append(role)
@@ -696,8 +1073,6 @@ def _normalize_local_store_data():
         norm_snapshots.append(snap)
     if norm_snapshots != snapshots:
         _write_rule_snapshots_store(norm_snapshots)
-
-
 
 
 def _append_operation_log_store(log_item):
@@ -929,6 +1304,508 @@ def _run_remote_shell_try(host, cmd):
 def _remote_bash_lc(host, inner_script):
     """在远端用 bash -lc 执行一段脚本（支持重定向、|| true 等）。"""
     return _run_remote_shell(host, 'bash -lc ' + shlex.quote(inner_script))
+
+
+_TR_SSH_FAIL_PATTERNS = (
+    re.compile(r'Failed password for (?:invalid user )?\S+ from (\S+) port \d+', re.I),
+    re.compile(r'Invalid user \S+ from (\S+) port \d+', re.I),
+    re.compile(r'authentication failure[^;\n]*rhost=(\S+)', re.I),
+    re.compile(r'Connection (?:closed|reset) by(?: authenticating)? user \S+ (\S+) port \d+', re.I),
+)
+
+# ISO：journalctl -o short-iso / rsyslog RFC3339 常见为 T 分隔，可带微秒与时区
+_THREAT_LOG_ISO_TS = re.compile(
+    r'^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}(?::?\d{2})?)?'
+)
+# 传统 syslog：可带微秒（journalctl short-precise 等）
+_THREAT_LOG_SYSLOG_TS = re.compile(
+    r'^(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?\s+'
+)
+_THREAT_LOG_SYSLOG_PRI = re.compile(r'^(?:<\d+>(?:\d+\s+)?)?')
+
+
+def _threat_parse_scan_datetime(val):
+    """解析前端 datetime-local / URL 传入的起止时间（按 naive 本地时间理解）。"""
+    if val is None or str(val).strip() == '':
+        return None
+    s = unquote(str(val).strip()).replace('T', ' ')
+    if len(s) == 10:
+        s = s + ' 00:00:00'
+    elif len(s) == 16:
+        s = s + ':00'
+    elif len(s) > 19:
+        s = s[:19]
+    try:
+        return datetime.strptime(s, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        try:
+            return datetime.strptime(s[:10], '%Y-%m-%d')
+        except ValueError:
+            return None
+
+
+def _threat_try_parse_log_line_ts(line, years):
+    """从 journalctl / syslog 常见行首解析时间。"""
+    s = (line or '').lstrip()
+    if not s:
+        return None
+    mpri = _THREAT_LOG_SYSLOG_PRI.match(s)
+    if mpri and mpri.group(0):
+        s = s[mpri.end():]
+    m = _THREAT_LOG_ISO_TS.match(s)
+    if m:
+        try:
+            return datetime.strptime(m.group(1) + ' ' + m.group(2), '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            return None
+    m = _THREAT_LOG_SYSLOG_TS.match(s)
+    if not m:
+        return None
+    mon_s, day, hh, mm, ss = m.groups()
+    try:
+        mon = datetime.strptime(mon_s, '%b').month
+    except ValueError:
+        return None
+    d, h, mi, sec = int(day), int(hh), int(mm), int(ss)
+    for y in years:
+        try:
+            return datetime(y, mon, d, h, mi, sec)
+        except ValueError:
+            continue
+    return None
+
+
+def _threat_filter_log_text_by_time(log_text, since_dt, until_dt):
+    """按行首时间戳筛日志（用于 journalctl 二次收紧或 tail 文件日志）。"""
+    if since_dt is None or until_dt is None or not (log_text or '').strip():
+        return log_text
+    y_lo = min(since_dt.year, until_dt.year)
+    y_hi = max(since_dt.year, until_dt.year)
+    years = list(range(y_hi + 1, y_lo - 2, -1))
+    lines = (log_text or '').splitlines()
+    out = []
+    carry = False
+    for line in lines:
+        dt = _threat_try_parse_log_line_ts(line, years)
+        if dt is None:
+            if carry:
+                out.append(line)
+            continue
+        carry = since_dt <= dt <= until_dt
+        if carry:
+            out.append(line)
+    joined = '\n'.join(out)
+    # 若行首格式仍无法识别，误筛会得到空串；此时保留原文避免「有日志却 0 字符」
+    if not joined.strip() and (log_text or '').strip():
+        return log_text
+    return joined
+
+
+def _threat_parse_whitelist_nets(text):
+    nets = []
+    for line in (text or '').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        try:
+            nets.append(ipaddress.ip_network(line, strict=False))
+        except ValueError:
+            continue
+    return nets
+
+
+def _threat_ipv4_only(addr):
+    if not addr:
+        return None
+    s = str(addr).strip()
+    if s.startswith('::ffff:'):
+        s = s[7:]
+    try:
+        ip = ipaddress.ip_address(s)
+        if isinstance(ip, ipaddress.IPv4Address):
+            return str(ip)
+    except ValueError:
+        pass
+    return None
+
+
+def _threat_ip_in_nets(ip_str, nets):
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return any(ip in net for net in nets)
+    except ValueError:
+        return True
+
+
+def _threat_collect_remote_ssh_logs(host, since_dt=None, until_dt=None):
+    """
+    采集远端 SSH 相关日志。若传入 since_dt/until_dt，则 journalctl 使用 --since/--until；
+    否则沿用最近 48 小时。返回文本可在本机再按行时间戳过滤（适配 tail 文件日志）。
+    """
+    if since_dt is not None and until_dt is not None:
+        s1 = since_dt.strftime('%Y-%m-%d %H:%M:%S')
+        s2 = until_dt.strftime('%Y-%m-%d %H:%M:%S')
+        q1, q2 = shlex.quote(s1), shlex.quote(s2)
+        script = f'''if command -v journalctl >/dev/null 2>&1; then
+  j1=$(journalctl -o short -u sshd --since {q1} --until {q2} --no-pager 2>/dev/null || true)
+  j2=$(journalctl -o short -u ssh --since {q1} --until {q2} --no-pager 2>/dev/null || true)
+  if test -n "$j1$j2"; then
+    printf '%s\\n%s\\n' "$j1" "$j2"
+    exit 0
+  fi
+fi
+for f in /var/log/secure /var/log/auth.log; do
+  if test -r "$f"; then tail -n 80000 "$f" 2>/dev/null; echo ""; fi
+done'''
+    else:
+        script = '''
+if command -v journalctl >/dev/null 2>&1; then
+  j1=$(journalctl -o short -u sshd --since "48 hours ago" --no-pager 2>/dev/null || true)
+  j2=$(journalctl -o short -u ssh --since "48 hours ago" --no-pager 2>/dev/null || true)
+  if test -n "$j1$j2"; then
+    printf '%s\\n%s\\n' "$j1" "$j2"
+    exit 0
+  fi
+fi
+for f in /var/log/secure /var/log/auth.log; do
+  if test -r "$f"; then tail -n 20000 "$f" 2>/dev/null; echo ""; fi
+done
+'''
+    raw = _run_remote_shell(host, 'bash -lc ' + shlex.quote(script.strip()))
+    if since_dt is not None and until_dt is not None:
+        raw = _threat_filter_log_text_by_time(raw, since_dt, until_dt)
+    return raw
+
+
+def _threat_parse_ssh_fail_counts(log_text):
+    counts = {}
+    for line in (log_text or '').splitlines():
+        for pat in _TR_SSH_FAIL_PATTERNS:
+            m = pat.search(line)
+            if m:
+                ip = _threat_ipv4_only(m.group(1))
+                if ip:
+                    counts[ip] = counts.get(ip, 0) + 1
+                break
+    rows = [{'ip': k, 'count': v} for k, v in counts.items()]
+    rows.sort(key=lambda r: (-r['count'], r['ip']))
+    return rows
+
+
+_KERNEL_SRC_RE = re.compile(r'\bSRC=(\d{1,3}(?:\.\d{1,3}){3})\b')
+
+
+def _threat_collect_kernel_netfilter_logs(host):
+    script = '''
+j=""
+if command -v journalctl >/dev/null 2>&1; then
+  j=$(journalctl -k --since "48 hours ago" --no-pager 2>/dev/null | tail -c 500000 || true)
+fi
+d=""
+if command -v dmesg >/dev/null 2>&1; then
+  d=$(dmesg 2>/dev/null | tail -c 300000 || true)
+fi
+printf '%s\n%s\n' "$j" "$d"
+'''
+    return _run_remote_shell(host, 'bash -lc ' + shlex.quote(script.strip()))
+
+
+def _threat_parse_kernel_src_counts(log_text):
+    counts = {}
+    for m in _KERNEL_SRC_RE.finditer(log_text or ''):
+        ip = _threat_ipv4_only(m.group(1))
+        if ip:
+            counts[ip] = counts.get(ip, 0) + 1
+    rows = [{'ip': k, 'count': v} for k, v in counts.items()]
+    rows.sort(key=lambda r: (-r['count'], r['ip']))
+    return rows
+
+
+def _fw_hard_syn_insert_cmd(host_id, rate, burst):
+    hl = 'fwh%d' % int(host_id)
+    r_ipt = _fw_hard_rate_for_iptables(rate)
+    return (
+        'iptables -I INPUT 1 -p tcp --syn -m hashlimit '
+        '--hashlimit-above %s --hashlimit-burst %d --hashlimit-mode srcip '
+        '--hashlimit-name %s -m comment --comment %s -j DROP'
+        % (r_ipt, int(burst), hl, shlex.quote(FW_HARD_COMMENT_SYN))
+    )
+
+
+def _fw_hard_syn_delete_cmd(host_id, rate, burst):
+    hl = 'fwh%d' % int(host_id)
+    r_ipt = _fw_hard_rate_for_iptables(rate)
+    return (
+        'iptables -D INPUT -p tcp --syn -m hashlimit '
+        '--hashlimit-above %s --hashlimit-burst %d --hashlimit-mode srcip '
+        '--hashlimit-name %s -m comment --comment %s -j DROP'
+        % (r_ipt, int(burst), hl, shlex.quote(FW_HARD_COMMENT_SYN))
+    )
+
+
+def _fw_hard_invalid_insert_cmd():
+    return (
+        'iptables -I INPUT 1 -m conntrack --ctstate INVALID '
+        '-m comment --comment %s -j DROP' % shlex.quote(FW_HARD_COMMENT_INVALID)
+    )
+
+
+def _fw_hard_invalid_delete_cmd():
+    return (
+        'iptables -D INPUT -m conntrack --ctstate INVALID '
+        '-m comment --comment %s -j DROP' % shlex.quote(FW_HARD_COMMENT_INVALID)
+    )
+
+
+def _fw_hard_status_from_save(text):
+    if not text:
+        return {'invalid': False, 'syn': False}
+    return {
+        'invalid': FW_HARD_COMMENT_INVALID in text,
+        'syn': FW_HARD_COMMENT_SYN in text,
+    }
+
+
+def _fw_hard_apply(host, host_id, do_invalid, do_syn, settings):
+    rate = settings.get('fw_syn_hashlimit_rate') or '25/sec'
+    burst = int(settings.get('fw_syn_hashlimit_burst') or 50)
+    out, err = _run_remote_shell_try(host, 'iptables-save -t filter')
+    if err:
+        raise RuntimeError(err)
+    st = _fw_hard_status_from_save(out)
+    msgs = []
+    if do_syn:
+        if not st['syn']:
+            _run_remote_shell(host, _fw_hard_syn_insert_cmd(host_id, rate, burst))
+            msgs.append('已下发 SYN hashlimit')
+        else:
+            msgs.append('SYN 加固已存在，跳过')
+    if do_invalid:
+        if not st['invalid']:
+            _run_remote_shell(host, _fw_hard_invalid_insert_cmd())
+            msgs.append('已下发 INVALID 丢弃')
+        else:
+            msgs.append('INVALID 加固已存在，跳过')
+    if not msgs:
+        msgs.append('未选择任何加固项')
+    _persist_host_firewall_rules(host)
+    return '; '.join(msgs)
+
+
+def _fw_hard_remove(host, host_id, settings):
+    rate = settings.get('fw_syn_hashlimit_rate') or '25/sec'
+    burst = int(settings.get('fw_syn_hashlimit_burst') or 50)
+    out, err = _run_remote_shell_try(host, 'iptables-save -t filter')
+    st = _fw_hard_status_from_save(out) if not err else {'invalid': False, 'syn': False}
+    parts = []
+    if st['invalid']:
+        parts.append(_fw_hard_invalid_delete_cmd() + ' 2>/dev/null || true')
+    if st['syn']:
+        parts.append(_fw_hard_syn_delete_cmd(host_id, rate, burst) + ' 2>/dev/null || true')
+    if not parts:
+        return '未发现 fw-hard 加固规则（或无法读取 iptables-save）'
+    _remote_bash_lc(host, '; '.join(parts))
+    _persist_host_firewall_rules(host)
+    return '已尝试撤销 fw-hard 规则（若曾改过快照参数，请登录主机核对 iptables）'
+
+
+def _threat_ban_comment(token):
+    return f'{THREAT_BAN_COMMENT_PREFIX}{token}'
+
+
+def _threat_iptables_ban_insert_cmd(ipv4, token):
+    c = _threat_ban_comment(token)
+    return (
+        f'iptables -I INPUT 1 -s {ipv4}/32 -m comment --comment {shlex.quote(c)} -j DROP'
+    )
+
+
+def _threat_iptables_ban_delete_cmd(ipv4, token):
+    c = _threat_ban_comment(token)
+    return (
+        f'iptables -D INPUT -s {ipv4}/32 -m comment --comment {shlex.quote(c)} -j DROP'
+    )
+
+
+def _threat_active_ban_for_host_ip(host_id, ipv4):
+    """查询 block_history：该主机上该 IP 是否仍在有效封禁期内。"""
+    try:
+        _threat_bh_migrate_json_items_if_needed()
+    except Exception:
+        pass
+    hid = int(host_id)
+    ip = str(ipv4 or '')
+    with _THREAT_BH_LOCK:
+        conn = _threat_bh_conn()
+        try:
+            _threat_bh_ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute(
+                'SELECT * FROM block_history WHERE host_id=? AND ip=? AND is_active=1 ORDER BY id DESC',
+                (hid, ip),
+            )
+            now = datetime.now()
+            for r in cur.fetchall():
+                rd = dict(r)
+                if _threat_bh_row_active(rd, now):
+                    return rd
+            return None
+        finally:
+            conn.close()
+
+
+THREAT_BAN_BATCH_MAX = 64
+
+
+def _threat_ban_one_ipv4(
+    host,
+    hid,
+    ip_raw,
+    ttl_hours,
+    reason,
+    source_count,
+    user_id,
+    username,
+    *,
+    write_operation_log=True,
+    log_iptables_failure=True,
+):
+    """
+    在目标机插入单条 INPUT DROP 并写入 block_history（SQLite）。
+    成功返回 (True, rec)；失败返回 (False, 错误信息字符串)。
+    """
+    ip = _threat_ipv4_only(str(ip_raw or '').strip())
+    if not ip:
+        return False, '仅支持 IPv4 封禁，且地址格式须合法'
+    bundle = _read_dynamic_bans_bundle()
+    settings = _threat_normalize_settings_dict(bundle.get('settings', {}))
+    if _threat_active_ban_for_host_ip(hid, ip):
+        return False, '该主机上此 IP 已在封禁有效期内'
+    try:
+        ttl = int(ttl_hours)
+        ttl = max(1, min(8760, ttl))
+    except (TypeError, ValueError):
+        ttl = settings['ban_ttl_hours']
+    token = uuid.uuid4().hex[:12]
+    try:
+        _run_remote_shell(host, _threat_iptables_ban_insert_cmd(ip, token))
+        _persist_host_firewall_rules(host)
+    except RuntimeError as e:
+        if log_iptables_failure:
+            log_operation(
+                user_id=user_id,
+                username=username,
+                operation_type='添加',
+                operation_object='威胁响应封禁',
+                operation_summary=f"封禁失败 {host.get('ip_address')} <- {ip}",
+                operation_details=json.dumps({'host_id': hid, 'ip': ip, 'error': str(e)}, ensure_ascii=False),
+                success=0
+            )
+        return False, str(e)
+    tz = pytz.timezone('Asia/Shanghai')
+    created = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+    expires = (datetime.now(tz) + timedelta(hours=ttl)).strftime('%Y-%m-%d %H:%M:%S')
+    op = str(username or '').strip() or 'system'
+    with _THREAT_BH_LOCK:
+        conn = _threat_bh_conn()
+        try:
+            _threat_bh_ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute(
+                '''
+                INSERT INTO block_history
+                (host_id, host_ip, ip, comment_token, created_at, expires_at, operator, is_active, reason, source_count)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                ''',
+                (
+                    hid,
+                    str(host.get('ip_address', '') or ''),
+                    ip,
+                    token,
+                    created,
+                    expires,
+                    op,
+                    1,
+                    str(reason or 'manual'),
+                    int(source_count or 0),
+                ),
+            )
+            new_id = cur.lastrowid
+            conn.commit()
+        finally:
+            conn.close()
+    rec = {
+        'id': new_id,
+        'host_id': hid,
+        'host_ip': str(host.get('ip_address', '') or ''),
+        'ip': ip,
+        'reason': str(reason or 'manual'),
+        'source_count': int(source_count or 0),
+        'comment_token': token,
+        'created_at': created,
+        'expires_at': expires,
+        'created_by': op,
+    }
+    if write_operation_log:
+        log_operation(
+            user_id=user_id,
+            username=username,
+            operation_type='添加',
+            operation_object='威胁响应封禁',
+            operation_summary=f"INPUT DROP {ip} → 主机 {host.get('ip_address')} TTL={ttl}h",
+            operation_details=json.dumps(rec, ensure_ascii=False),
+            success=1
+        )
+    return True, rec
+
+
+def _expire_due_threat_bans():
+    now = datetime.now()
+    removed = 0
+    with _THREAT_BH_LOCK:
+        conn = _threat_bh_conn()
+        try:
+            _threat_bh_ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute('SELECT * FROM block_history WHERE is_active=1')
+            rows = list(cur.fetchall())
+            for r in rows:
+                rd = dict(r)
+                exp = str(rd.get('expires_at') or '')
+                if not exp:
+                    continue
+                try:
+                    exp_dt = datetime.strptime(exp, '%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    continue
+                if exp_dt > now:
+                    continue
+                host = _load_host_connection_info(int(rd.get('host_id', 0) or 0))
+                ip = str(rd.get('ip', '') or '')
+                token = str(rd.get('comment_token', '') or '')
+                if host and ip and token:
+                    try:
+                        _run_remote_shell(host, _threat_iptables_ban_delete_cmd(ip, token))
+                        _persist_host_firewall_rules(host)
+                    except Exception as e:
+                        app.logger.warning(
+                            f"威胁响应：到期解封 iptables 失败 host_ip={rd.get('host_ip')} src={ip} err={e}"
+                        )
+                cur.execute('UPDATE block_history SET is_active=0 WHERE id=?', (rd['id'],))
+                removed += 1
+            conn.commit()
+        finally:
+            conn.close()
+    return removed
+
+
+def clean_expired_threat_bans():
+    try:
+        n = _expire_due_threat_bans()
+        if n:
+            app.logger.info(f"威胁响应：已清理到期封禁记录 {n} 条")
+    except Exception as e:
+        app.logger.error(f"威胁响应：到期封禁清理失败: {e}")
 
 
 def _ci_normalize_ip(addr):
@@ -1711,6 +2588,12 @@ scheduler.add_job(
 scheduler.add_job(
     id='clean_expired_port_rules',
     func=clean_expired_port_rules,
+    trigger='interval',
+    minutes=1
+)
+scheduler.add_job(
+    id='clean_expired_threat_bans',
+    func=clean_expired_threat_bans,
     trigger='interval',
     minutes=1
 )
@@ -3235,6 +4118,35 @@ def connection_insight():
         return f"加载访问来源页面失败: {str(e)}", 500
 
 
+@app.route('/threat_response', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def threat_response():
+    try:
+        cursor = None
+        if not USE_LOCAL_FILE_STORE:
+            db = get_db()
+            cursor = db.cursor()
+        host_options = _get_rule_view_hosts(cursor)
+        can_threat_manage = current_user.has_permission('threat_manage')
+        can_ip_ban = can_threat_manage or current_user.has_permission('iptab_add')
+        return render_template(
+            'threat_response_ssh.html',
+            host_options=host_options,
+            can_threat_manage=can_threat_manage,
+            can_ip_ban=can_ip_ban,
+        )
+    except Exception as e:
+        return f"加载威胁响应页面失败: {str(e)}", 500
+
+
+@app.route('/threat_response/ssh', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def threat_response_ssh():
+    return redirect(url_for('threat_response'), code=302)
+
+
 @app.route('/api/host-connection-insight', methods=['GET'])
 @login_required
 @permission_required('hosts_view')
@@ -3315,6 +4227,539 @@ def host_connection_insight_api():
         'listeners': listeners,
         'listener_count': len(listeners),
     })
+
+
+@app.route('/api/threat-response/settings', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def threat_response_settings_get():
+    bundle = _read_dynamic_bans_bundle()
+    old = bundle.get('settings', {})
+    if not isinstance(old, dict):
+        old = {}
+    settings = _threat_normalize_settings_dict(old)
+    try:
+        if json.dumps(settings, sort_keys=True, ensure_ascii=False) != json.dumps(
+            old, sort_keys=True, ensure_ascii=False
+        ):
+            bundle['settings'] = settings
+            _write_dynamic_bans_bundle(bundle)
+    except Exception:
+        pass
+    return jsonify({'success': True, 'settings': settings})
+
+
+@app.route('/api/threat-response/settings', methods=['POST'])
+@login_required
+@permission_required('threat_manage')
+def threat_response_settings_post():
+    try:
+        validate_csrf_request()
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    payload = request.get_json(silent=True) or {}
+    bundle = _read_dynamic_bans_bundle()
+    cur = _threat_normalize_settings_dict(bundle.get('settings', {}))
+    merged = dict(cur)
+    if 'failure_threshold' in payload:
+        try:
+            merged['failure_threshold'] = max(1, min(9999, int(payload['failure_threshold'])))
+        except (TypeError, ValueError):
+            pass
+    if 'ban_ttl_hours' in payload:
+        try:
+            merged['ban_ttl_hours'] = max(1, min(8760, int(payload['ban_ttl_hours'])))
+        except (TypeError, ValueError):
+            pass
+    if 'whitelist_cidrs' in payload:
+        merged['whitelist_cidrs'] = str(payload.get('whitelist_cidrs') or '')
+    if 'kernel_drop_threshold' in payload:
+        try:
+            merged['kernel_drop_threshold'] = max(1, min(999999, int(payload['kernel_drop_threshold'])))
+        except (TypeError, ValueError):
+            pass
+    if 'fw_syn_hashlimit_rate' in payload:
+        merged['fw_syn_hashlimit_rate'] = _fw_hard_normalize_syn_rate(payload.get('fw_syn_hashlimit_rate'))
+    if 'fw_syn_hashlimit_burst' in payload:
+        try:
+            merged['fw_syn_hashlimit_burst'] = max(1, min(100000, int(payload['fw_syn_hashlimit_burst'])))
+        except (TypeError, ValueError):
+            pass
+    bundle['settings'] = _threat_normalize_settings_dict(merged)
+    _write_dynamic_bans_bundle(bundle)
+    log_operation(
+        user_id=current_user.id,
+        username=current_user.username,
+        operation_type='编辑',
+        operation_object='威胁响应策略',
+        operation_summary='更新威胁响应策略（SSH/内核阈值、白名单、防火墙加固参数等）',
+        operation_details=json.dumps(bundle['settings'], ensure_ascii=False),
+        success=1
+    )
+    return jsonify({'success': True, 'settings': bundle['settings']})
+
+
+@app.route('/api/threat-response/ssh-scan', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def threat_response_ssh_scan():
+    host_id = request.args.get('host_id')
+    if not str(host_id).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    host = _load_host_connection_info(int(host_id))
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+    since_raw = request.args.get('since')
+    until_raw = request.args.get('until')
+    since_dt = until_dt = None
+    if since_raw and until_raw:
+        since_dt = _threat_parse_scan_datetime(since_raw)
+        until_dt = _threat_parse_scan_datetime(until_raw)
+        if not since_dt or not until_dt:
+            return jsonify({'success': False, 'message': '时间范围格式无效，请使用日期时间选择器'}), 400
+        if since_dt >= until_dt:
+            return jsonify({'success': False, 'message': '起始时间须早于结束时间'}), 400
+        if (until_dt - since_dt) > timedelta(days=31):
+            return jsonify({'success': False, 'message': '单次分析时间跨度不得超过 31 天'}), 400
+    elif since_raw or until_raw:
+        return jsonify({'success': False, 'message': '请同时选择「日志起始时间」与「日志结束时间」，或两者都不传以使用默认最近 48 小时'}), 400
+    bundle = _read_dynamic_bans_bundle()
+    settings = _threat_normalize_settings_dict(bundle.get('settings', {}))
+    thr = settings['failure_threshold']
+    try:
+        raw = _threat_collect_remote_ssh_logs(host, since_dt, until_dt)
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    rows = _threat_parse_ssh_fail_counts(raw)
+    enriched = []
+    for r in rows:
+        ip = r['ip']
+        active = _threat_active_ban_for_host_ip(int(host_id), ip)
+        enriched.append({
+            'ip': ip,
+            'count': r['count'],
+            'whitelisted': False,
+            'banned': bool(active),
+            'over_threshold': r['count'] >= thr,
+        })
+    resp = {
+        'success': True,
+        'host_id': int(host_id),
+        'host_ip': host.get('ip_address'),
+        'failure_threshold': thr,
+        'candidates': enriched,
+        'log_chars': len(raw or ''),
+    }
+    if since_dt and until_dt:
+        resp['scan_since'] = since_dt.strftime('%Y-%m-%d %H:%M:%S')
+        resp['scan_until'] = until_dt.strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        resp['scan_since'] = None
+        resp['scan_until'] = None
+        resp['scan_note'] = '未指定时间范围，已使用远端 journalctl 默认「最近 48 小时」或文件尾 20000 行'
+    return jsonify(resp)
+
+
+@app.route('/api/threat-response/fw-status', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def threat_response_fw_status():
+    host_id = request.args.get('host_id')
+    if not str(host_id).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    host = _load_host_connection_info(int(host_id))
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+    out, err = _run_remote_shell_try(host, 'iptables-save -t filter')
+    if err:
+        return jsonify({'success': False, 'message': err}), 500
+    st = _fw_hard_status_from_save(out)
+    return jsonify({
+        'success': True,
+        'host_id': int(host_id),
+        'invalid_active': st['invalid'],
+        'syn_active': st['syn'],
+        'any_active': st['invalid'] or st['syn'],
+    })
+
+
+@app.route('/api/threat-response/kernel-drop-scan', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def threat_response_kernel_drop_scan():
+    host_id = request.args.get('host_id')
+    if not str(host_id).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    host = _load_host_connection_info(int(host_id))
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+    bundle = _read_dynamic_bans_bundle()
+    settings = _threat_normalize_settings_dict(bundle.get('settings', {}))
+    nets = _threat_parse_whitelist_nets(settings.get('whitelist_cidrs'))
+    thr = settings['kernel_drop_threshold']
+    try:
+        raw = _threat_collect_kernel_netfilter_logs(host)
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+    rows = _threat_parse_kernel_src_counts(raw)
+    enriched = []
+    for r in rows:
+        ip = r['ip']
+        wl = _threat_ip_in_nets(ip, nets)
+        active = _threat_active_ban_for_host_ip(int(host_id), ip)
+        enriched.append({
+            'ip': ip,
+            'count': r['count'],
+            'whitelisted': wl,
+            'banned': bool(active),
+            'over_threshold': r['count'] >= thr and not wl,
+        })
+    return jsonify({
+        'success': True,
+        'host_id': int(host_id),
+        'host_ip': host.get('ip_address'),
+        'kernel_drop_threshold': thr,
+        'candidates': enriched,
+        'log_chars': len(raw or ''),
+        'notice': '内核/dmesg 中 SRC= 字段来源混杂，可能含非攻击流量；请结合白名单谨慎封禁。',
+    })
+
+
+@app.route('/api/threat-response/fw-hardening/apply', methods=['POST'])
+@login_required
+@permission_required('threat_manage')
+def threat_response_fw_hardening_apply():
+    try:
+        validate_csrf_request()
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    payload = request.get_json(silent=True) or {}
+    if not str(payload.get('host_id')).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    hid = int(payload['host_id'])
+    host = _load_host_connection_info(hid)
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+    bundle = _read_dynamic_bans_bundle()
+    settings = _threat_normalize_settings_dict(bundle.get('settings', {}))
+    if 'fw_syn_hashlimit_rate' in payload:
+        settings['fw_syn_hashlimit_rate'] = _fw_hard_normalize_syn_rate(payload.get('fw_syn_hashlimit_rate'))
+    if 'fw_syn_hashlimit_burst' in payload:
+        try:
+            settings['fw_syn_hashlimit_burst'] = max(1, min(100000, int(payload['fw_syn_hashlimit_burst'])))
+        except (TypeError, ValueError):
+            pass
+    do_invalid = bool(payload.get('invalid', True))
+    do_syn = bool(payload.get('syn_limit', False))
+    if not do_invalid and not do_syn:
+        return jsonify({'success': False, 'message': '请至少选择一种加固项'}), 400
+    try:
+        msg = _fw_hard_apply(host, hid, do_invalid, do_syn, settings)
+    except RuntimeError as e:
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='添加',
+            operation_object='防火墙加固',
+            operation_summary=f"下发失败 {host.get('ip_address')}",
+            operation_details=json.dumps({'host_id': hid, 'error': str(e)}, ensure_ascii=False),
+            success=0
+        )
+        return jsonify({'success': False, 'message': str(e)}), 500
+    log_operation(
+        user_id=current_user.id,
+        username=current_user.username,
+        operation_type='添加',
+        operation_object='防火墙加固',
+        operation_summary=f"INPUT 加固 {host.get('ip_address')}: {msg}",
+        operation_details=json.dumps({
+            'host_id': hid,
+            'invalid': do_invalid,
+            'syn_limit': do_syn,
+            'fw_syn_hashlimit_rate': settings['fw_syn_hashlimit_rate'],
+            'fw_syn_hashlimit_burst': settings['fw_syn_hashlimit_burst'],
+        }, ensure_ascii=False),
+        success=1
+    )
+    return jsonify({'success': True, 'message': msg})
+
+
+@app.route('/api/threat-response/fw-hardening/remove', methods=['POST'])
+@login_required
+@permission_required('threat_manage')
+def threat_response_fw_hardening_remove():
+    try:
+        validate_csrf_request()
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    payload = request.get_json(silent=True) or {}
+    if not str(payload.get('host_id')).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    hid = int(payload['host_id'])
+    host = _load_host_connection_info(hid)
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+    bundle = _read_dynamic_bans_bundle()
+    settings = _threat_normalize_settings_dict(bundle.get('settings', {}))
+    try:
+        msg = _fw_hard_remove(host, hid, settings)
+    except RuntimeError as e:
+        log_operation(
+            user_id=current_user.id,
+            username=current_user.username,
+            operation_type='删除',
+            operation_object='防火墙加固',
+            operation_summary=f"撤销加固失败 {host.get('ip_address')}",
+            operation_details=json.dumps({'host_id': hid, 'error': str(e)}, ensure_ascii=False),
+            success=0
+        )
+        return jsonify({'success': False, 'message': str(e)}), 500
+    log_operation(
+        user_id=current_user.id,
+        username=current_user.username,
+        operation_type='删除',
+        operation_object='防火墙加固',
+        operation_summary=f"撤销 INPUT 加固 {host.get('ip_address')}: {msg}",
+        operation_details=json.dumps({'host_id': hid}, ensure_ascii=False),
+        success=1
+    )
+    return jsonify({'success': True, 'message': msg})
+
+
+@app.route('/api/threat-response/bans', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def threat_response_bans_get():
+    host_id = request.args.get('host_id')
+    if not str(host_id).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    hid = int(host_id)
+    try:
+        _threat_bh_migrate_json_items_if_needed()
+    except Exception as e:
+        app.logger.warning(f"威胁响应封禁历史迁移检查失败: {e}")
+    sync_user = (
+        (getattr(current_user, 'username', None) or '').strip()
+        if getattr(current_user, 'is_authenticated', False)
+        else ''
+    ) or 'system'
+    host = _load_host_connection_info(hid)
+    if host:
+        try:
+            _threat_sync_block_history_with_iptables(host, hid, sync_user)
+        except Exception as e:
+            app.logger.warning(f"威胁响应 iptables 同步失败 host_id={hid}: {e}")
+    now = datetime.now()
+    out = []
+    with _THREAT_BH_LOCK:
+        conn = _threat_bh_conn()
+        try:
+            _threat_bh_ensure_schema(conn)
+            cur = conn.cursor()
+            if sync_user and sync_user != 'system':
+                cur.execute(
+                    'UPDATE block_history SET operator=? WHERE host_id=? AND operator=?',
+                    (sync_user, hid, 'iptables同步'),
+                )
+            cur.execute(
+                'SELECT * FROM block_history WHERE host_id=? ORDER BY id DESC',
+                (hid,),
+            )
+            for r in cur.fetchall():
+                rd = dict(r)
+                row = {
+                    'id': rd['id'],
+                    'host_id': rd['host_id'],
+                    'host_ip': rd['host_ip'],
+                    'ip': rd['ip'],
+                    'reason': rd['reason'],
+                    'source_count': rd['source_count'],
+                    'comment_token': rd['comment_token'],
+                    'created_at': rd['created_at'],
+                    'expires_at': rd['expires_at'],
+                    'created_by': rd['operator'],
+                    'active': _threat_bh_row_active(rd, now),
+                }
+                out.append(row)
+            conn.commit()
+        finally:
+            conn.close()
+    return jsonify({'success': True, 'host_id': hid, 'bans': out})
+
+
+@app.route('/api/threat-response/ban', methods=['POST'])
+@login_required
+@permission_required_any(['threat_manage', 'iptab_add'])
+def threat_response_ban_post():
+    try:
+        validate_csrf_request()
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    payload = request.get_json(silent=True) or {}
+    if not str(payload.get('host_id')).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    hid = int(payload['host_id'])
+    host = _load_host_connection_info(hid)
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+    settings = _threat_normalize_settings_dict(_read_dynamic_bans_bundle().get('settings', {}))
+    try:
+        ttl = int(payload.get('ttl_hours', settings['ban_ttl_hours']))
+        ttl = max(1, min(8760, ttl))
+    except (TypeError, ValueError):
+        ttl = settings['ban_ttl_hours']
+    ok, info = _threat_ban_one_ipv4(
+        host,
+        hid,
+        payload.get('ip'),
+        ttl,
+        str(payload.get('reason') or 'manual'),
+        int(payload.get('source_count', 0) or 0),
+        current_user.id,
+        current_user.username,
+        write_operation_log=True,
+        log_iptables_failure=True,
+    )
+    if not ok:
+        client_err = any(
+            x in info for x in ('已在封禁', '仅支持 IPv4')
+        )
+        return jsonify({'success': False, 'message': info}), (400 if client_err else 500)
+    return jsonify({'success': True, 'ban': info})
+
+
+@app.route('/api/threat-response/ban-batch', methods=['POST'])
+@login_required
+@permission_required_any(['threat_manage', 'iptab_add'])
+def threat_response_ban_batch_post():
+    try:
+        validate_csrf_request()
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    payload = request.get_json(silent=True) or {}
+    if not str(payload.get('host_id')).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    hid = int(payload['host_id'])
+    host = _load_host_connection_info(hid)
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+    bundle = _read_dynamic_bans_bundle()
+    settings = _threat_normalize_settings_dict(bundle.get('settings', {}))
+    try:
+        ttl = int(payload.get('ttl_hours', settings['ban_ttl_hours']))
+        ttl = max(1, min(8760, ttl))
+    except (TypeError, ValueError):
+        ttl = settings['ban_ttl_hours']
+    raw_ips = payload.get('ips')
+    if not isinstance(raw_ips, list) or not raw_ips:
+        return jsonify({'success': False, 'message': '请传入要封禁的 IP 列表（可先「分析」再一键封禁）'}), 400
+    seen = set()
+    ips = []
+    for x in raw_ips:
+        s = str(x or '').strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        ips.append(s)
+        if len(ips) >= THREAT_BAN_BATCH_MAX:
+            break
+    results = []
+    counts_map = payload.get('counts')
+    if not isinstance(counts_map, dict):
+        counts_map = {}
+    ok_n = 0
+    for ip in ips:
+        try:
+            sc = int(counts_map.get(ip, counts_map.get(str(ip), 0)) or 0)
+        except (TypeError, ValueError):
+            sc = 0
+        ok, info = _threat_ban_one_ipv4(
+            host,
+            hid,
+            ip,
+            ttl,
+            str(payload.get('reason') or 'ssh_bruteforce_batch'),
+            sc,
+            current_user.id,
+            current_user.username,
+            write_operation_log=False,
+            log_iptables_failure=True,
+        )
+        if ok:
+            ok_n += 1
+            results.append({'ip': ip, 'ok': True, 'ban_id': info.get('id')})
+        else:
+            results.append({'ip': ip, 'ok': False, 'message': info})
+    log_operation(
+        user_id=current_user.id,
+        username=current_user.username,
+        operation_type='添加',
+        operation_object='威胁响应封禁',
+        operation_summary=f"批量封禁 {ok_n}/{len(ips)} 个 IP → 主机 {host.get('ip_address')}",
+        operation_details=json.dumps({'host_id': hid, 'ttl_hours': ttl, 'results': results}, ensure_ascii=False),
+        success=1 if ok_n else 0
+    )
+    return jsonify({
+        'success': True,
+        'banned_count': ok_n,
+        'total': len(ips),
+        'results': results,
+    })
+
+
+@app.route('/api/threat-response/unban', methods=['POST'])
+@login_required
+@permission_required_any(['threat_manage', 'iptab_add'])
+def threat_response_unban_post():
+    try:
+        validate_csrf_request()
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    payload = request.get_json(silent=True) or {}
+    if not str(payload.get('ban_id')).isdigit():
+        return jsonify({'success': False, 'message': '缺少有效 ban_id'}), 400
+    ban_id = int(payload['ban_id'])
+    err = None
+    found = None
+    with _THREAT_BH_LOCK:
+        conn = _threat_bh_conn()
+        try:
+            _threat_bh_ensure_schema(conn)
+            cur = conn.cursor()
+            cur.execute('SELECT * FROM block_history WHERE id=?', (ban_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({'success': False, 'message': '记录不存在'}), 404
+            found = dict(row)
+            host = _load_host_connection_info(int(found.get('host_id', 0) or 0))
+            ip = str(found.get('ip', '') or '')
+            token = str(found.get('comment_token', '') or '')
+            if host and ip and token:
+                try:
+                    _run_remote_shell(host, _threat_iptables_ban_delete_cmd(ip, token))
+                    _persist_host_firewall_rules(host)
+                except RuntimeError as e:
+                    err = str(e)
+            cur.execute('UPDATE block_history SET is_active=0 WHERE id=?', (ban_id,))
+            conn.commit()
+        finally:
+            conn.close()
+    log_operation(
+        user_id=current_user.id,
+        username=current_user.username,
+        operation_type='删除',
+        operation_object='威胁响应封禁',
+        operation_summary=f"解封 {found.get('ip')}（主机记录 {found.get('host_ip')}）",
+        operation_details=json.dumps({'ban_id': ban_id, 'iptables_error': err}, ensure_ascii=False),
+        success=1 if not err else 0
+    )
+    if err:
+        return jsonify({
+            'success': True,
+            'message': f'记录已标记为失效，但远端删除 iptables 规则失败: {err}',
+            'warning': err,
+        })
+    return jsonify({'success': True})
 
 
 @app.route('/api/port-detection/scan', methods=['POST'])

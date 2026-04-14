@@ -1,0 +1,602 @@
+{% extends 'base.html' %}
+{% block main %}
+<div class="flex-1 flex flex-col overflow-hidden">
+  <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+    <div class="flex items-center justify-between h-16 px-6">
+      <button type="button" id="mobile-menu-btn" class="md:hidden text-gray-500 hover:text-gray-700" aria-label="打开菜单">
+        <i class="fa fa-bars text-xl"></i>
+      </button>
+      <div class="flex-1 max-w-md mx-4 hidden md:block"></div>
+      <div class="flex items-center space-x-4">
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="window.location.href='/logout'">
+          <span class="flex items-center text-sm">
+            <i class="fa fa-sign-out text-xl mr-1"></i>
+            退出登录
+          </span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+    <div class="container mx-auto max-w-7xl">
+      <div class="mb-8">
+        <h1 class="text-[clamp(1.5rem,3vw,2.5rem)] font-bold text-dark mb-2">威胁响应</h1>
+        <p class="text-secondary">分析远端 SSH 认证失败日志，按阈值识别可疑 IPv4，支持登记 INPUT DROP 与到期回收；后续能力将按场景扩展。</p>
+      </div>
+
+      <div class="border-b border-gray-200 mb-6">
+        <nav class="-mb-px flex flex-wrap" aria-label="威胁响应场景">
+          <span class="whitespace-nowrap py-4 px-4 border-b-2 border-primary text-primary font-medium text-sm select-none" aria-current="page">SSH 登录防护</span>
+          <span class="whitespace-nowrap py-4 px-4 border-b-2 border-transparent text-gray-400 font-medium text-sm cursor-default select-none" title="敬请期待">更多场景</span>
+        </nav>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+        <div class="px-6 py-5 border-b border-gray-100">
+          <h2 class="text-lg font-semibold text-dark">查询与策略</h2>
+        </div>
+        <div class="p-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+          <div class="lg:col-span-12">
+            <label class="block text-sm text-gray-700 mb-1">目标主机 <span class="text-red-500">*</span></label>
+            <select id="host-select" class="w-full max-w-xl px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white">
+              <option value="">请选择主机</option>
+              {% for host in host_options %}
+              <option value="{{ host.id }}">{{ host.host_name }} ({{ host.ip_address }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="lg:col-span-12">
+            <label class="block text-xs text-gray-600 mb-1">日志时间（起—止，须成对；均空则远端默认 48h / 文件尾）</label>
+            <div class="flex flex-wrap items-center gap-2 max-w-3xl">
+              <input type="datetime-local" id="scan-since" step="60" title="起始" class="min-w-0 flex-1 sm:flex-none sm:w-[11.5rem] px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+              <span class="text-gray-400 text-xs shrink-0 select-none">至</span>
+              <input type="datetime-local" id="scan-until" step="60" title="结束" class="min-w-0 flex-1 sm:flex-none sm:w-[11.5rem] px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+            </div>
+          </div>
+          <div class="lg:col-span-12 flex flex-wrap items-center gap-3">
+            <button id="scan-btn" type="button" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm inline-flex items-center gap-1.5 shadow-sm">
+              <i class="fa fa-search"></i>
+              分析 SSH 失败日志
+            </button>
+            {% if can_ip_ban %}
+            <button id="ban-batch-btn" type="button" disabled title="请先分析日志" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm inline-flex items-center gap-1.5 shadow-sm">
+              <i class="fa fa-bolt"></i>
+              一键封禁全部超阈值
+            </button>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if can_threat_manage %}
+        <div class="mt-4 p-4 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-700 leading-relaxed">
+          <strong class="text-slate-800">说明：</strong>IP 白名单将改为在「系统设置」中统一配置，适用于 SSH、Web、端口扫描等全部防护场景；本页不再维护独立白名单。当前封禁与扫描结果<strong>不依据</strong>白名单过滤，待全局接口接入后会自动联动。
+        </div>
+        <div class="mt-6 pt-6 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">SSH 判定阈值（次）</label>
+            <input id="set-threshold" type="number" min="1" max="9999" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="8">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">默认封禁时长（小时）</label>
+            <input id="set-ttl" type="number" min="1" max="8760" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="2">
+          </div>
+          <div class="flex items-end">
+            <button id="save-settings-btn" type="button" class="w-full md:w-auto px-4 py-2 bg-slate-800 text-white rounded-md hover:bg-slate-900 text-sm">
+              保存策略
+            </button>
+          </div>
+        </div>
+        {% endif %}
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+        <div class="px-6 py-5 border-b border-gray-100">
+          <h2 class="text-lg font-semibold text-dark">SSH 失败来源（IPv4）</h2>
+        </div>
+        <div class="p-6">
+        <p id="scan-status" class="text-xs text-gray-500 mb-4">选择主机并（可选）设定时间范围后点击「分析」。具备「威胁响应」或「添加规则」权限时可对超阈值 IP 封禁。</p>
+        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">来源 IP</th>
+                <th class="px-4 py-3 text-right text-xs text-secondary uppercase font-medium">失败次数</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">状态</th>
+                <th class="px-4 py-3 text-right text-xs text-secondary uppercase font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody id="cand-body" class="bg-white divide-y divide-gray-200 text-sm">
+              <tr>
+                <td colspan="4" class="px-4 py-10 text-center text-gray-500">暂无数据</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+        <div class="px-6 py-5 border-b border-gray-100 flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <h2 class="text-lg font-semibold text-dark">本机已登记封禁</h2>
+            <p id="bans-status" class="text-xs text-gray-500 mt-1.5 leading-relaxed">请选择主机；数据在本地库并与远端 iptables（fwb: 注释）对齐。</p>
+          </div>
+          <button id="bans-refresh-btn" type="button" class="shrink-0 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm inline-flex items-center gap-1.5">
+            <i class="fa fa-refresh"></i>
+            刷新封禁列表
+          </button>
+        </div>
+        <div class="p-6">
+        <p class="text-xs text-gray-500 mb-4">历史见 <code class="text-xs">data/store/threat_block_history.db</code>；点击「刷新」会同步远端 <code class="text-xs">iptables-save</code>。</p>
+        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">ID</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">来源 IP</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">封禁时段</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">操作人</th>
+                <th class="px-4 py-3 text-left text-xs text-secondary uppercase font-medium">有效</th>
+                <th class="px-4 py-3 text-right text-xs text-secondary uppercase font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody id="bans-body" class="bg-white divide-y divide-gray-200 text-sm">
+              <tr>
+                <td colspan="6" class="px-4 py-10 text-center text-gray-500">请选择主机后刷新</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock main %}
+
+{% block script %}
+<script>
+(function () {
+  const CSRF_TOKEN = "{{ csrf_token() }}";
+  const CAN_THREAT_MANAGE = {% if can_threat_manage %}true{% else %}false{% endif %};
+  const CAN_IP_BAN = {% if can_ip_ban %}true{% else %}false{% endif %};
+
+  const hostSelect = document.getElementById('host-select');
+  const scanBtn = document.getElementById('scan-btn');
+  const bansRefreshBtn = document.getElementById('bans-refresh-btn');
+  const banBatchBtn = document.getElementById('ban-batch-btn');
+  const scanStatus = document.getElementById('scan-status');
+  const bansStatus = document.getElementById('bans-status');
+  const candBody = document.getElementById('cand-body');
+  const bansBody = document.getElementById('bans-body');
+
+  const setThreshold = document.getElementById('set-threshold');
+  const setTtl = document.getElementById('set-ttl');
+  const saveSettingsBtn = document.getElementById('save-settings-btn');
+  const scanSinceInput = document.getElementById('scan-since');
+  const scanUntilInput = document.getElementById('scan-until');
+
+  let latestCandidates = [];
+
+  function pad2(n) {
+    return n < 10 ? '0' + n : String(n);
+  }
+
+  function toDatetimeLocalValue(d) {
+    return (
+      d.getFullYear() +
+      '-' +
+      pad2(d.getMonth() + 1) +
+      '-' +
+      pad2(d.getDate()) +
+      'T' +
+      pad2(d.getHours()) +
+      ':' +
+      pad2(d.getMinutes())
+    );
+  }
+
+  function initThreatScanTimeRange() {
+    if (!scanSinceInput || !scanUntilInput) return;
+    const end = new Date();
+    const start = new Date(end.getTime() - 48 * 3600000);
+    scanUntilInput.value = toDatetimeLocalValue(end);
+    scanSinceInput.value = toDatetimeLocalValue(start);
+  }
+
+  function buildSshScanQuery(hostId) {
+    let q = 'host_id=' + encodeURIComponent(hostId);
+    const s = scanSinceInput && scanSinceInput.value ? scanSinceInput.value.trim() : '';
+    const u = scanUntilInput && scanUntilInput.value ? scanUntilInput.value.trim() : '';
+    if (s && u) {
+      q += '&since=' + encodeURIComponent(s) + '&until=' + encodeURIComponent(u);
+    }
+    return q;
+  }
+
+  candBody.addEventListener('click', function (e) {
+    const btn = e.target && e.target.closest && e.target.closest('button[data-ban-ip]');
+    if (!btn || !candBody.contains(btn)) return;
+    if (!CAN_IP_BAN) {
+      alert('需要「威胁响应」或「添加规则」权限才可封禁，请联系管理员分配对应权限。');
+      return;
+    }
+    if (btn.disabled) return;
+    doBan(btn.getAttribute('data-ban-ip'), parseInt(btn.getAttribute('data-ban-count'), 10) || 0, 'ssh_bruteforce');
+  });
+
+  function getBatchTargets() {
+    return latestCandidates.filter((c) => c.over_threshold && !c.banned);
+  }
+
+  function updateBanBatchButton() {
+    if (!banBatchBtn) return;
+    const n = getBatchTargets().length;
+    banBatchBtn.disabled = n === 0;
+    banBatchBtn.title = n
+      ? `将封禁 ${n} 个超阈值 IP（已排除已封禁）`
+      : '暂无可批量封禁项：请先「分析」，且需存在超阈值、未封禁的来源';
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** 展示封禁起止时间（时间段语义） */
+  function formatBanPeriod(createdAt, expiresAt, isActive) {
+    const start = (createdAt || '').trim();
+    const endRaw = (expiresAt || '').trim();
+    let endText;
+    if (endRaw) {
+      endText = endRaw;
+    } else if (isActive) {
+      endText = '无固定到期时间（待策略到期或手动解封）';
+    } else {
+      endText = '已结束（无到期记录或已解封）';
+    }
+    if (!start) {
+      return '<span class="text-gray-400">—</span>';
+    }
+    return (
+      '<div class="text-xs leading-snug max-w-[18rem]">' +
+      '<div><span class="text-gray-500">开始</span> <span class="font-mono text-gray-900">' +
+      escapeHtml(start) +
+      '</span></div>' +
+      '<div class="mt-1"><span class="text-gray-500">结束</span> <span class="font-mono text-gray-800">' +
+      escapeHtml(endText) +
+      '</span></div></div>'
+    );
+  }
+
+  async function loadSettings() {
+    if (!CAN_THREAT_MANAGE) return;
+    try {
+      const res = await fetch('/api/threat-response/settings');
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '加载策略失败');
+      const s = data.settings || {};
+      if (setThreshold) setThreshold.value = s.failure_threshold ?? '';
+      if (setTtl) setTtl.value = s.ban_ttl_hours ?? '';
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function saveSettings() {
+    if (!CAN_THREAT_MANAGE) return false;
+    try {
+      const res = await fetch('/api/threat-response/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': CSRF_TOKEN
+        },
+        body: JSON.stringify({
+          failure_threshold: parseInt(setThreshold.value, 10),
+          ban_ttl_hours: parseInt(setTtl.value, 10)
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+      alert('策略已保存');
+      return true;
+    } catch (e) {
+      alert(e.message || '保存失败');
+      return false;
+    }
+  }
+
+  function renderCandidates(rows) {
+    if (!rows || !rows.length) {
+      candBody.innerHTML =
+        '<tr><td colspan="4" class="px-4 py-10 text-center text-gray-500">未发现 IPv4 SSH 失败记录，或日志不可读</td></tr>';
+      updateBanBatchButton();
+      return;
+    }
+    candBody.innerHTML = rows
+      .map((r) => {
+        const badges = [];
+        if (r.banned) badges.push('<span class="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded">已封禁</span>');
+        if (r.over_threshold) badges.push('<span class="text-xs bg-amber-100 text-amber-900 px-2 py-0.5 rounded">超阈值</span>');
+        const ipStr = String(r.ip == null ? '' : r.ip);
+        const banned = !!r.banned;
+        const btnDisabled = banned ? ' disabled' : '';
+        const titleNoPerm = '需要「威胁响应」或「添加规则」权限才可封禁';
+        const titleBanned = '该 IP 已在封禁有效期内';
+        const btnTitle = banned ? titleBanned : !CAN_IP_BAN ? titleNoPerm : '封禁该来源 IP（INPUT DROP）';
+        const banCell =
+          '<td class="px-4 py-3 text-right whitespace-nowrap align-middle">' +
+          '<button type="button" class="threat-ban-btn text-sm font-medium px-3 py-2 rounded-md shadow-sm inline-flex items-center justify-center min-w-[5rem] border border-red-700 bg-red-600 text-white hover:bg-red-700 disabled:opacity-45 disabled:cursor-not-allowed"' +
+          ' style="min-width:5rem;background-color:#dc2626;color:#fff;border:1px solid #b91c1c"' +
+          btnDisabled +
+          ' title="' +
+          btnTitle +
+          '" data-ban-ip="' +
+          escapeHtml(ipStr) +
+          '" data-ban-count="' +
+          Number(r.count) +
+          '">封禁</button></td>';
+        return `<tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-mono text-xs">${escapeHtml(ipStr)}</td>
+        <td class="px-4 py-3 text-right font-mono text-xs">${r.count}</td>
+        <td class="px-4 py-3">${badges.join(' ') || '—'}</td>
+        ${banCell}
+      </tr>`;
+      })
+      .join('');
+
+    updateBanBatchButton();
+  }
+
+  function renderBans(rows) {
+    if (!rows || !rows.length) {
+      bansBody.innerHTML =
+        '<tr><td colspan="6" class="px-4 py-10 text-center text-gray-500">暂无登记记录</td></tr>';
+      return;
+    }
+    bansBody.innerHTML = rows
+      .map((r) => {
+        const active = r.active ? '是' : '否';
+        const activeCls = r.active ? 'text-green-700' : 'text-gray-500';
+        const periodHtml = formatBanPeriod(r.created_at, r.expires_at, !!r.active);
+        let unban;
+        if (!CAN_IP_BAN) {
+          unban = '<td class="px-4 py-3 text-right text-xs text-gray-500 max-w-[10rem]">需「威胁响应」或「添加规则」权限</td>';
+        } else if (r.active) {
+          unban =
+            '<td class="px-4 py-3 text-right whitespace-nowrap">' +
+            '<button type="button" class="text-sm px-3 py-1.5 rounded-md border border-gray-300 text-gray-800 hover:bg-gray-50" data-unban-id="' +
+            r.id +
+            '">解封</button></td>';
+        } else {
+          unban = '<td class="px-4 py-3 text-right text-xs text-gray-400">—</td>';
+        }
+        return `<tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-mono text-xs">${r.id}</td>
+        <td class="px-4 py-3 font-mono text-xs">${escapeHtml(r.ip)}</td>
+        <td class="px-4 py-3 align-top">${periodHtml}</td>
+        <td class="px-4 py-3 text-xs">${escapeHtml(r.created_by || '')}</td>
+        <td class="px-4 py-3 text-xs ${activeCls}">${active}</td>
+        ${unban}
+      </tr>`;
+      })
+      .join('');
+
+    if (CAN_IP_BAN) {
+      bansBody.querySelectorAll('button[data-unban-id]').forEach((btn) => {
+        btn.addEventListener('click', () => doUnban(parseInt(btn.getAttribute('data-unban-id'), 10)));
+      });
+    }
+  }
+
+  async function runScan() {
+    const hostId = hostSelect.value;
+    if (!hostId) {
+      scanStatus.textContent = '请先选择主机。';
+      return;
+    }
+    const s = scanSinceInput && scanSinceInput.value ? scanSinceInput.value.trim() : '';
+    const u = scanUntilInput && scanUntilInput.value ? scanUntilInput.value.trim() : '';
+    if ((s && !u) || (!s && u)) {
+      alert('请同时填写「日志起始时间」与「日志结束时间」，或将两者都清空以使用远端默认「最近 48 小时」。');
+      return;
+    }
+    scanBtn.disabled = true;
+    scanStatus.textContent = '正在读取远端日志…';
+    try {
+      const res = await fetch('/api/threat-response/ssh-scan?' + buildSshScanQuery(hostId));
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '分析失败');
+      let rangeHint = '';
+      if (data.scan_since && data.scan_until) {
+        rangeHint = ` 时间范围：${data.scan_since} ~ ${data.scan_until}。`;
+      } else if (data.scan_note) {
+        rangeHint = ` ${data.scan_note}`;
+      }
+      scanStatus.textContent = `已分析，约 ${data.log_chars || 0} 字符日志；阈值 ${data.failure_threshold} 次。${rangeHint}`;
+      latestCandidates = data.candidates || [];
+      renderCandidates(latestCandidates);
+    } catch (e) {
+      latestCandidates = [];
+      updateBanBatchButton();
+      scanStatus.textContent = e.message || '分析失败';
+      candBody.innerHTML =
+        '<tr><td colspan="4" class="px-4 py-10 text-center text-red-600">' +
+        escapeHtml(e.message || '失败') +
+        '</td></tr>';
+    } finally {
+      scanBtn.disabled = false;
+    }
+  }
+
+  async function loadBans() {
+    const hostId = hostSelect.value;
+    if (!hostId) {
+      bansStatus.textContent = '请先选择主机。';
+      return;
+    }
+    bansRefreshBtn.disabled = true;
+    bansStatus.textContent = '加载中…';
+    try {
+      const res = await fetch('/api/threat-response/bans?host_id=' + encodeURIComponent(hostId));
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '加载失败');
+      bansStatus.textContent = `共 ${(data.bans || []).length} 条记录`;
+      renderBans(data.bans || []);
+    } catch (e) {
+      bansStatus.textContent = e.message || '加载失败';
+    } finally {
+      bansRefreshBtn.disabled = false;
+    }
+  }
+
+  async function banBatch() {
+    if (!CAN_IP_BAN) return;
+    const hostId = hostSelect.value;
+    if (!hostId) {
+      alert('请先选择主机。');
+      return;
+    }
+    const targets = getBatchTargets();
+    if (!targets.length) {
+      alert('当前没有可批量封禁的 IP：需先点击「分析 SSH 失败日志」，且存在「超阈值」、未封禁的来源。');
+      return;
+    }
+    const ips = targets.map((t) => t.ip);
+    const counts = {};
+    targets.forEach((t) => {
+      counts[t.ip] = t.count;
+    });
+    const ttl = setTtl ? parseInt(setTtl.value, 10) : null;
+    if (
+      !confirm(
+        `即将在目标机 INPUT 链批量插入 DROP，共 ${ips.length} 个 IPv4：\n\n${ips.join(
+          '\n'
+        )}\n\n使用默认封禁时长（小时）：${!ttl || Number.isNaN(ttl) ? '（见策略）' : ttl}\n\n确认执行？`
+      )
+    ) {
+      return;
+    }
+    try {
+      const body = {
+        host_id: parseInt(hostId, 10),
+        ips,
+        counts,
+        reason: 'ssh_bruteforce_batch'
+      };
+      if (ttl && !Number.isNaN(ttl)) body.ttl_hours = ttl;
+      const res = await fetch('/api/threat-response/ban-batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': CSRF_TOKEN
+        },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '批量封禁失败');
+      const failed = (data.results || []).filter((r) => !r.ok);
+      let msg = `完成：成功 ${data.banned_count || 0} / ${data.total || ips.length}`;
+      if (failed.length) {
+        msg += '\n\n失败明细：\n' + failed.map((r) => `${r.ip}: ${r.message}`).join('\n');
+      }
+      alert(msg);
+      loadBans();
+      runScan();
+    } catch (e) {
+      alert(e.message || '批量封禁失败');
+    }
+  }
+
+  async function doBan(ip, sourceCount, reason) {
+    if (!CAN_IP_BAN) return;
+    const hostId = hostSelect.value;
+    if (!hostId || !ip) return;
+    const ttl = setTtl ? parseInt(setTtl.value, 10) : null;
+    const r = reason || 'ssh_bruteforce';
+    if (!confirm(`确认封禁 ${ip} ？将在目标机 INPUT 链插入 DROP（默认 TTL 见策略）。`)) return;
+    try {
+      const body = {
+        host_id: parseInt(hostId, 10),
+        ip,
+        reason: r,
+        source_count: sourceCount || 0
+      };
+      if (ttl && !Number.isNaN(ttl)) body.ttl_hours = ttl;
+      const res = await fetch('/api/threat-response/ban', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': CSRF_TOKEN
+        },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '封禁失败');
+      alert('已封禁');
+      loadBans();
+      runScan();
+    } catch (e) {
+      alert(e.message || '封禁失败');
+    }
+  }
+
+  async function doUnban(banId) {
+    if (!CAN_IP_BAN) return;
+    if (!confirm('确认解封？将尝试从目标机 iptables 删除对应 DROP，并在本地将本条记录标记为失效（历史仍保留）。')) return;
+    try {
+      const res = await fetch('/api/threat-response/unban', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': CSRF_TOKEN
+        },
+        body: JSON.stringify({ ban_id: banId })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '解封失败');
+      if (data.warning) alert(data.message || '解封已登记，但远端删规则可能失败');
+      loadBans();
+      runScan();
+    } catch (e) {
+      alert(e.message || '解封失败');
+    }
+  }
+
+  scanBtn.addEventListener('click', runScan);
+  bansRefreshBtn.addEventListener('click', loadBans);
+  if (banBatchBtn) banBatchBtn.addEventListener('click', banBatch);
+  if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', saveSettings);
+
+  hostSelect.addEventListener('change', () => {
+    latestCandidates = [];
+    updateBanBatchButton();
+    candBody.innerHTML =
+      '<tr><td colspan="4" class="px-4 py-10 text-center text-gray-500">请点击「分析」</td></tr>';
+    bansBody.innerHTML =
+      '<tr><td colspan="6" class="px-4 py-10 text-center text-gray-500">正在加载封禁历史…</td></tr>';
+    scanStatus.textContent = '选择主机后点击「分析」。';
+    bansStatus.textContent = '加载中…';
+    if (hostSelect.value) loadBans();
+    else {
+      bansBody.innerHTML =
+        '<tr><td colspan="6" class="px-4 py-10 text-center text-gray-500">请选择主机</td></tr>';
+      bansStatus.textContent = '请选择主机后点击「刷新封禁列表」加载。';
+    }
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initThreatScanTimeRange();
+    loadSettings();
+    if (hostSelect.value) loadBans();
+  });
+})();
+</script>
+{% endblock script %}

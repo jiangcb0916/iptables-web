@@ -1,0 +1,5 @@
+{# threat_nav_active: 'ssh' | 未来其它子页标识 #}
+<nav class="flex flex-wrap items-center gap-2 px-6 py-2.5 bg-slate-50 border-b border-gray-200">
+  <a href="{{ url_for('threat_response') }}"
+     class="px-3 py-1.5 rounded-lg text-sm font-medium transition {% if threat_nav_active == 'ssh' %}bg-white text-primary shadow-sm border border-gray-200{% else %}text-gray-600 hover:text-gray-900 hover:bg-white/80{% endif %}">SSH 登录防护</a>
+</nav>

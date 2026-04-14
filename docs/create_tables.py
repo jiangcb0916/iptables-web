@@ -251,7 +251,10 @@ def init_default_permissions(conn):
             ('删除规则', 'iptab_del', '删除防火墙规则'),
 
             # 日志权限
-            ('查看操作日志', 'log_view', '查看系统操作日志')
+            ('查看操作日志', 'log_view', '查看系统操作日志'),
+
+            # 威胁响应
+            ('威胁响应', 'threat_manage', 'SSH 暴破分析、动态封禁与解封')
         ]
 
         cursor = conn.cursor()

@@ -13,6 +13,7 @@ __pycache__/
 # Runtime data (generated at run time)
 data/store/operation_logs.json
 data/store/port_scan_records.json
+data/store/dynamic_bans.json
 data/store/firewall_rules.json
 data/rules.json
 

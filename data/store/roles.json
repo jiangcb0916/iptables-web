@@ -26,6 +26,7 @@
         "temp_del",
         "temp_edit",
         "temp_view",
+        "threat_manage",
         "user_add",
         "user_assign",
         "user_del",
@@ -33,7 +34,7 @@
         "user_view"
       ],
       "created_at": "2026-04-09 00:00:00",
-      "updated_at": "2026-04-09 00:00:00"
+      "updated_at": "2026-04-14 11:18:22"
     }
   ]
 }
