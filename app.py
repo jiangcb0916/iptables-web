@@ -1093,6 +1093,53 @@ def _ci_parse_ss_block(output, protocol):
     return rows
 
 
+def _ci_parse_ss_listen(output, protocol):
+    """
+    解析 ss -tln / ss -uln：LISTEN / UNCONN 等无对端端口的套接字（对端常为 *:*）。
+    用于展示「本机在监听哪些端口」；无 ESTABLISHED 时仍可出现（例如仅打开 5001 尚无客户端）。
+    """
+    rows = []
+    for raw in (output or '').splitlines():
+        line = (raw or '').strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 5 and not parts[0].isdigit():
+            parts = parts[1:]
+        if len(parts) < 4:
+            continue
+        recv_q, send_q, loc_tok, peer_tok = parts[0], parts[1], parts[2], parts[3]
+        try:
+            rq, sq = int(recv_q), int(send_q)
+        except ValueError:
+            continue
+        loc_ip, loc_port = _ci_split_ss_endpoint(loc_tok)
+        peer_ip, peer_port = _ci_split_ss_endpoint(peer_tok)
+        if loc_port is None or not str(loc_port).isdigit():
+            continue
+        if str(peer_port).isdigit():
+            continue
+        lp = int(loc_port)
+        if not loc_ip:
+            continue
+        nil = _ci_normalize_ip(loc_ip) if loc_ip != '*' else '*'
+        if nil == '*':
+            scope = 'any'
+        else:
+            scope = _ci_ip_scope_label(nil)
+        rows.append({
+            'row_kind': 'listen',
+            'protocol': protocol,
+            'recv_q': rq,
+            'send_q': sq,
+            'local_ip': nil,
+            'local_port': lp,
+            'local_scope': scope,
+        })
+    rows.sort(key=lambda x: (x['local_port'], x['protocol'], x['local_ip']))
+    return rows
+
+
 def _ci_parse_conntrack(output):
     stats = {}
     for line in (output or '').splitlines():
@@ -3211,6 +3258,14 @@ def host_connection_insight_api():
     if not udp_err:
         rows.extend(_ci_parse_ss_block(out_udp, 'udp'))
 
+    listeners = []
+    ltcp_out, ltcp_err = _run_remote_shell_try(host, 'ss -H -tln')
+    if not ltcp_err:
+        listeners.extend(_ci_parse_ss_listen(ltcp_out, 'tcp'))
+    ludp_out, ludp_err = _run_remote_shell_try(host, 'ss -H -uln')
+    if not ludp_err:
+        listeners.extend(_ci_parse_ss_listen(ludp_out, 'udp'))
+
     ct_stats = {}
     conntrack_ran = False
     conntrack_has_lines = False
@@ -3257,6 +3312,8 @@ def host_connection_insight_api():
         'tcp_info_rows': tcp_info_rows,
         'notices': [],
         'connections': rows,
+        'listeners': listeners,
+        'listener_count': len(listeners),
     })
 
 
