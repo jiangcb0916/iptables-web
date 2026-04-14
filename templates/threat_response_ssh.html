@@ -40,6 +40,113 @@
   button.threat-ban-btn.ban-btn-normal:not(:disabled):hover {
     background-color: #475569;
   }
+  /* Flatpickr：与主色、圆角统一，替代原生 datetime-local 弹层 */
+  .threat-datetime-fp .flatpickr-calendar {
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.14), 0 4px 12px rgba(15, 23, 42, 0.08);
+    border: 1px solid #e2e8f0;
+    font-family: inherit;
+  }
+  .threat-datetime-fp .flatpickr-months {
+    padding: 6px 4px 4px;
+    border-radius: 12px 12px 0 0;
+    background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .threat-datetime-fp .flatpickr-current-month {
+    font-weight: 600;
+    color: #0f172a;
+  }
+  .threat-datetime-fp .flatpickr-weekdays {
+    background: #fff;
+  }
+  .threat-datetime-fp span.flatpickr-weekday {
+    color: #64748b;
+    font-weight: 500;
+  }
+  .threat-datetime-fp .flatpickr-day {
+    border-radius: 8px;
+    margin: 1px;
+    max-width: calc(100% - 2px);
+  }
+  .threat-datetime-fp .flatpickr-day.today {
+    border-color: rgb(22, 93, 255);
+    color: rgb(22, 93, 255);
+    font-weight: 600;
+  }
+  .threat-datetime-fp .flatpickr-day.selected,
+  .threat-datetime-fp .flatpickr-day.startRange,
+  .threat-datetime-fp .flatpickr-day.endRange {
+    background: rgb(22, 93, 255);
+    border-color: rgb(22, 93, 255);
+    color: #fff;
+    font-weight: 600;
+  }
+  .threat-datetime-fp .flatpickr-day:hover:not(.selected):not(.startRange):not(.endRange) {
+    background: #eff6ff;
+    border-color: #93c5fd;
+  }
+  .threat-datetime-fp .flatpickr-time {
+    border-top: 1px solid #f1f5f9;
+    border-radius: 0 0 12px 12px;
+    background: #fafbfc;
+  }
+  .threat-datetime-fp .flatpickr-time input:hover,
+  .threat-datetime-fp .flatpickr-time .flatpickr-am-pm:hover {
+    background: #e2e8f0;
+  }
+  .threat-datetime-fp .flatpickr-time input:focus,
+  .threat-datetime-fp .flatpickr-time .flatpickr-am-pm:focus {
+    background: #dbeafe;
+  }
+  /* altInput 时真实 input 仍在 DOM：收拢占位，避免出现「时间框右侧一条空白」 */
+  .threat-fp-field {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+  }
+  .threat-fp-field > input.flatpickr-input {
+    position: absolute !important;
+    width: 1px !important;
+    min-width: 0 !important;
+    max-width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    z-index: -1;
+  }
+  .threat-fp-cal-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 2.25rem;
+    padding: 0 0.5rem;
+    font-size: 14px;
+    color: #64748b;
+    background: #fff;
+    border: none;
+    border-left: 1px solid #e2e8f0;
+    border-radius: 0 0.375rem 0.375rem 0;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .threat-fp-cal-btn:hover {
+    background: #f8fafc;
+    color: rgb(22, 93, 255);
+  }
+  .threat-fp-cal-btn:focus {
+    outline: none;
+  }
+  .threat-fp-field:focus-within {
+    box-shadow: 0 0 0 1px rgb(22, 93, 255);
+  }
 </style>
 <div class="flex-1 flex flex-col overflow-hidden">
   <header class="bg-white border-b border-gray-200 shadow-sm z-10">
@@ -92,11 +199,17 @@
               </select>
             </div>
             <div class="min-w-0 flex-1">
-              <label class="block text-xs font-medium text-gray-600 mb-1">日志时间 <span class="font-normal text-gray-400">（须成对；均空=远端 48h）</span></label>
-              <div class="flex flex-wrap items-center gap-2">
-                <input type="datetime-local" id="scan-since" step="60" title="起始时间" class="min-w-0 w-[11.5rem] max-w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+              <label class="block text-xs font-medium text-gray-600 mb-1">日志时间</label>
+              <div class="threat-datetime-fp flex flex-wrap items-center gap-2">
+                <div class="threat-fp-field min-w-0 max-w-full rounded-md border border-gray-300 bg-white">
+                  <input type="text" id="scan-since" readonly title="起始时间" placeholder="起始时间" autocomplete="off" class="min-w-0 w-[10.25rem] sm:w-[11rem] max-w-full px-2 py-1.5 text-sm border-0 rounded-none rounded-l-md focus:outline-none focus:ring-0 bg-transparent cursor-pointer">
+                  <button type="button" id="scan-since-cal" class="threat-fp-cal-btn" title="打开日历" aria-label="选择起始时间"><i class="fa fa-calendar" aria-hidden="true"></i></button>
+                </div>
                 <span class="text-gray-400 text-xs shrink-0 select-none">至</span>
-                <input type="datetime-local" id="scan-until" step="60" title="结束时间" class="min-w-0 w-[11.5rem] max-w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                <div class="threat-fp-field min-w-0 max-w-full rounded-md border border-gray-300 bg-white">
+                  <input type="text" id="scan-until" readonly title="结束时间" placeholder="结束时间" autocomplete="off" class="min-w-0 w-[10.25rem] sm:w-[11rem] max-w-full px-2 py-1.5 text-sm border-0 rounded-none rounded-l-md focus:outline-none focus:ring-0 bg-transparent cursor-pointer">
+                  <button type="button" id="scan-until-cal" class="threat-fp-cal-btn" title="打开日历" aria-label="选择结束时间"><i class="fa fa-calendar" aria-hidden="true"></i></button>
+                </div>
               </div>
             </div>
             <div class="flex flex-wrap items-center gap-2 xl:ml-auto xl:pb-0.5">
@@ -237,6 +350,9 @@
 {% endblock main %}
 
 {% block script %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/zh.js" crossorigin="anonymous"></script>
 <script>
 (function () {
   const CSRF_TOKEN = "{{ csrf_token() }}";
@@ -349,8 +465,13 @@
   const saveSettingsBtn = document.getElementById('save-settings-btn');
   const scanSinceInput = document.getElementById('scan-since');
   const scanUntilInput = document.getElementById('scan-until');
+  let scanSinceFp = null;
+  let scanUntilFp = null;
 
   let latestCandidates = [];
+  /** 为 true 时按「当前时间」滚动刷新最近 48h；用户改过起止时间后为 false */
+  let threatScanTimeAuto = true;
+  let threatScanTimeTick = null;
 
   function pad2(n) {
     return n < 10 ? '0' + n : String(n);
@@ -372,11 +493,61 @@
 
   function initThreatScanTimeRange() {
     if (!scanSinceInput || !scanUntilInput) return;
+    if (!threatScanTimeAuto) return;
     const end = new Date();
     const start = new Date(end.getTime() - 48 * 3600000);
-    scanUntilInput.value = toDatetimeLocalValue(end);
-    scanSinceInput.value = toDatetimeLocalValue(start);
+    if (scanSinceFp && scanUntilFp) {
+      scanSinceFp.setDate(start, false);
+      scanUntilFp.setDate(end, false);
+    } else {
+      scanUntilInput.value = toDatetimeLocalValue(end);
+      scanSinceInput.value = toDatetimeLocalValue(start);
+    }
   }
+
+  function markThreatScanTimeManual() {
+    threatScanTimeAuto = false;
+  }
+
+  function initThreatScanPickers() {
+    if (typeof flatpickr === 'undefined' || !scanSinceInput || !scanUntilInput) return;
+    var zh = flatpickr.l10ns && flatpickr.l10ns.zh;
+    var base = {
+      enableTime: true,
+      time_24hr: true,
+      minuteIncrement: 1,
+      dateFormat: 'Y-m-d\\TH:i',
+      altInput: true,
+      altFormat: 'Y/m/d H:i',
+      altInputClass:
+        'min-w-0 w-[10.25rem] sm:w-[11rem] max-w-full px-2 py-1.5 text-sm border-0 rounded-none rounded-l-md focus:outline-none focus:ring-0 bg-transparent cursor-pointer',
+      allowInput: false,
+      clickOpens: true,
+      disableMobile: true,
+      onChange: function () {
+        markThreatScanTimeManual();
+      }
+    };
+    if (zh) base.locale = zh;
+    scanSinceFp = flatpickr(scanSinceInput, base);
+    scanUntilFp = flatpickr(scanUntilInput, base);
+    var sinceCal = document.getElementById('scan-since-cal');
+    var untilCal = document.getElementById('scan-until-cal');
+    if (sinceCal && scanSinceFp) {
+      sinceCal.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        scanSinceFp.open();
+      });
+    }
+    if (untilCal && scanUntilFp) {
+      untilCal.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        scanUntilFp.open();
+      });
+    }
+  }
+
+  initThreatScanPickers();
 
   function buildSshScanQuery(hostId) {
     let q = 'host_id=' + encodeURIComponent(hostId);
@@ -848,6 +1019,7 @@
   if (saveSettingsBtn) saveSettingsBtn.addEventListener('click', saveSettings);
 
   hostSelect.addEventListener('change', () => {
+    if (threatScanTimeAuto) initThreatScanTimeRange();
     latestCandidates = [];
     updateBanBatchButton();
     candBody.innerHTML =
@@ -871,6 +1043,14 @@
     if (threatConfirmOk) threatConfirmOk.addEventListener('click', () => closeThreatConfirm(true));
 
     initThreatScanTimeRange();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') initThreatScanTimeRange();
+    });
+    window.addEventListener('pageshow', (ev) => {
+      if (ev.persisted) initThreatScanTimeRange();
+    });
+    threatScanTimeTick = setInterval(initThreatScanTimeRange, 60000);
+
     loadSettings();
     if (hostSelect.value) loadBans();
   });
