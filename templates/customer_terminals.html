@@ -27,9 +27,26 @@
         <button id="refresh-btn" class="fw-btn-outline px-4 py-2 text-sm font-medium">
           <i class="fa fa-refresh mr-1"></i> 刷新
         </button>
-        <button id="export-csv-btn" class="fw-btn-primary px-4 py-2 text-sm font-medium">
-          <i class="fa fa-download mr-1"></i> 导出CSV
-        </button>
+        <details id="export-menu" class="relative group">
+          <summary class="fw-btn-primary px-4 py-2 text-sm font-medium list-none cursor-pointer select-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+            <i class="fa fa-download"></i>
+            导出 CSV
+            <i class="fa fa-caret-down text-xs opacity-90"></i>
+          </summary>
+          <div class="absolute right-0 mt-2 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg z-20">
+            <button type="button" id="export-page-btn"
+                    class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex flex-col gap-0.5">
+              <span class="font-medium">导出当前页</span>
+              <span class="text-xs text-secondary" id="export-page-hint">当前列表中的记录</span>
+            </button>
+            <div class="border-t border-gray-100"></div>
+            <button type="button" id="export-all-btn"
+                    class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex flex-col gap-0.5">
+              <span class="font-medium">导出全部</span>
+              <span class="text-xs text-secondary" id="export-all-hint">含搜索筛选后的全部记录</span>
+            </button>
+          </div>
+        </details>
       </div>
     </div>
   </header>
@@ -58,15 +75,35 @@
           <tbody id="customer-terminal-body" class="bg-white divide-y divide-gray-200"></tbody>
         </table>
 
-        <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div id="page-summary" class="text-sm text-secondary">显示 0 到 0 条，共 0 条</div>
-          <div class="flex items-center gap-2">
-            <button id="prev-btn" class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50">
+          <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+            <label class="text-sm text-secondary inline-flex items-center gap-2">
+              每页
+              <select id="page-size-select"
+                      class="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-dark focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              条
+            </label>
+            <div class="hidden sm:block w-px h-6 bg-gray-200" aria-hidden="true"></div>
+            <button id="prev-btn" type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="上一页">
               <i class="fa fa-chevron-left"></i>
             </button>
-            <span id="page-indicator" class="text-sm text-secondary">第 1 页</span>
-            <button id="next-btn" class="px-3 py-1 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50">
+            <span id="page-indicator" class="text-sm text-secondary tabular-nums min-w-[5.5rem] text-center">第 1 / 1 页</span>
+            <button id="next-btn" type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-secondary hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" title="下一页">
               <i class="fa fa-chevron-right"></i>
+            </button>
+            <div class="hidden sm:block w-px h-6 bg-gray-200" aria-hidden="true"></div>
+            <span class="text-sm text-secondary">跳转</span>
+            <input id="page-jump-input" type="number" min="1" inputmode="numeric"
+                   class="w-16 rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-dark focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                   placeholder="页码" aria-label="页码">
+            <button id="page-jump-btn" type="button" class="fw-btn-outline px-3 py-1.5 text-sm font-medium">
+              确定
             </button>
           </div>
         </div>
@@ -78,6 +115,8 @@
 
 {% block script %}
 <script>
+  const EXPORT_BATCH_SIZE = 200;
+
   const state = {
     items: [],
     total: 0,
@@ -91,10 +130,21 @@
   const pageIndicatorEl = document.getElementById('page-indicator');
   const prevBtn = document.getElementById('prev-btn');
   const nextBtn = document.getElementById('next-btn');
+  const pageSizeSelect = document.getElementById('page-size-select');
+  const pageJumpInput = document.getElementById('page-jump-input');
+  const pageJumpBtn = document.getElementById('page-jump-btn');
   const keywordInput = document.getElementById('keyword-input');
   const refreshBtn = document.getElementById('refresh-btn');
-  const exportCsvBtn = document.getElementById('export-csv-btn');
+  const exportMenu = document.getElementById('export-menu');
+  const exportPageBtn = document.getElementById('export-page-btn');
+  const exportAllBtn = document.getElementById('export-all-btn');
+  const exportPageHint = document.getElementById('export-page-hint');
+  const exportAllHint = document.getElementById('export-all-hint');
   const alertBox = document.getElementById('alert-box');
+
+  function closeExportMenu() {
+    if (exportMenu) exportMenu.removeAttribute('open');
+  }
 
   function showAlert(message, type = 'error') {
     const baseClass = 'mb-4 rounded-lg px-4 py-3 text-sm';
@@ -158,6 +208,26 @@
     pageIndicatorEl.textContent = `第 ${state.page} / ${totalPages} 页`;
     prevBtn.disabled = state.page <= 1;
     nextBtn.disabled = state.page >= totalPages;
+    if (pageJumpInput) {
+      pageJumpInput.max = String(totalPages);
+      pageJumpInput.placeholder = `1-${totalPages}`;
+      if (document.activeElement !== pageJumpInput) {
+        pageJumpInput.value = String(state.page);
+      }
+    }
+    if (pageSizeSelect && String(pageSizeSelect.value) !== String(state.pageSize)) {
+      pageSizeSelect.value = String(state.pageSize);
+    }
+    if (exportPageHint) {
+      exportPageHint.textContent = state.items.length
+        ? `本页 ${state.items.length} 条`
+        : '当前页无可导出记录';
+    }
+    if (exportAllHint) {
+      exportAllHint.textContent = state.total
+        ? `共 ${state.total} 条（与当前搜索条件一致）`
+        : '暂无数据';
+    }
   }
 
   async function loadData() {
@@ -177,6 +247,11 @@
       }
       state.items = Array.isArray(data.items) ? data.items : [];
       state.total = Number(data.total || 0);
+      const totalPages = Math.max(1, Math.ceil(state.total / state.pageSize));
+      if (state.page > totalPages) {
+        state.page = totalPages;
+        return await loadData();
+      }
       renderRows();
       renderPagination();
       const dtHint = data.dingtalk && data.dingtalk.hint;
@@ -197,28 +272,90 @@
     }
   }
 
+  function buildCsvFromItems(items) {
+    const header = ['姓名', '手机号', 'IP地址', '状态'];
+    const lines = [header.join(',')];
+    items.forEach(item => {
+      const row = [item.name || '', item.phone || '', item.ip || '', item.status_text || '未知']
+        .map(value => `"${String(value).replace(/"/g, '""')}"`);
+      lines.push(row.join(','));
+    });
+    return lines.join('\n');
+  }
+
+  function downloadCsv(text, suffix) {
+    const blob = new Blob([`\ufeff${text}`], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    link.href = URL.createObjectURL(blob);
+    link.download = `customer_terminals_${suffix}_${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  }
+
   function exportCurrentRowsToCsv() {
     if (!state.items.length) {
       showAlert('当前页无可导出数据', 'info');
       return;
     }
-    const header = ['姓名', '手机号', 'IP地址', '状态'];
-    const lines = [header.join(',')];
-    state.items.forEach(item => {
-      const row = [item.name || '', item.phone || '', item.ip || '', item.status_text || '未知']
-        .map(value => `"${String(value).replace(/"/g, '""')}"`);
-      lines.push(row.join(','));
-    });
-    const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const now = new Date();
-    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    link.href = URL.createObjectURL(blob);
-    link.download = `customer_terminals_${stamp}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+    downloadCsv(buildCsvFromItems(state.items), 'page');
+    closeExportMenu();
+  }
+
+  async function fetchAllItemsForExport() {
+    const allItems = [];
+    let page = 1;
+    let total = 0;
+    for (let guard = 0; guard < 500; guard += 1) {
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(EXPORT_BATCH_SIZE),
+        keyword: state.keyword
+      });
+      const response = await fetch(`/api/customer-terminals?${params.toString()}`);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || '获取客户终端列表失败');
+      }
+      const chunk = Array.isArray(data.items) ? data.items : [];
+      total = Number(data.total || 0);
+      allItems.push(...chunk);
+      if (allItems.length >= total || chunk.length === 0) {
+        break;
+      }
+      page += 1;
+    }
+    return allItems;
+  }
+
+  async function exportAllRowsToCsv() {
+    if (!state.total) {
+      showAlert('没有可导出的数据', 'info');
+      closeExportMenu();
+      return;
+    }
+    exportAllBtn.disabled = true;
+    exportPageBtn.disabled = true;
+    try {
+      showAlert('正在拉取全部数据用于导出，请稍候…', 'info');
+      const allItems = await fetchAllItemsForExport();
+      if (!allItems.length) {
+        showAlert('没有可导出的数据', 'info');
+        closeExportMenu();
+        return;
+      }
+      clearAlert();
+      downloadCsv(buildCsvFromItems(allItems), 'all');
+      closeExportMenu();
+    } catch (error) {
+      showAlert(error.message || '导出全部失败', 'error');
+    } finally {
+      exportAllBtn.disabled = false;
+      exportPageBtn.disabled = false;
+    }
   }
 
   let keywordTimer = null;
@@ -245,9 +382,46 @@
   });
 
   refreshBtn.addEventListener('click', () => loadData());
-  exportCsvBtn.addEventListener('click', exportCurrentRowsToCsv);
+  exportPageBtn.addEventListener('click', () => exportCurrentRowsToCsv());
+  exportAllBtn.addEventListener('click', () => exportAllRowsToCsv());
+
+  pageSizeSelect.addEventListener('change', (event) => {
+    const next = Number(event.target.value);
+    if (!Number.isFinite(next) || next <= 0) return;
+    state.pageSize = next;
+    state.page = 1;
+    loadData();
+  });
+
+  function goToPageInput() {
+    const totalPages = Math.max(1, Math.ceil(state.total / state.pageSize));
+    let target = parseInt(pageJumpInput.value, 10);
+    if (!Number.isFinite(target)) {
+      showAlert('请输入有效页码', 'info');
+      return;
+    }
+    target = Math.min(Math.max(1, target), totalPages);
+    state.page = target;
+    pageJumpInput.value = String(target);
+    loadData();
+  }
+
+  pageJumpBtn.addEventListener('click', goToPageInput);
+  pageJumpInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      goToPageInput();
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!exportMenu || !exportMenu.open) return;
+    if (exportMenu.contains(event.target)) return;
+    closeExportMenu();
+  });
 
   document.addEventListener('DOMContentLoaded', () => {
+    pageSizeSelect.value = String(state.pageSize);
     loadData();
   });
 </script>
