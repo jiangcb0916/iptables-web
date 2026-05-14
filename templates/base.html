@@ -211,6 +211,13 @@
             </a>
           </div>
 
+          <div class="sidebar-item cursor-pointer">
+            <a href="/session_table" class="block w-full h-full p-3 flex items-center">
+              <i class="fa fa-table w-5 h-5 mr-3"></i>
+              <span>会话表</span>
+            </a>
+          </div>
+
           <p class="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-6">系统</p>
 
           <div class="sidebar-item cursor-pointer">
@@ -295,6 +302,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const ruleViewPaths = ['/rules_view', '/rules_in', '/rules_out'];
   const portDetectionPaths = ['/port_detection'];
   const connectionInsightPaths = ['/connection_insight'];
+  const sessionTablePaths = ['/session_table'];
   const customerTerminalPaths = ['/customer_terminals'];
 
   // 遍历每个按钮，判断路径是否匹配
@@ -312,6 +320,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const isPortDetectionPage = portDetectionPaths.includes(currentPath);
     const isConnectionInsightItem = linkPath === '/connection_insight';
     const isConnectionInsightPage = connectionInsightPaths.includes(currentPath);
+    const isSessionTableItem = linkPath === '/session_table';
+    const isSessionTablePage = sessionTablePaths.includes(currentPath);
     const isCustomerTerminalItem = linkPath === '/customer_terminals';
     const isCustomerTerminalPage = customerTerminalPaths.includes(currentPath);
 
@@ -324,6 +334,7 @@ document.addEventListener('DOMContentLoaded', function() {
       || (isRuleViewItem && isRuleRelatedPage)
       || (isPortDetectionItem && isPortDetectionPage)
       || (isConnectionInsightItem && isConnectionInsightPage)
+      || (isSessionTableItem && isSessionTablePage)
       || (isCustomerTerminalItem && isCustomerTerminalPage)
     ) {
       item.classList.add('active');

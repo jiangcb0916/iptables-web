@@ -84,6 +84,14 @@ DINGTALK_PHONE_NAME_MAP_FILE = os.getenv(
 LEAGSOFT_TERMINAL_CACHE_SECONDS = int(os.getenv('LEAGSOFT_TERMINAL_CACHE_SECONDS', '60') or '60')
 _CUSTOMER_TERMINAL_ITEMS_CACHE = {'items': None, 'ts': 0.0, 'ding_meta': {}}
 
+# USG 会话拆除日志：远端目录 {SESSION_LOG_REMOTE_BASE}/{SESSION_LOG_FIREWALL_IP}/{YYYY-MM-DD}
+SESSION_LOG_REMOTE_BASE = (os.getenv('SESSION_LOG_REMOTE_BASE', '/data/logdata/remote') or '/data/logdata/remote').strip().rstrip('/')
+SESSION_LOG_FIREWALL_IP = (os.getenv('SESSION_LOG_FIREWALL_IP', '172.16.100.1') or '172.16.100.1').strip().strip('/')
+SESSION_LOG_FIND_MAX_FILES = max(1, min(500, int(os.getenv('SESSION_LOG_FIND_MAX_FILES', '120') or '120')))
+SESSION_LOG_TAIL_LINES = max(100, min(20000, int(os.getenv('SESSION_LOG_TAIL_LINES', '8000') or '8000')))
+SESSION_LOG_REMOTE_TIMEOUT = max(10, min(300, int(os.getenv('SESSION_LOG_REMOTE_TIMEOUT', '90') or '90')))
+_SESSION_TD_SPLIT_RE = re.compile(r',(?=[A-Za-z][A-Za-z0-9_]*=)')
+
 DINGTALK_APP_KEY = (os.getenv('DINGTALK_APP_KEY') or os.getenv('DD_APPKEY') or '').strip()
 DINGTALK_APP_SECRET = (os.getenv('DINGTALK_APP_SECRET') or os.getenv('DD_APPSECRET') or '').strip()
 DINGTALK_CREDENTIALS_FILE = os.getenv(
@@ -1321,6 +1329,71 @@ def _run_remote_shell_try(host, cmd):
 def _remote_bash_lc(host, inner_script):
     """在远端用 bash -lc 执行一段脚本（支持重定向、|| true 等）。"""
     return _run_remote_shell(host, 'bash -lc ' + shlex.quote(inner_script))
+
+
+def _session_log_build_remote_dir(date_str):
+    return f"{SESSION_LOG_REMOTE_BASE}/{SESSION_LOG_FIREWALL_IP}/{date_str}"
+
+
+def _session_log_validate_date(date_str):
+    if not date_str or not isinstance(date_str, str):
+        raise ValueError('日期无效')
+    date_str = date_str.strip()
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_str):
+        raise ValueError('日期格式须为 YYYY-MM-DD')
+    datetime.strptime(date_str, '%Y-%m-%d')
+    return date_str
+
+
+def _parse_usg_session_teardown_line(line):
+    """从单行 syslog 文本解析 USG SESSION_TEARDOWN 键值对（适配 strings 抽取后的行）。"""
+    if 'SESSION_TEARDOWN' not in line:
+        return None
+    idx = line.find('SESSION_TEARDOWN')
+    rest = line[idx:]
+    colon = rest.find(':')
+    if colon < 0:
+        return None
+    payload = rest[colon + 1:].strip()
+    if not payload:
+        return None
+    parts = _SESSION_TD_SPLIT_RE.split(payload)
+    kv = {}
+    for p in parts:
+        if '=' not in p:
+            continue
+        k, v = p.split('=', 1)
+        kv[k.strip()] = v.strip().rstrip('.')
+    if not kv.get('SourceIP') and not kv.get('DestinationIP'):
+        return None
+    return kv
+
+
+def _session_ts_human(ts_str):
+    try:
+        t = int(str(ts_str).strip())
+        return datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception:
+        return ''
+
+
+def _usg_collect_session_teardown_remote(host, date_str):
+    """在目标主机上对日志目录执行 find + strings + grep，提取 SESSION_TEARDOWN 行。"""
+    remote_dir = _session_log_build_remote_dir(date_str)
+    rd = shlex.quote(remote_dir)
+    inner_body = (
+        f'find {rd} -type f 2>/dev/null | head -n {SESSION_LOG_FIND_MAX_FILES} | '
+        'while IFS= read -r f; do '
+        '[ -f "$f" ] || continue; '
+        'strings -n 5 "$f" 2>/dev/null || true; '
+        'done | grep -F SESSION_TEARDOWN | '
+        f'tail -n {SESSION_LOG_TAIL_LINES}'
+    )
+    script = (
+        f"export LC_ALL=C; test -d {rd} || {{ printf '%s\\n' __NO_SESSION_DIR__; exit 0; }}; "
+        f"timeout {SESSION_LOG_REMOTE_TIMEOUT} sh -c {shlex.quote(inner_body)}"
+    )
+    return _remote_bash_lc(host, script)
 
 
 _TR_SSH_FAIL_PATTERNS = (
@@ -3118,8 +3191,8 @@ def pwd_shell_cmd(hostname, port, user, pwd, cmd):
             timeout=5
         )
         stdin, stdout, stderr = ssh_client.exec_command(cmd)
-        output = stdout.read().decode()
-        error = stderr.read().decode()
+        output = stdout.read().decode('utf-8', errors='replace')
+        error = stderr.read().decode('utf-8', errors='replace')
         exit_code = stdout.channel.recv_exit_status()
         if exit_code != 0:
             raise RuntimeError(error.strip() or f"命令执行失败，exit_code={exit_code}")
@@ -3426,8 +3499,8 @@ def sshkey_shell_cmd(hostname, port, user, private_key_str, cmd):
             allow_agent=False,
         )
         stdin, stdout, stderr = ssh_client.exec_command(cmd)
-        output = stdout.read().decode()
-        error = stderr.read().decode()
+        output = stdout.read().decode('utf-8', errors='replace')
+        error = stderr.read().decode('utf-8', errors='replace')
         exit_code = stdout.channel.recv_exit_status()
         if exit_code != 0:
             raise RuntimeError(error.strip() or f"命令执行失败，exit_code={exit_code}")
@@ -4155,6 +4228,30 @@ def connection_insight():
         return f"加载访问来源页面失败: {str(e)}", 500
 
 
+@app.route('/session_table', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def session_table():
+    try:
+        cursor = None
+        if not USE_LOCAL_FILE_STORE:
+            db = get_db()
+            cursor = db.cursor()
+        host_options = _get_rule_view_hosts(cursor)
+        default_date = datetime.now().strftime('%Y-%m-%d')
+        session_log_hint = f'{SESSION_LOG_REMOTE_BASE}/{SESSION_LOG_FIREWALL_IP}/YYYY-MM-DD'
+        return render_template(
+            'session_table.html',
+            host_options=host_options,
+            default_date=default_date,
+            session_log_base=SESSION_LOG_REMOTE_BASE,
+            session_log_firewall_ip=SESSION_LOG_FIREWALL_IP,
+            session_log_hint=session_log_hint,
+        )
+    except Exception as e:
+        return f"加载会话表页面失败: {str(e)}", 500
+
+
 @app.route('/threat_response', methods=['GET'])
 @login_required
 @permission_required('hosts_view')
@@ -4263,6 +4360,113 @@ def host_connection_insight_api():
         'connections': rows,
         'listeners': listeners,
         'listener_count': len(listeners),
+    })
+
+
+@app.route('/api/session-table', methods=['GET'])
+@login_required
+@permission_required('hosts_view')
+def session_table_api():
+    host_id = request.args.get('host_id')
+    if not str(host_id).isdigit():
+        return jsonify({'success': False, 'message': '请选择主机'}), 400
+    host = _load_host_connection_info(int(host_id))
+    if not host:
+        return jsonify({'success': False, 'message': '主机不存在'}), 404
+
+    date_str = (request.args.get('date') or '').strip() or datetime.now().strftime('%Y-%m-%d')
+    try:
+        date_str = _session_log_validate_date(date_str)
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+
+    remote_dir = _session_log_build_remote_dir(date_str)
+    notices = [
+        f'远端目录 {remote_dir}：对至多 {SESSION_LOG_FIND_MAX_FILES} 个文件执行 strings，'
+        f'筛选 SESSION_TEARDOWN 后取末 {SESSION_LOG_TAIL_LINES} 行；'
+        f'可通过环境变量 SESSION_LOG_REMOTE_BASE、SESSION_LOG_FIREWALL_IP 等调整。'
+    ]
+
+    try:
+        text = _usg_collect_session_teardown_remote(host, date_str)
+    except RuntimeError as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+    stripped = (text or '').strip()
+    if stripped == '__NO_SESSION_DIR__':
+        return jsonify({
+            'success': True,
+            'host_id': int(host_id),
+            'host_ip': host.get('ip_address'),
+            'date': date_str,
+            'remote_dir': remote_dir,
+            'sessions': [],
+            'parsed_count': 0,
+            'raw_line_count': 0,
+            'truncated': False,
+            'notices': notices + [f'目录不存在或不可读：{remote_dir}'],
+            'collected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        })
+
+    lines = []
+    for ln in (text or '').splitlines():
+        s = ln.strip()
+        if 'SESSION_TEARDOWN' in s:
+            lines.append(s)
+
+    rows = []
+    for ln in lines:
+        kv = _parse_usg_session_teardown_line(ln)
+        if not kv:
+            continue
+        rows.append({
+            'ip_ver': kv.get('IPVer') or '',
+            'protocol': kv.get('Protocol') or '',
+            'source_ip': kv.get('SourceIP') or '',
+            'destination_ip': kv.get('DestinationIP') or '',
+            'source_port': kv.get('SourcePort') or '',
+            'destination_port': kv.get('DestinationPort') or '',
+            'source_nat_ip': kv.get('SourceNatIP') or '',
+            'source_nat_port': kv.get('SourceNatPort') or '',
+            'begin_time': kv.get('BeginTime') or '',
+            'end_time': kv.get('EndTime') or '',
+            'begin_time_human': _session_ts_human(kv.get('BeginTime')),
+            'end_time_human': _session_ts_human(kv.get('EndTime')),
+            'send_pkts': kv.get('SendPkts') or '',
+            'send_bytes': kv.get('SendBytes') or '',
+            'rcv_pkts': kv.get('RcvPkts') or '',
+            'rcv_bytes': kv.get('RcvBytes') or '',
+            'source_vpn_id': kv.get('SourceVpnID') or '',
+            'destination_vpn_id': kv.get('DestinationVpnID') or '',
+            'source_zone': kv.get('SourceZone') or '',
+            'destination_zone': kv.get('DestinationZone') or '',
+            'policy_name': kv.get('PolicyName') or '',
+            'close_reason': kv.get('CloseReason') or '',
+        })
+
+    def _end_ts(row):
+        try:
+            return int(str(row.get('end_time') or '0') or '0')
+        except Exception:
+            return 0
+
+    rows.sort(key=_end_ts, reverse=True)
+    max_return = min(8000, max(100, SESSION_LOG_TAIL_LINES))
+    truncated = len(rows) > max_return
+    rows = rows[:max_return]
+
+    return jsonify({
+        'success': True,
+        'host_id': int(host_id),
+        'host_ip': host.get('ip_address'),
+        'date': date_str,
+        'remote_dir': remote_dir,
+        'sessions': rows,
+        'parsed_count': len(rows),
+        'raw_line_count': len(lines),
+        'truncated': truncated,
+        'notices': notices,
+        'collected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
     })
 
 

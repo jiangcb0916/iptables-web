@@ -1,0 +1,285 @@
+{% extends 'base.html' %}
+{% block main %}
+<div class="flex-1 flex flex-col overflow-hidden">
+  <header class="bg-white border-b border-gray-200 shadow-sm z-10">
+    <div class="flex items-center justify-between h-16 px-6">
+      <div class="text-lg font-semibold text-dark">USG 会话表（SESSION_TEARDOWN）</div>
+      <button class="text-gray-500 hover:text-gray-700 relative" onclick="window.location.href='/logout'">
+        <span class="flex items-center">
+          <i class="fa fa-sign-out text-xl mr-1"></i>
+          <span class="text-sm">退出登录</span>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+    <div class="container mx-auto max-w-[1600px] space-y-6">
+      <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <h2 class="text-base font-semibold text-dark mb-4 flex items-center gap-2">
+          <i class="fa fa-table text-primary"></i>
+          查询条件
+        </h2>
+        <p class="text-xs text-gray-500 mb-4">
+          日志路径约定：<span class="font-mono text-gray-700">{{ session_log_hint }}</span>
+          （当前设备目录名：<span class="font-mono">{{ session_log_firewall_ip }}</span>，基路径：<span class="font-mono">{{ session_log_base }}</span>）
+        </p>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+          <div class="lg:col-span-4">
+            <label class="block text-sm text-gray-700 mb-1">目标主机 <span class="text-red-500">*</span></label>
+            <select id="host-select" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white">
+              <option value="">请选择主机</option>
+              {% for host in host_options %}
+              <option value="{{ host.id }}" data-ip="{{ host.ip_address }}">{{ host.host_name }} ({{ host.ip_address }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="lg:col-span-3">
+            <label class="block text-sm text-gray-700 mb-1">日志日期 <span class="text-red-500">*</span></label>
+            <input id="log-date" type="date" value="{{ default_date }}" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white">
+          </div>
+          <div class="lg:col-span-5 flex flex-wrap items-center gap-3">
+            <button id="refresh-btn" type="button" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm inline-flex items-center gap-1.5 shadow-sm">
+              <i class="fa fa-refresh"></i>
+              拉取并解析
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div class="min-w-0 flex-1">
+            <h2 class="text-base font-semibold text-dark flex items-center gap-2">
+              <i class="fa fa-list text-primary"></i>
+              会话拆除记录
+            </h2>
+            <p id="status-bar" class="text-xs text-gray-500 mt-1.5">选择主机与日期后点击「拉取并解析」。远端通过 strings 抽取可打印字段后再解析。</p>
+            <div id="meta-bar" class="mt-2 hidden flex flex-wrap items-center gap-2 text-xs"></div>
+            <ul id="notice-list" class="mt-2 hidden list-disc pl-5 text-xs text-amber-800 space-y-1"></ul>
+          </div>
+        </div>
+
+        <div class="mb-3 flex flex-wrap items-center gap-3">
+          <input id="filter-input" type="text" class="w-full md:w-96 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" placeholder="过滤：IP、端口、协议、策略名、关闭原因…">
+          <span id="result-count" class="text-xs text-gray-500 whitespace-nowrap">共 0 条</span>
+        </div>
+
+        <div class="overflow-x-auto border border-gray-200 rounded-lg max-h-[70vh] overflow-y-auto">
+          <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50 sticky top-0 z-10 shadow-sm">
+              <tr>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">协议</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">源 IP</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">源端口</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">目的 IP</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">目的端口</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">SNAT IP</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">SNAT 端口</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">开始</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">结束</th>
+                <th class="px-3 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">发送 P/B</th>
+                <th class="px-3 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">接收 P/B</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">区域</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">策略</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">关闭原因</th>
+              </tr>
+            </thead>
+            <tbody id="session-body" class="bg-white divide-y divide-gray-200 text-xs">
+              <tr>
+                <td colspan="14" class="px-4 py-14 text-center">
+                  <div class="inline-flex flex-col items-center gap-2 text-gray-500">
+                    <span class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                      <i class="fa fa-table text-lg"></i>
+                    </span>
+                    <span class="text-sm">请选择主机与日期后拉取</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock main %}
+
+{% block script %}
+<script>
+(function () {
+  const hostSelect = document.getElementById('host-select');
+  const logDate = document.getElementById('log-date');
+  const refreshBtn = document.getElementById('refresh-btn');
+  const statusBar = document.getElementById('status-bar');
+  const metaBar = document.getElementById('meta-bar');
+  const noticeList = document.getElementById('notice-list');
+  const sessionBody = document.getElementById('session-body');
+  const filterInput = document.getElementById('filter-input');
+  const resultCount = document.getElementById('result-count');
+
+  let latestRows = [];
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function protoBadge(p) {
+    const u = String(p || '').toLowerCase();
+    if (u === 'tcp') {
+      return '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-sky-50 text-sky-800 border border-sky-100">TCP</span>';
+    }
+    if (u === 'udp') {
+      return '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-violet-50 text-violet-800 border border-violet-100">UDP</span>';
+    }
+    return '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-50 text-gray-700 border border-gray-200">' + escapeHtml(u || '—') + '</span>';
+  }
+
+  function rowMatchesFilter(row, q) {
+    if (!q) return true;
+    const hay = Object.values(row)
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
+  }
+
+  function updateResultCount(visible, total) {
+    const q = (filterInput.value || '').trim();
+    if (q && total > 0) {
+      resultCount.textContent = '显示 ' + visible + ' / 共 ' + total + ' 条';
+    } else {
+      resultCount.textContent = '共 ' + total + ' 条';
+    }
+  }
+
+  function emptyStateHtml(message, isError) {
+    const icon = isError ? 'fa-exclamation-circle' : 'fa-table';
+    const color = isError ? 'text-red-500 bg-red-50' : 'text-slate-400 bg-slate-100';
+    const textCls = isError ? 'text-red-600' : 'text-gray-500';
+    return (
+      '<tr><td colspan="14" class="px-4 py-14 text-center">' +
+      '<div class="inline-flex flex-col items-center gap-2 ' + textCls + '">' +
+      '<span class="flex h-12 w-12 items-center justify-center rounded-full ' + color + '">' +
+      '<i class="fa ' + icon + ' text-lg"></i></span>' +
+      '<span class="text-sm">' + escapeHtml(message) + '</span></div></td></tr>'
+    );
+  }
+
+  function renderMeta(data) {
+    metaBar.classList.remove('hidden');
+    const chips = [
+      { label: '采集时间', val: data.collected_at || '—', cls: 'px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-100' },
+      { label: '解析条数', val: String(data.parsed_count ?? 0), cls: 'px-2 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-100' },
+      { label: '原始匹配行', val: String(data.raw_line_count ?? 0), cls: 'px-2 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-100' },
+      { label: '截断', val: data.truncated ? '是（仅展示前 N 条）' : '否', cls: 'px-2 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100' }
+    ];
+    metaBar.innerHTML = chips
+      .map(function (c) {
+        return '<span class="inline-flex items-center text-xs font-medium ' + c.cls + '">' + escapeHtml(c.label) + '：' + escapeHtml(c.val) + '</span>';
+      })
+      .join('');
+
+    const notes = data.notices || [];
+    if (notes.length) {
+      noticeList.classList.remove('hidden');
+      noticeList.innerHTML = notes.map(function (n) { return '<li>' + escapeHtml(n) + '</li>'; }).join('');
+    } else {
+      noticeList.classList.add('hidden');
+      noticeList.innerHTML = '';
+    }
+  }
+
+  function renderTable() {
+    const q = (filterInput.value || '').trim().toLowerCase();
+    const rows = latestRows.filter(function (r) { return rowMatchesFilter(r, q); });
+    updateResultCount(rows.length, latestRows.length);
+
+    if (!rows.length) {
+      sessionBody.innerHTML = emptyStateHtml(
+        latestRows.length ? '无匹配结果，请调整过滤条件' : '暂无数据，请拉取',
+        false
+      );
+      return;
+    }
+
+    sessionBody.innerHTML = rows
+      .map(function (r) {
+        const zones = escapeHtml(String(r.source_zone || '')) + ' → ' + escapeHtml(String(r.destination_zone || ''));
+        const sb = escapeHtml(String(r.send_pkts || '')) + ' / ' + escapeHtml(String(r.send_bytes || ''));
+        const rb = escapeHtml(String(r.rcv_pkts || '')) + ' / ' + escapeHtml(String(r.rcv_bytes || ''));
+        return (
+          '<tr class="hover:bg-gray-50 transition-colors">' +
+          '<td class="px-3 py-2 whitespace-nowrap">' + protoBadge(r.protocol) + '</td>' +
+          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_ip)) + '</td>' +
+          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_port)) + '</td>' +
+          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.destination_ip)) + '</td>' +
+          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.destination_port)) + '</td>' +
+          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_nat_ip)) + '</td>' +
+          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_nat_port)) + '</td>' +
+          '<td class="px-3 py-2 whitespace-nowrap text-gray-700" title="' + escapeHtml(String(r.begin_time)) + '">' + escapeHtml(String(r.begin_time_human || r.begin_time || '')) + '</td>' +
+          '<td class="px-3 py-2 whitespace-nowrap text-gray-700" title="' + escapeHtml(String(r.end_time)) + '">' + escapeHtml(String(r.end_time_human || r.end_time || '')) + '</td>' +
+          '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + sb + '</td>' +
+          '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + rb + '</td>' +
+          '<td class="px-3 py-2 text-gray-800 max-w-[140px]" title="' + zones + '">' + zones + '</td>' +
+          '<td class="px-3 py-2 text-gray-800 max-w-[180px] truncate" title="' + escapeHtml(String(r.policy_name)) + '">' + escapeHtml(String(r.policy_name)) + '</td>' +
+          '<td class="px-3 py-2 text-gray-700 max-w-[120px] truncate" title="' + escapeHtml(String(r.close_reason)) + '">' + escapeHtml(String(r.close_reason)) + '</td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+  }
+
+  async function loadData() {
+    const hostId = hostSelect.value;
+    const date = (logDate.value || '').trim();
+    if (!hostId) {
+      statusBar.textContent = '请先选择主机。';
+      metaBar.classList.add('hidden');
+      noticeList.classList.add('hidden');
+      latestRows = [];
+      updateResultCount(0, 0);
+      renderTable();
+      return;
+    }
+    if (!date) {
+      statusBar.textContent = '请选择日志日期。';
+      return;
+    }
+    refreshBtn.disabled = true;
+    statusBar.textContent = '正在 SSH 到主机执行 strings / grep，请稍候…';
+    try {
+      const qs =
+        '/api/session-table?host_id=' +
+        encodeURIComponent(hostId) +
+        '&date=' +
+        encodeURIComponent(date);
+      const res = await fetch(qs);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || '请求失败');
+      latestRows = data.sessions || [];
+      const opt = hostSelect.options[hostSelect.selectedIndex];
+      const name = opt ? opt.textContent : '';
+      statusBar.textContent = '已更新：' + name + '，日期 ' + (data.date || date);
+      renderMeta(data);
+      renderTable();
+    } catch (e) {
+      latestRows = [];
+      statusBar.textContent = e.message || '加载失败';
+      metaBar.classList.add('hidden');
+      noticeList.classList.add('hidden');
+      updateResultCount(0, 0);
+      sessionBody.innerHTML = emptyStateHtml(e.message || '加载失败', true);
+    } finally {
+      refreshBtn.disabled = false;
+    }
+  }
+
+  refreshBtn.addEventListener('click', loadData);
+  filterInput.addEventListener('input', renderTable);
+})();
+</script>
+{% endblock script %}
