@@ -42,6 +42,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 import time
 import json
+import unicodedata
 from flask_apscheduler import APScheduler
 from datetime import datetime, timedelta
 import pytz
@@ -1455,14 +1456,87 @@ def _session_table_rows_cache_set(host_id, date_str, rows, raw_line_count, trunc
         }
 
 
+def _session_table_kw_text(v):
+    """将单元格值转为可参与关键词匹配的纯文本（避免 bytes 被 str() 成 b'..\\x..' 导致子串匹配失败）。"""
+    if v is None:
+        return ''
+    if isinstance(v, bytes):
+        try:
+            return v.decode('utf-8', errors='replace')
+        except Exception:
+            return ''
+    if isinstance(v, (dict, list)):
+        try:
+            return json.dumps(v, ensure_ascii=False)
+        except Exception:
+            return str(v)
+    return str(v)
+
+
+def _session_table_kw_normalize(s):
+    if not s:
+        return ''
+    return unicodedata.normalize('NFKC', s).casefold()
+
+
+def _session_table_row_keyword_blob(row):
+    """拼接用于关键词匹配的文本：显式包含姓名、区域、宽带等，并合并其余字段。"""
+    if not row:
+        return ''
+    preferred_keys = (
+        'source_name',
+        'source_ip',
+        'destination_ip',
+        'protocol',
+        'source_port',
+        'destination_port',
+        'source_nat_ip',
+        'source_nat_port',
+        'begin_time',
+        'end_time',
+        'begin_time_human',
+        'end_time_human',
+        'send_pkts',
+        'send_bytes',
+        'rcv_pkts',
+        'rcv_bytes',
+        'source_zone',
+        'destination_zone',
+        'broadband',
+        'source_vpn_id',
+        'destination_vpn_id',
+        'ip_ver',
+    )
+    parts = []
+    for k in preferred_keys:
+        if k in row:
+            t = _session_table_kw_text(row.get(k)).strip()
+            if t:
+                parts.append(t)
+    for k, v in row.items():
+        if k in preferred_keys:
+            continue
+        t = _session_table_kw_text(v).strip()
+        if t:
+            parts.append(t)
+    return ' '.join(parts)
+
+
 def _session_table_row_matches_keyword(row, keyword):
     if not keyword:
         return True
-    q = keyword.strip().lower()
-    if not q:
+    raw = keyword.strip()
+    if not raw:
         return True
-    blob = ' '.join(str(v) for v in row.values()).lower()
-    return q in blob
+    blob = _session_table_kw_normalize(_session_table_row_keyword_blob(row))
+    if not blob:
+        return False
+    # 多个词空白分隔：全部需在文本中出现（顺序无关），便于「IP + 姓名」组合搜
+    raw_nf = unicodedata.normalize('NFKC', raw)
+    terms = [_session_table_kw_normalize(t) for t in raw_nf.split() if str(t).strip()]
+    if not terms:
+        terms = [_session_table_kw_normalize(raw_nf)]
+    return all(t in blob for t in terms if t)
 
 
 def _session_source_display_name(source_ip, ip_to_name):
@@ -4565,11 +4639,11 @@ def session_table_api():
 
     remote_dir = _session_log_build_remote_dir(date_str)
     notices = [
-        f'日志主机固定为 {SESSION_LOG_HOST_IP}（{log_host.get("host_name") or "未命名"}）。'
-        f'远端目录 {remote_dir}：至多 {SESSION_LOG_FIND_MAX_FILES} 个文件 strings；'
-        f'SESSION_TEARDOWN 取末尾最多 {SESSION_LOG_TAIL_LINES} 行（环境变量 SESSION_LOG_TAIL_LINES，单值上限 150000；更早记录不会进入本页）；'
-        f'单次命令超时 {SESSION_LOG_REMOTE_TIMEOUT}s；同日期缓存 {SESSION_TABLE_CACHE_TTL}s；refresh=1 强制重拉。',
-        '时间筛选：按会话 BeginTime/EndTime 与所选日期内时刻求交集；不选时刻则展示已拉取的全部记录。',
+        # f'日志主机固定为 {SESSION_LOG_HOST_IP}（{log_host.get("host_name") or "未命名"}）。'
+        # f'远端目录 {remote_dir}：至多 {SESSION_LOG_FIND_MAX_FILES} 个文件 strings；'
+        # f'SESSION_TEARDOWN 取末尾最多 {SESSION_LOG_TAIL_LINES} 行（环境变量 SESSION_LOG_TAIL_LINES，单值上限 150000；更早记录不会进入本页）；'
+        # f'单次命令超时 {SESSION_LOG_REMOTE_TIMEOUT}s；同日期缓存 {SESSION_TABLE_CACHE_TTL}s；refresh=1 强制重拉。',
+        # '时间筛选：按会话 BeginTime/EndTime 与所选日期内时刻求交集；不选时刻则展示已拉取的全部记录。',
     ]
 
     ts_lo, ts_hi = _session_table_day_time_window_epoch(date_str, time_start_raw, time_end_raw)

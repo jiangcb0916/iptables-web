@@ -3,7 +3,7 @@
 <div class="flex-1 flex flex-col overflow-hidden">
   <header class="bg-white border-b border-gray-200 shadow-sm z-10">
     <div class="flex items-center justify-between h-16 px-6">
-      <div class="text-lg font-semibold text-dark">USG 会话表（SESSION_TEARDOWN）</div>
+      <div class="text-lg font-semibold text-dark">USG 会话表</div>
       <button class="text-gray-500 hover:text-gray-700 relative" onclick="window.location.href='/logout'">
         <span class="flex items-center">
           <i class="fa fa-sign-out text-xl mr-1"></i>
@@ -63,7 +63,7 @@
             <button id="search-btn" type="button" class="h-10 shrink-0 px-4 inline-flex items-center justify-center border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 shadow-sm" {% if not log_host %}disabled{% endif %}>应用筛选</button>
           </div>
         </div>
-        <p class="text-xs text-gray-500 mt-3">远端按「日志日期」目录扫描；对 <code>SESSION_TEARDOWN</code> 匹配结果默认只保留<strong>最后约 {{ session_log_tail_lines }} 行</strong>（可用环境变量 <code>SESSION_LOG_TAIL_LINES</code> 调整，最大 150000）。<strong>起止时刻</strong>在服务端对已拉取数据再过滤；<strong>关键词</strong>在服务端筛选。下方表格可勾选<strong>显示哪些列</strong>（保存在本浏览器，不参与请求）。同日期 {{ session_table_cache_ttl }}s 内翻页不重复 SSH；「拉取并解析」会强制刷新远端。</p>
+        <!-- <p class="text-xs text-gray-500 mt-3">远端按「日志日期」目录扫描；对 <code>SESSION_TEARDOWN</code> 匹配结果默认只保留<strong>最后约 {{ session_log_tail_lines }} 行</strong>（可用环境变量 <code>SESSION_LOG_TAIL_LINES</code> 调整，最大 150000）。<strong>起止时刻</strong>在服务端对已拉取数据再过滤；<strong>关键词</strong>在服务端匹配姓名、IP、端口、区域、宽带等（多个词请用<strong>空格</strong>隔开，需<strong>同时</strong>命中）。下方表格可勾选<strong>显示哪些列</strong>（保存在本浏览器，不参与请求）。同日期 {{ session_table_cache_ttl }}s 内翻页不重复 SSH；「拉取并解析」会强制刷新远端。</p> -->
       </div>
 
       <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -89,28 +89,46 @@
           </div>
         </div>
 
-        <div class="mb-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
-          <span id="result-count">共 0 条</span>
-          <span id="page-hint" class="hidden"></span>
-        </div>
-
-        <div id="col-vis-bar" class="mb-3 rounded-lg border border-gray-100 bg-slate-50/80 px-3 py-2.5 {% if not log_host %}opacity-50 pointer-events-none{% endif %}">
-          <div class="text-xs font-medium text-gray-600 mb-2">显示列（保存在本浏览器，可随时勾选）</div>
-          <div class="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-700">
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="proto" checked><span>协议</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="sip" checked><span>源 IP</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="name" checked><span>姓名</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="sport" checked><span>源端口</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="dip" checked><span>目的 IP</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="dport" checked><span>目的端口</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="snatip" checked><span>SNAT IP</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="snatp" checked><span>SNAT 端口</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="tbegin" checked><span>开始</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="tend" checked><span>结束</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="send" checked><span>发送 P/B</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="rcv" checked><span>接收 P/B</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="zone" checked><span>区域</span></label>
-            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="wan" checked><span>宽带</span></label>
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
+          <div class="flex min-w-0 flex-wrap items-center gap-3">
+            <span id="result-count">共 0 条</span>
+            <span id="page-hint" class="hidden"></span>
+          </div>
+          <div id="col-vis-anchor" class="relative shrink-0 {% if not log_host %}pointer-events-none opacity-50{% endif %}">
+            <button type="button" id="col-vis-toggle" class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 transition" aria-expanded="false" aria-controls="col-vis-panel" title="展开列显示设置">
+              <i class="fa fa-columns text-primary" aria-hidden="true"></i>
+              <span>列显示</span>
+              <span id="col-vis-badge" class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-gray-600 tabular-nums">14/14</span>
+              <i id="col-vis-chevron" class="fa fa-angle-down text-gray-400 transition-transform duration-200" aria-hidden="true"></i>
+            </button>
+            <div id="col-vis-panel" class="absolute right-0 z-30 mt-1 hidden w-[min(calc(100vw-3rem),44rem)] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl ring-1 ring-black/5" role="region" aria-label="列显示设置">
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">
+                <p class="m-0 max-w-[20rem] text-xs leading-relaxed text-gray-600">勾选要展示的列；设置保存在本浏览器，不参与服务端请求。</p>
+                <div class="flex flex-wrap items-center justify-end gap-1.5">
+                  <button type="button" id="col-vis-all" class="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50" title="显示全部列">全部</button>
+                  <button type="button" id="col-vis-reset" class="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50" title="清除本机记住的列设置">默认</button>
+                  <button type="button" id="col-vis-collapse" class="inline-flex items-center gap-1 rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-900" title="收起（或按 Esc）">
+                    收起<i class="fa fa-times ml-0.5 text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>
+              <div id="col-vis-grid" class="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-7">
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="proto" checked><span>协议</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="sip" checked><span>源 IP</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="name" checked><span>姓名</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="sport" checked><span>源端口</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="dip" checked><span>目的 IP</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="dport" checked><span>目的端口</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="snatip" checked><span>SNAT IP</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="snatp" checked><span>SNAT 端口</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="tbegin" checked><span>开始</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="tend" checked><span>结束</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white" title="发送 P/B"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="send" checked><span>发送 P/B</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white" title="接收 P/B"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="rcv" checked><span>接收 P/B</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="zone" checked><span>区域</span></label>
+                <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-100 bg-slate-50/50 px-2 py-1.5 text-xs hover:border-primary/30 hover:bg-white"><input type="checkbox" class="col-vis-cb h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0" data-col="wan" checked><span>宽带</span></label>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -195,18 +213,58 @@
   const pageInput = document.getElementById('page-input');
   const pageGo = document.getElementById('page-go');
   const totalPagesDisp = document.getElementById('total-pages-disp');
-  const colVisBar = document.getElementById('col-vis-bar');
+  const colVisAnchor = document.getElementById('col-vis-anchor');
+  const colVisPanel = document.getElementById('col-vis-panel');
+  const colVisToggle = document.getElementById('col-vis-toggle');
+  const colVisChevron = document.getElementById('col-vis-chevron');
+  const colVisCollapse = document.getElementById('col-vis-collapse');
 
   const COL_KEYS = [
     'proto', 'sip', 'name', 'sport', 'dip', 'dport', 'snatip', 'snatp',
     'tbegin', 'tend', 'send', 'rcv', 'zone', 'wan'
   ];
   const COLVIS_LS = 'iptablesweb_session_table_colvis_v1';
+  const COL_PANEL_LS = 'iptablesweb_session_table_colpanel_open_v1';
 
   function defaultColVis() {
     var o = {};
     COL_KEYS.forEach(function (k) { o[k] = true; });
     return o;
+  }
+
+  function loadColPanelOpenPref() {
+    try {
+      return localStorage.getItem(COL_PANEL_LS) === '1';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function saveColPanelOpenPref(open) {
+    try {
+      localStorage.setItem(COL_PANEL_LS, open ? '1' : '0');
+    } catch (e) {}
+  }
+
+  function syncColVisPanelUi(open) {
+    if (!colVisPanel || !colVisToggle) return;
+    if (open) {
+      colVisPanel.classList.remove('hidden');
+      colVisToggle.setAttribute('aria-expanded', 'true');
+      if (colVisChevron) colVisChevron.classList.add('rotate-180');
+      colVisToggle.setAttribute('title', '收起列显示设置');
+    } else {
+      colVisPanel.classList.add('hidden');
+      colVisToggle.setAttribute('aria-expanded', 'false');
+      if (colVisChevron) colVisChevron.classList.remove('rotate-180');
+      colVisToggle.setAttribute('title', '展开列显示设置');
+    }
+  }
+
+  function setColVisPanelOpen(open) {
+    syncColVisPanelUi(!!open);
+    saveColPanelOpenPref(!!open);
+    if (!open && colVisToggle) colVisToggle.focus();
   }
 
   function loadColVis() {
@@ -236,6 +294,11 @@
     return n > 0 ? n : COL_KEYS.length;
   }
 
+  function updateColVisBadge() {
+    var el = document.getElementById('col-vis-badge');
+    if (el) el.textContent = String(visibleColCount()) + '/14';
+  }
+
   function applyColVisibility() {
     var vis = getColVis();
     COL_KEYS.forEach(function (k) {
@@ -247,6 +310,7 @@
       var cb = document.querySelector('.col-vis-cb[data-col="' + k + '"]');
       if (cb) cb.checked = on;
     });
+    updateColVisBadge();
   }
 
   let state = {
@@ -397,10 +461,11 @@
       statusBar.textContent = '请选择日志日期。';
       return;
     }
+    state.keyword = filterInput ? String(filterInput.value || '').trim() : '';
     refreshBtn.disabled = true;
     searchBtn.disabled = true;
     pageSizeEl.disabled = true;
-    if (logHostOk && colVisBar) colVisBar.classList.add('pointer-events-none', 'opacity-60');
+    if (logHostOk && colVisAnchor) colVisAnchor.classList.add('pointer-events-none', 'opacity-60');
     if (timeStart) timeStart.disabled = true;
     if (timeEnd) timeEnd.disabled = true;
     if (clearTimeBtn) clearTimeBtn.disabled = true;
@@ -463,7 +528,7 @@
       refreshBtn.disabled = false;
       searchBtn.disabled = false;
       pageSizeEl.disabled = false;
-      if (logHostOk && colVisBar) colVisBar.classList.remove('pointer-events-none', 'opacity-60');
+      if (logHostOk && colVisAnchor) colVisAnchor.classList.remove('pointer-events-none', 'opacity-60');
       if (timeStart) timeStart.disabled = false;
       if (timeEnd) timeEnd.disabled = false;
       if (clearTimeBtn) clearTimeBtn.disabled = false;
@@ -490,8 +555,8 @@
     }
   });
 
-  if (colVisBar) {
-    colVisBar.addEventListener('change', function (ev) {
+  if (colVisPanel) {
+    colVisPanel.addEventListener('change', function (ev) {
       var t = ev.target;
       if (!t.classList.contains('col-vis-cb')) return;
       var k = t.getAttribute('data-col');
@@ -506,6 +571,60 @@
       }
       saveColVis(vis);
       applyColVisibility();
+    });
+  }
+
+  if (colVisToggle && colVisPanel) {
+    colVisToggle.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var willOpen = colVisPanel.classList.contains('hidden');
+      setColVisPanelOpen(willOpen);
+    });
+  }
+
+  if (colVisCollapse) {
+    colVisCollapse.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setColVisPanelOpen(false);
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    if (!colVisPanel || colVisPanel.classList.contains('hidden')) return;
+    if (colVisAnchor && !colVisAnchor.contains(ev.target)) {
+      setColVisPanelOpen(false);
+    }
+  });
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    if (!colVisPanel || colVisPanel.classList.contains('hidden')) return;
+    setColVisPanelOpen(false);
+  });
+
+  var colVisAllBtn = document.getElementById('col-vis-all');
+  var colVisResetBtn = document.getElementById('col-vis-reset');
+  function syncEmptyColspan() {
+    var initTd = sessionBody.querySelector('tr td[colspan]');
+    if (initTd) initTd.setAttribute('colspan', String(visibleColCount()));
+  }
+  if (colVisAllBtn) {
+    colVisAllBtn.addEventListener('click', function () {
+      saveColVis(defaultColVis());
+      applyColVisibility();
+      syncEmptyColspan();
+    });
+  }
+  if (colVisResetBtn) {
+    colVisResetBtn.addEventListener('click', function () {
+      try {
+        localStorage.removeItem(COLVIS_LS);
+      } catch (e) {}
+      saveColVis(defaultColVis());
+      applyColVisibility();
+      syncEmptyColspan();
     });
   }
 
@@ -550,9 +669,13 @@
     loadData(false);
   });
 
+  if (loadColPanelOpenPref()) {
+    syncColVisPanelUi(true);
+  } else {
+    syncColVisPanelUi(false);
+  }
   applyColVisibility();
-  var initTd = sessionBody.querySelector('tr td[colspan]');
-  if (initTd) initTd.setAttribute('colspan', String(visibleColCount()));
+  syncEmptyColspan();
 })();
 </script>
 {% endblock script %}
