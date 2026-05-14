@@ -55,15 +55,15 @@
             </button>
             <button id="clear-time-btn" type="button" class="px-2 py-2 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50" {% if not log_host %}disabled{% endif %} title="清空起止时刻，按全天">清空时段</button>
           </div>
-          <div class="lg:col-span-3 flex flex-wrap items-end gap-2">
+          <div class="lg:col-span-3 flex flex-wrap gap-2 items-end">
             <div class="flex-1 min-w-[160px]">
               <label class="block text-sm text-gray-700 mb-1">关键词（服务端筛选）</label>
-              <input id="filter-input" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" placeholder="IP、端口、宽带、姓名等" {% if not log_host %}disabled{% endif %}>
+              <input id="filter-input" type="text" class="w-full h-10 px-3 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary box-border" placeholder="IP、端口、宽带、姓名等" {% if not log_host %}disabled{% endif %}>
             </div>
-            <button id="search-btn" type="button" class="px-3 py-2 border border-gray-300 rounded-md text-sm hover:bg-gray-50" {% if not log_host %}disabled{% endif %}>应用筛选</button>
+            <button id="search-btn" type="button" class="h-10 shrink-0 px-4 inline-flex items-center justify-center border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 shadow-sm" {% if not log_host %}disabled{% endif %}>应用筛选</button>
           </div>
         </div>
-        <p class="text-xs text-gray-500 mt-3">远端仍按「日志日期」目录整包拉取；<strong>起止时刻</strong>仅在服务端按会话 Begin/End 时间过滤。同日期 {{ session_table_cache_ttl }}s 内翻页不重复 SSH；「拉取并解析」会强制刷新远端。</p>
+        <p class="text-xs text-gray-500 mt-3">远端按「日志日期」目录扫描；对 <code>SESSION_TEARDOWN</code> 匹配结果默认只保留<strong>最后约 {{ session_log_tail_lines }} 行</strong>（可用环境变量 <code>SESSION_LOG_TAIL_LINES</code> 调整，最大 150000）。<strong>起止时刻</strong>在服务端对已拉取数据再过滤；<strong>关键词</strong>在服务端筛选。下方表格可勾选<strong>显示哪些列</strong>（保存在本浏览器，不参与请求）。同日期 {{ session_table_cache_ttl }}s 内翻页不重复 SSH；「拉取并解析」会强制刷新远端。</p>
       </div>
 
       <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -94,24 +94,44 @@
           <span id="page-hint" class="hidden"></span>
         </div>
 
+        <div id="col-vis-bar" class="mb-3 rounded-lg border border-gray-100 bg-slate-50/80 px-3 py-2.5 {% if not log_host %}opacity-50 pointer-events-none{% endif %}">
+          <div class="text-xs font-medium text-gray-600 mb-2">显示列（保存在本浏览器，可随时勾选）</div>
+          <div class="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-700">
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="proto" checked><span>协议</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="sip" checked><span>源 IP</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="name" checked><span>姓名</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="sport" checked><span>源端口</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="dip" checked><span>目的 IP</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="dport" checked><span>目的端口</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="snatip" checked><span>SNAT IP</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="snatp" checked><span>SNAT 端口</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="tbegin" checked><span>开始</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="tend" checked><span>结束</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="send" checked><span>发送 P/B</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="rcv" checked><span>接收 P/B</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="zone" checked><span>区域</span></label>
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" class="col-vis-cb rounded border-gray-300 text-primary focus:ring-primary" data-col="wan" checked><span>宽带</span></label>
+          </div>
+        </div>
+
         <div class="overflow-x-auto border border-gray-200 rounded-lg">
           <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50">
               <tr>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">协议</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">源 IP</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">姓名</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">源端口</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">目的 IP</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">目的端口</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">SNAT IP</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">SNAT 端口</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">开始</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">结束</th>
-                <th class="px-3 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">发送 P/B</th>
-                <th class="px-3 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">接收 P/B</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">区域</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">宽带</th>
+                <th data-col="proto" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">协议</th>
+                <th data-col="sip" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">源 IP</th>
+                <th data-col="name" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">姓名</th>
+                <th data-col="sport" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">源端口</th>
+                <th data-col="dip" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">目的 IP</th>
+                <th data-col="dport" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">目的端口</th>
+                <th data-col="snatip" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">SNAT IP</th>
+                <th data-col="snatp" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">SNAT 端口</th>
+                <th data-col="tbegin" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">开始</th>
+                <th data-col="tend" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">结束</th>
+                <th data-col="send" class="px-2 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">发送 P/B</th>
+                <th data-col="rcv" class="px-2 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">接收 P/B</th>
+                <th data-col="zone" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">区域</th>
+                <th data-col="wan" class="px-2 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">宽带</th>
               </tr>
             </thead>
             <tbody id="session-body" class="bg-white divide-y divide-gray-200 text-xs">
@@ -175,6 +195,59 @@
   const pageInput = document.getElementById('page-input');
   const pageGo = document.getElementById('page-go');
   const totalPagesDisp = document.getElementById('total-pages-disp');
+  const colVisBar = document.getElementById('col-vis-bar');
+
+  const COL_KEYS = [
+    'proto', 'sip', 'name', 'sport', 'dip', 'dport', 'snatip', 'snatp',
+    'tbegin', 'tend', 'send', 'rcv', 'zone', 'wan'
+  ];
+  const COLVIS_LS = 'iptablesweb_session_table_colvis_v1';
+
+  function defaultColVis() {
+    var o = {};
+    COL_KEYS.forEach(function (k) { o[k] = true; });
+    return o;
+  }
+
+  function loadColVis() {
+    try {
+      var raw = localStorage.getItem(COLVIS_LS);
+      if (raw) {
+        var p = JSON.parse(raw);
+        if (p && typeof p === 'object') return p;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function getColVis() {
+    return loadColVis() || defaultColVis();
+  }
+
+  function saveColVis(o) {
+    try {
+      localStorage.setItem(COLVIS_LS, JSON.stringify(o));
+    } catch (e) {}
+  }
+
+  function visibleColCount() {
+    var v = getColVis();
+    var n = COL_KEYS.filter(function (k) { return v[k] !== false; }).length;
+    return n > 0 ? n : COL_KEYS.length;
+  }
+
+  function applyColVisibility() {
+    var vis = getColVis();
+    COL_KEYS.forEach(function (k) {
+      var on = vis[k] !== false;
+      document.querySelectorAll('[data-col="' + k + '"]').forEach(function (el) {
+        if (on) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+      });
+      var cb = document.querySelector('.col-vis-cb[data-col="' + k + '"]');
+      if (cb) cb.checked = on;
+    });
+  }
 
   let state = {
     page: 1,
@@ -220,7 +293,7 @@
     const color = isError ? 'text-red-500 bg-red-50' : 'text-slate-400 bg-slate-100';
     const textCls = isError ? 'text-red-600' : 'text-gray-500';
     return (
-      '<tr><td colspan="14" class="px-4 py-14 text-center">' +
+      '<tr><td colspan="' + String(visibleColCount()) + '" class="px-4 py-14 text-center">' +
       '<div class="inline-flex flex-col items-center gap-2 ' + textCls + '">' +
       '<span class="flex h-12 w-12 items-center justify-center rounded-full ' + color + '">' +
       '<i class="fa ' + icon + ' text-lg"></i></span>' +
@@ -270,6 +343,7 @@
   function renderRows(rows) {
     if (!rows || !rows.length) {
       sessionBody.innerHTML = emptyStateHtml('本页无数据', false);
+      applyColVisibility();
       return;
     }
     sessionBody.innerHTML = rows
@@ -279,24 +353,25 @@
         const rb = escapeHtml(String(r.rcv_pkts || '')) + ' / ' + escapeHtml(String(r.rcv_bytes || ''));
         return (
           '<tr class="hover:bg-gray-50 transition-colors">' +
-          '<td class="px-3 py-2 whitespace-nowrap">' + protoBadge(r.protocol) + '</td>' +
-          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_ip)) + '</td>' +
-          '<td class="px-3 py-2 text-gray-900 max-w-[140px] truncate" title="' + escapeHtml(String(r.source_name || '')) + '">' + escapeHtml(String(r.source_name || '无')) + '</td>' +
-          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_port)) + '</td>' +
-          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.destination_ip)) + '</td>' +
-          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.destination_port)) + '</td>' +
-          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_nat_ip)) + '</td>' +
-          '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_nat_port)) + '</td>' +
-          '<td class="px-3 py-2 whitespace-nowrap text-gray-700" title="' + escapeHtml(String(r.begin_time)) + '">' + escapeHtml(String(r.begin_time_human || r.begin_time || '')) + '</td>' +
-          '<td class="px-3 py-2 whitespace-nowrap text-gray-700" title="' + escapeHtml(String(r.end_time)) + '">' + escapeHtml(String(r.end_time_human || r.end_time || '')) + '</td>' +
-          '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + sb + '</td>' +
-          '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + rb + '</td>' +
-          '<td class="px-3 py-2 text-gray-800 max-w-[160px]" title="' + zones + '">' + zones + '</td>' +
-          '<td class="px-3 py-2 whitespace-nowrap">' + broadbandBadge(r.broadband) + '</td>' +
+          '<td data-col="proto" class="px-3 py-2 whitespace-nowrap">' + protoBadge(r.protocol) + '</td>' +
+          '<td data-col="sip" class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_ip)) + '</td>' +
+          '<td data-col="name" class="px-3 py-2 text-gray-900 max-w-[140px] truncate" title="' + escapeHtml(String(r.source_name || '')) + '">' + escapeHtml(String(r.source_name || '无')) + '</td>' +
+          '<td data-col="sport" class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_port)) + '</td>' +
+          '<td data-col="dip" class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.destination_ip)) + '</td>' +
+          '<td data-col="dport" class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.destination_port)) + '</td>' +
+          '<td data-col="snatip" class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_nat_ip)) + '</td>' +
+          '<td data-col="snatp" class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_nat_port)) + '</td>' +
+          '<td data-col="tbegin" class="px-3 py-2 whitespace-nowrap text-gray-700" title="' + escapeHtml(String(r.begin_time)) + '">' + escapeHtml(String(r.begin_time_human || r.begin_time || '')) + '</td>' +
+          '<td data-col="tend" class="px-3 py-2 whitespace-nowrap text-gray-700" title="' + escapeHtml(String(r.end_time)) + '">' + escapeHtml(String(r.end_time_human || r.end_time || '')) + '</td>' +
+          '<td data-col="send" class="px-3 py-2 text-right font-mono whitespace-nowrap">' + sb + '</td>' +
+          '<td data-col="rcv" class="px-3 py-2 text-right font-mono whitespace-nowrap">' + rb + '</td>' +
+          '<td data-col="zone" class="px-3 py-2 text-gray-800 max-w-[160px]" title="' + zones + '">' + zones + '</td>' +
+          '<td data-col="wan" class="px-3 py-2 whitespace-nowrap">' + broadbandBadge(r.broadband) + '</td>' +
           '</tr>'
         );
       })
       .join('');
+    applyColVisibility();
   }
 
   function buildQuery(refresh) {
@@ -325,6 +400,7 @@
     refreshBtn.disabled = true;
     searchBtn.disabled = true;
     pageSizeEl.disabled = true;
+    if (logHostOk && colVisBar) colVisBar.classList.add('pointer-events-none', 'opacity-60');
     if (timeStart) timeStart.disabled = true;
     if (timeEnd) timeEnd.disabled = true;
     if (clearTimeBtn) clearTimeBtn.disabled = true;
@@ -355,8 +431,10 @@
       renderMeta(data);
       if (!rows.length && state.filteredCount === 0) {
         sessionBody.innerHTML = emptyStateHtml('无数据，请确认日期与远端目录', false);
+        applyColVisibility();
       } else if (!rows.length) {
         sessionBody.innerHTML = emptyStateHtml('本页无数据，请翻页或调整筛选', false);
+        applyColVisibility();
       } else {
         renderRows(rows);
       }
@@ -380,10 +458,12 @@
       pageHint.classList.add('hidden');
       resultCount.textContent = '加载失败';
       sessionBody.innerHTML = emptyStateHtml(e.message || '加载失败', true);
+      applyColVisibility();
     } finally {
       refreshBtn.disabled = false;
       searchBtn.disabled = false;
       pageSizeEl.disabled = false;
+      if (logHostOk && colVisBar) colVisBar.classList.remove('pointer-events-none', 'opacity-60');
       if (timeStart) timeStart.disabled = false;
       if (timeEnd) timeEnd.disabled = false;
       if (clearTimeBtn) clearTimeBtn.disabled = false;
@@ -409,6 +489,25 @@
       loadData(false);
     }
   });
+
+  if (colVisBar) {
+    colVisBar.addEventListener('change', function (ev) {
+      var t = ev.target;
+      if (!t.classList.contains('col-vis-cb')) return;
+      var k = t.getAttribute('data-col');
+      if (!k) return;
+      var vis = Object.assign({}, getColVis());
+      vis[k] = t.checked;
+      var anyOn = COL_KEYS.some(function (key) { return vis[key] !== false; });
+      if (!anyOn) {
+        t.checked = true;
+        vis[k] = true;
+        return;
+      }
+      saveColVis(vis);
+      applyColVisibility();
+    });
+  }
 
   pageSizeEl.addEventListener('change', function () {
     state.page = 1;
@@ -450,6 +549,10 @@
     state.page = p;
     loadData(false);
   });
+
+  applyColVisibility();
+  var initTd = sessionBody.querySelector('tr td[colspan]');
+  if (initTd) initTd.setAttribute('colspan', String(visibleColCount()));
 })();
 </script>
 {% endblock script %}

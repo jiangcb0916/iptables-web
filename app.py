@@ -88,8 +88,8 @@ _CUSTOMER_TERMINAL_ITEMS_CACHE = {'items': None, 'ts': 0.0, 'ding_meta': {}}
 SESSION_LOG_REMOTE_BASE = (os.getenv('SESSION_LOG_REMOTE_BASE', '/data/logdata/remote') or '/data/logdata/remote').strip().rstrip('/')
 SESSION_LOG_FIREWALL_IP = (os.getenv('SESSION_LOG_FIREWALL_IP', '172.16.100.1') or '172.16.100.1').strip().strip('/')
 SESSION_LOG_FIND_MAX_FILES = max(1, min(500, int(os.getenv('SESSION_LOG_FIND_MAX_FILES', '120') or '120')))
-SESSION_LOG_TAIL_LINES = max(100, min(20000, int(os.getenv('SESSION_LOG_TAIL_LINES', '8000') or '8000')))
-SESSION_LOG_REMOTE_TIMEOUT = max(10, min(300, int(os.getenv('SESSION_LOG_REMOTE_TIMEOUT', '90') or '90')))
+SESSION_LOG_TAIL_LINES = max(500, min(150000, int(os.getenv('SESSION_LOG_TAIL_LINES', '40000') or '40000')))
+SESSION_LOG_REMOTE_TIMEOUT = max(10, min(600, int(os.getenv('SESSION_LOG_REMOTE_TIMEOUT', '120') or '120')))
 _SESSION_TD_SPLIT_RE = re.compile(r',(?=[A-Za-z][A-Za-z0-9_]*=)')
 # 会话表日志固定从该主机 SSH 拉取（须在主机管理中已配置）
 SESSION_LOG_HOST_IP = (os.getenv('SESSION_LOG_HOST_IP', '172.16.80.132') or '172.16.80.132').strip()
@@ -4404,6 +4404,7 @@ def session_table():
             session_table_page_size_default=SESSION_TABLE_PAGE_SIZE_DEFAULT,
             session_table_page_size_max=SESSION_TABLE_PAGE_SIZE_MAX,
             session_table_cache_ttl=SESSION_TABLE_CACHE_TTL,
+            session_log_tail_lines=SESSION_LOG_TAIL_LINES,
         )
     except Exception as e:
         return f"加载会话表页面失败: {str(e)}", 500
@@ -4565,10 +4566,10 @@ def session_table_api():
     remote_dir = _session_log_build_remote_dir(date_str)
     notices = [
         f'日志主机固定为 {SESSION_LOG_HOST_IP}（{log_host.get("host_name") or "未命名"}）。'
-        f'远端目录 {remote_dir}：至多 {SESSION_LOG_FIND_MAX_FILES} 个文件 strings 后匹配 SESSION_TEARDOWN，'
-        f'保留末 {SESSION_LOG_TAIL_LINES} 行；同日期缓存 {SESSION_TABLE_CACHE_TTL}s，翻页不重复 SSH；'
-        f'参数 refresh=1 强制重新拉取。',
-        '时间筛选：按会话 BeginTime/EndTime（Unix）与所选日期内时刻区间求交集；不选起止时刻则展示当日全部已解析记录。',
+        f'远端目录 {remote_dir}：至多 {SESSION_LOG_FIND_MAX_FILES} 个文件 strings；'
+        f'SESSION_TEARDOWN 取末尾最多 {SESSION_LOG_TAIL_LINES} 行（环境变量 SESSION_LOG_TAIL_LINES，单值上限 150000；更早记录不会进入本页）；'
+        f'单次命令超时 {SESSION_LOG_REMOTE_TIMEOUT}s；同日期缓存 {SESSION_TABLE_CACHE_TTL}s；refresh=1 强制重拉。',
+        '时间筛选：按会话 BeginTime/EndTime 与所选日期内时刻求交集；不选时刻则展示已拉取的全部记录。',
     ]
 
     ts_lo, ts_hi = _session_table_day_time_window_epoch(date_str, time_start_raw, time_end_raw)
@@ -4630,7 +4631,7 @@ def session_table_api():
                     return 0
 
             rows_all.sort(key=_end_ts, reverse=True)
-            max_return = min(8000, max(100, SESSION_LOG_TAIL_LINES))
+            max_return = min(150000, max(500, SESSION_LOG_TAIL_LINES))
             truncated = len(rows_all) > max_return
             rows_all = rows_all[:max_return]
             _session_table_rows_cache_set(host_id, date_str, rows_all, len(lines), truncated)
@@ -4652,7 +4653,14 @@ def session_table_api():
         rr['broadband'] = _session_broadband_label(rr.get('source_zone'), rr.get('destination_zone'))
         time_filtered.append(rr)
 
-    filtered = [r for r in time_filtered if _session_table_row_matches_keyword(r, keyword)]
+    ip_to_name = _threat_customer_ip_to_name_map(timeout_seconds=25)
+    enriched = []
+    for r in time_filtered:
+        er = dict(r)
+        er['source_name'] = _session_source_display_name(er.get('source_ip'), ip_to_name)
+        enriched.append(er)
+
+    filtered = [r for r in enriched if _session_table_row_matches_keyword(r, keyword)]
     total = len(filtered)
     total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
     if page > total_pages:
@@ -4660,11 +4668,11 @@ def session_table_api():
     start = (page - 1) * page_size
     page_rows = filtered[start:start + page_size]
 
-    ip_to_name = _threat_customer_ip_to_name_map(timeout_seconds=25)
     sessions_out = []
     for r in page_rows:
         item = dict(r)
-        item['source_name'] = _session_source_display_name(item.get('source_ip'), ip_to_name)
+        if 'source_name' not in item:
+            item['source_name'] = _session_source_display_name(item.get('source_ip'), ip_to_name)
         if 'broadband' not in item:
             item['broadband'] = _session_broadband_label(item.get('source_zone'), item.get('destination_zone'))
         sessions_out.append(item)
