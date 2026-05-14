@@ -21,28 +21,38 @@
           查询条件
         </h2>
         <p class="text-xs text-gray-500 mb-4">
-          日志路径约定：<span class="font-mono text-gray-700">{{ session_log_hint }}</span>
-          （当前设备目录名：<span class="font-mono">{{ session_log_firewall_ip }}</span>，基路径：<span class="font-mono">{{ session_log_base }}</span>）
+          日志路径：<span class="font-mono text-gray-700">{{ session_log_hint }}</span>
+          （设备目录 <span class="font-mono">{{ session_log_firewall_ip }}</span>，基路径 <span class="font-mono">{{ session_log_base }}</span>）
         </p>
+        {% if not log_host %}
+        <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          未在「主机管理」中找到 IP 为 <span class="font-mono font-semibold">{{ session_log_host_ip }}</span> 的主机，无法 SSH 拉取日志。请添加该主机后再使用本页。
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-800 mb-4">
+          <span class="font-medium text-gray-700">日志主机（固定）：</span>
+          <span class="font-mono text-primary">{{ log_host.host_name }}</span>
+          <span class="font-mono text-gray-600">({{ session_log_host_ip }})</span>
+        </p>
+        {% endif %}
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-          <div class="lg:col-span-4">
-            <label class="block text-sm text-gray-700 mb-1">目标主机 <span class="text-red-500">*</span></label>
-            <select id="host-select" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white">
-              <option value="">请选择主机</option>
-              {% for host in host_options %}
-              <option value="{{ host.id }}" data-ip="{{ host.ip_address }}">{{ host.host_name }} ({{ host.ip_address }})</option>
-              {% endfor %}
-            </select>
-          </div>
           <div class="lg:col-span-3">
             <label class="block text-sm text-gray-700 mb-1">日志日期 <span class="text-red-500">*</span></label>
-            <input id="log-date" type="date" value="{{ default_date }}" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white">
+            <input id="log-date" type="date" value="{{ default_date }}" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white" {% if not log_host %}disabled{% endif %}>
           </div>
-          <div class="lg:col-span-5 flex flex-wrap items-center gap-3">
-            <button id="refresh-btn" type="button" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm inline-flex items-center gap-1.5 shadow-sm">
+          <div class="lg:col-span-4 flex flex-wrap items-center gap-2">
+            <button id="refresh-btn" type="button" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm inline-flex items-center gap-1.5 shadow-sm" {% if not log_host %}disabled{% endif %}>
               <i class="fa fa-refresh"></i>
               拉取并解析
             </button>
+            <span class="text-xs text-gray-500">同日期 {{ session_table_cache_ttl }}s 内翻页不重复 SSH；拉取会强制刷新远端。</span>
+          </div>
+          <div class="lg:col-span-5 flex flex-wrap items-end gap-2">
+            <div class="flex-1 min-w-[200px]">
+              <label class="block text-sm text-gray-700 mb-1">关键词（服务端筛选）</label>
+              <input id="filter-input" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" placeholder="IP、端口、协议、区域、姓名等" {% if not log_host %}disabled{% endif %}>
+            </div>
+            <button id="search-btn" type="button" class="px-3 py-2 border border-gray-300 rounded-md text-sm hover:bg-gray-50" {% if not log_host %}disabled{% endif %}>应用筛选</button>
           </div>
         </div>
       </div>
@@ -54,23 +64,34 @@
               <i class="fa fa-list text-primary"></i>
               会话拆除记录
             </h2>
-            <p id="status-bar" class="text-xs text-gray-500 mt-1.5">选择主机与日期后点击「拉取并解析」。远端通过 strings 抽取可打印字段后再解析。</p>
+            <p id="status-bar" class="text-xs text-gray-500 mt-1.5">{% if log_host %}选择日期后点击「拉取并解析」；翻页使用下方分页。{% else %}请先配置日志主机。{% endif %}</p>
             <div id="meta-bar" class="mt-2 hidden flex flex-wrap items-center gap-2 text-xs"></div>
             <ul id="notice-list" class="mt-2 hidden list-disc pl-5 text-xs text-amber-800 space-y-1"></ul>
           </div>
+          <div class="flex flex-wrap items-center gap-2 text-sm">
+            <label class="text-gray-600">每页</label>
+            <select id="page-size" class="border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white" {% if not log_host %}disabled{% endif %}>
+              {% for n in [20, 50, 100, 200] %}
+              {% if n <= session_table_page_size_max %}
+              <option value="{{ n }}" {% if n == session_table_page_size_default %}selected{% endif %}>{{ n }} 条</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+          </div>
         </div>
 
-        <div class="mb-3 flex flex-wrap items-center gap-3">
-          <input id="filter-input" type="text" class="w-full md:w-96 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" placeholder="过滤：IP、端口、协议、策略名、关闭原因…">
-          <span id="result-count" class="text-xs text-gray-500 whitespace-nowrap">共 0 条</span>
+        <div class="mb-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+          <span id="result-count">共 0 条</span>
+          <span id="page-hint" class="hidden"></span>
         </div>
 
-        <div class="overflow-x-auto border border-gray-200 rounded-lg max-h-[70vh] overflow-y-auto">
+        <div class="overflow-x-auto border border-gray-200 rounded-lg">
           <table class="min-w-full divide-y divide-gray-200 text-sm">
-            <thead class="bg-gray-50 sticky top-0 z-10 shadow-sm">
+            <thead class="bg-gray-50">
               <tr>
                 <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">协议</th>
                 <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">源 IP</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">姓名</th>
                 <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">源端口</th>
                 <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">目的 IP</th>
                 <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">目的端口</th>
@@ -81,23 +102,36 @@
                 <th class="px-3 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">发送 P/B</th>
                 <th class="px-3 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">接收 P/B</th>
                 <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">区域</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">策略</th>
-                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">关闭原因</th>
               </tr>
             </thead>
             <tbody id="session-body" class="bg-white divide-y divide-gray-200 text-xs">
               <tr>
-                <td colspan="14" class="px-4 py-14 text-center">
+                <td colspan="13" class="px-4 py-14 text-center">
                   <div class="inline-flex flex-col items-center gap-2 text-gray-500">
                     <span class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                       <i class="fa fa-table text-lg"></i>
                     </span>
-                    <span class="text-sm">请选择主机与日期后拉取</span>
+                    <span class="text-sm">{% if log_host %}请选择日期后点击「拉取并解析」{% else %}请先配置日志主机{% endif %}</span>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div id="pager-bar" class="mt-4 hidden flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="page-first" class="px-3 py-1.5 text-xs border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40">首页</button>
+            <button type="button" id="page-prev" class="px-3 py-1.5 text-xs border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40">上一页</button>
+            <button type="button" id="page-next" class="px-3 py-1.5 text-xs border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40">下一页</button>
+            <button type="button" id="page-last" class="px-3 py-1.5 text-xs border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40">末页</button>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+            <span>第</span>
+            <input id="page-input" type="number" min="1" class="w-16 border border-gray-300 rounded px-2 py-1 text-sm" value="1">
+            <span>页 / 共 <span id="total-pages-disp">1</span> 页</span>
+            <button type="button" id="page-go" class="px-3 py-1.5 text-xs border border-gray-300 rounded-md hover:bg-gray-50">跳转</button>
+          </div>
         </div>
       </div>
     </div>
@@ -108,17 +142,35 @@
 {% block script %}
 <script>
 (function () {
-  const hostSelect = document.getElementById('host-select');
+  const logHostOk = {{ 'true' if log_host else 'false' }};
   const logDate = document.getElementById('log-date');
   const refreshBtn = document.getElementById('refresh-btn');
+  const searchBtn = document.getElementById('search-btn');
   const statusBar = document.getElementById('status-bar');
   const metaBar = document.getElementById('meta-bar');
   const noticeList = document.getElementById('notice-list');
   const sessionBody = document.getElementById('session-body');
   const filterInput = document.getElementById('filter-input');
   const resultCount = document.getElementById('result-count');
+  const pageHint = document.getElementById('page-hint');
+  const pageSizeEl = document.getElementById('page-size');
+  const pagerBar = document.getElementById('pager-bar');
+  const pageFirst = document.getElementById('page-first');
+  const pagePrev = document.getElementById('page-prev');
+  const pageNext = document.getElementById('page-next');
+  const pageLast = document.getElementById('page-last');
+  const pageInput = document.getElementById('page-input');
+  const pageGo = document.getElementById('page-go');
+  const totalPagesDisp = document.getElementById('total-pages-disp');
 
-  let latestRows = [];
+  let state = {
+    page: 1,
+    keyword: '',
+    totalPages: 1,
+    filteredCount: 0,
+    parsedCount: 0,
+    lastDate: ''
+  };
 
   function escapeHtml(s) {
     return String(s)
@@ -139,29 +191,12 @@
     return '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-50 text-gray-700 border border-gray-200">' + escapeHtml(u || '—') + '</span>';
   }
 
-  function rowMatchesFilter(row, q) {
-    if (!q) return true;
-    const hay = Object.values(row)
-      .join(' ')
-      .toLowerCase();
-    return hay.includes(q);
-  }
-
-  function updateResultCount(visible, total) {
-    const q = (filterInput.value || '').trim();
-    if (q && total > 0) {
-      resultCount.textContent = '显示 ' + visible + ' / 共 ' + total + ' 条';
-    } else {
-      resultCount.textContent = '共 ' + total + ' 条';
-    }
-  }
-
   function emptyStateHtml(message, isError) {
     const icon = isError ? 'fa-exclamation-circle' : 'fa-table';
     const color = isError ? 'text-red-500 bg-red-50' : 'text-slate-400 bg-slate-100';
     const textCls = isError ? 'text-red-600' : 'text-gray-500';
     return (
-      '<tr><td colspan="14" class="px-4 py-14 text-center">' +
+      '<tr><td colspan="13" class="px-4 py-14 text-center">' +
       '<div class="inline-flex flex-col items-center gap-2 ' + textCls + '">' +
       '<span class="flex h-12 w-12 items-center justify-center rounded-full ' + color + '">' +
       '<i class="fa ' + icon + ' text-lg"></i></span>' +
@@ -174,8 +209,10 @@
     const chips = [
       { label: '采集时间', val: data.collected_at || '—', cls: 'px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-100' },
       { label: '解析条数', val: String(data.parsed_count ?? 0), cls: 'px-2 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-100' },
+      { label: '筛选后', val: String(data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-cyan-50 text-cyan-800 border border-cyan-100' },
       { label: '原始匹配行', val: String(data.raw_line_count ?? 0), cls: 'px-2 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-100' },
-      { label: '截断', val: data.truncated ? '是（仅展示前 N 条）' : '否', cls: 'px-2 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100' }
+      { label: '截断', val: data.truncated ? '是' : '否', cls: 'px-2 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100' },
+      { label: '数据源', val: data.fetched_remote ? '已重新拉取' : '缓存', cls: 'px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200' }
     ];
     metaBar.innerHTML = chips
       .map(function (c) {
@@ -193,19 +230,23 @@
     }
   }
 
-  function renderTable() {
-    const q = (filterInput.value || '').trim().toLowerCase();
-    const rows = latestRows.filter(function (r) { return rowMatchesFilter(r, q); });
-    updateResultCount(rows.length, latestRows.length);
+  function setPagerDisabled() {
+    const tp = Math.max(1, state.totalPages || 1);
+    const p = Math.min(Math.max(1, state.page), tp);
+    state.page = p;
+    pageInput.value = String(p);
+    totalPagesDisp.textContent = String(tp);
+    pageFirst.disabled = p <= 1;
+    pagePrev.disabled = p <= 1;
+    pageNext.disabled = p >= tp;
+    pageLast.disabled = p >= tp;
+  }
 
-    if (!rows.length) {
-      sessionBody.innerHTML = emptyStateHtml(
-        latestRows.length ? '无匹配结果，请调整过滤条件' : '暂无数据，请拉取',
-        false
-      );
+  function renderRows(rows) {
+    if (!rows || !rows.length) {
+      sessionBody.innerHTML = emptyStateHtml('本页无数据', false);
       return;
     }
-
     sessionBody.innerHTML = rows
       .map(function (r) {
         const zones = escapeHtml(String(r.source_zone || '')) + ' → ' + escapeHtml(String(r.destination_zone || ''));
@@ -215,6 +256,7 @@
           '<tr class="hover:bg-gray-50 transition-colors">' +
           '<td class="px-3 py-2 whitespace-nowrap">' + protoBadge(r.protocol) + '</td>' +
           '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_ip)) + '</td>' +
+          '<td class="px-3 py-2 text-gray-900 max-w-[140px] truncate" title="' + escapeHtml(String(r.source_name || '')) + '">' + escapeHtml(String(r.source_name || '无')) + '</td>' +
           '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.source_port)) + '</td>' +
           '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.destination_ip)) + '</td>' +
           '<td class="px-3 py-2 font-mono whitespace-nowrap">' + escapeHtml(String(r.destination_port)) + '</td>' +
@@ -224,62 +266,133 @@
           '<td class="px-3 py-2 whitespace-nowrap text-gray-700" title="' + escapeHtml(String(r.end_time)) + '">' + escapeHtml(String(r.end_time_human || r.end_time || '')) + '</td>' +
           '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + sb + '</td>' +
           '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + rb + '</td>' +
-          '<td class="px-3 py-2 text-gray-800 max-w-[140px]" title="' + zones + '">' + zones + '</td>' +
-          '<td class="px-3 py-2 text-gray-800 max-w-[180px] truncate" title="' + escapeHtml(String(r.policy_name)) + '">' + escapeHtml(String(r.policy_name)) + '</td>' +
-          '<td class="px-3 py-2 text-gray-700 max-w-[120px] truncate" title="' + escapeHtml(String(r.close_reason)) + '">' + escapeHtml(String(r.close_reason)) + '</td>' +
+          '<td class="px-3 py-2 text-gray-800 max-w-[160px]" title="' + zones + '">' + zones + '</td>' +
           '</tr>'
         );
       })
       .join('');
   }
 
-  async function loadData() {
-    const hostId = hostSelect.value;
+  function buildQuery(refresh) {
     const date = (logDate.value || '').trim();
-    if (!hostId) {
-      statusBar.textContent = '请先选择主机。';
-      metaBar.classList.add('hidden');
-      noticeList.classList.add('hidden');
-      latestRows = [];
-      updateResultCount(0, 0);
-      renderTable();
-      return;
-    }
+    const ps = parseInt(pageSizeEl.value, 10) || 50;
+    const params = new URLSearchParams();
+    params.set('date', date);
+    params.set('page', String(state.page));
+    params.set('page_size', String(ps));
+    if (state.keyword) params.set('keyword', state.keyword);
+    if (refresh) params.set('refresh', '1');
+    return '/api/session-table?' + params.toString();
+  }
+
+  async function loadData(refresh) {
+    if (!logHostOk) return;
+    const date = (logDate.value || '').trim();
     if (!date) {
       statusBar.textContent = '请选择日志日期。';
       return;
     }
     refreshBtn.disabled = true;
-    statusBar.textContent = '正在 SSH 到主机执行 strings / grep，请稍候…';
+    searchBtn.disabled = true;
+    pageSizeEl.disabled = true;
+    statusBar.textContent = refresh ? '正在 SSH 拉取并解析，请稍候…' : '正在加载…';
     try {
-      const qs =
-        '/api/session-table?host_id=' +
-        encodeURIComponent(hostId) +
-        '&date=' +
-        encodeURIComponent(date);
-      const res = await fetch(qs);
+      const res = await fetch(buildQuery(refresh));
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || '请求失败');
-      latestRows = data.sessions || [];
-      const opt = hostSelect.options[hostSelect.selectedIndex];
-      const name = opt ? opt.textContent : '';
-      statusBar.textContent = '已更新：' + name + '，日期 ' + (data.date || date);
+
+      state.lastDate = data.date || date;
+      state.totalPages = Math.max(1, parseInt(data.total_pages, 10) || 1);
+      state.filteredCount = parseInt(data.filtered_count, 10) || 0;
+      state.parsedCount = parseInt(data.parsed_count, 10) || 0;
+      state.page = Math.min(Math.max(1, parseInt(data.page, 10) || 1), state.totalPages);
+
+      const rows = data.sessions || [];
+      const ps = parseInt(data.page_size, 10) || parseInt(pageSizeEl.value, 10) || 50;
+      resultCount.textContent =
+        '筛选后 ' + state.filteredCount + ' 条，解析 ' + state.parsedCount + ' 条；本页 ' + rows.length + ' 条';
+      pageHint.classList.remove('hidden');
+      pageHint.textContent =
+        '第 ' + state.page + ' / ' + state.totalPages + ' 页（每页 ' + ps + ' 条） · ' + (data.log_host_display || '');
+
+      pagerBar.classList.remove('hidden');
+      setPagerDisabled();
       renderMeta(data);
-      renderTable();
+      if (!rows.length && state.filteredCount === 0) {
+        sessionBody.innerHTML = emptyStateHtml('无数据，请确认日期与远端目录', false);
+      } else if (!rows.length) {
+        sessionBody.innerHTML = emptyStateHtml('本页无数据，请翻页或调整筛选', false);
+      } else {
+        renderRows(rows);
+      }
+      statusBar.textContent =
+        '已更新：' + (data.log_host_display || '') + '，日期 ' + (data.date || date);
     } catch (e) {
-      latestRows = [];
       statusBar.textContent = e.message || '加载失败';
       metaBar.classList.add('hidden');
       noticeList.classList.add('hidden');
-      updateResultCount(0, 0);
+      pagerBar.classList.add('hidden');
+      pageHint.classList.add('hidden');
+      resultCount.textContent = '加载失败';
       sessionBody.innerHTML = emptyStateHtml(e.message || '加载失败', true);
     } finally {
       refreshBtn.disabled = false;
+      searchBtn.disabled = false;
+      pageSizeEl.disabled = false;
     }
   }
 
-  refreshBtn.addEventListener('click', loadData);
-  filterInput.addEventListener('input', renderTable);
+  refreshBtn.addEventListener('click', function () {
+    state.page = 1;
+    loadData(true);
+  });
+
+  searchBtn.addEventListener('click', function () {
+    state.keyword = (filterInput.value || '').trim();
+    state.page = 1;
+    loadData(false);
+  });
+
+  filterInput.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      state.keyword = (filterInput.value || '').trim();
+      state.page = 1;
+      loadData(false);
+    }
+  });
+
+  pageSizeEl.addEventListener('change', function () {
+    state.page = 1;
+    loadData(false);
+  });
+
+  logDate.addEventListener('change', function () {
+    state.page = 1;
+  });
+
+  pageFirst.addEventListener('click', function () {
+    state.page = 1;
+    loadData(false);
+  });
+  pagePrev.addEventListener('click', function () {
+    state.page = Math.max(1, state.page - 1);
+    loadData(false);
+  });
+  pageNext.addEventListener('click', function () {
+    state.page = Math.min(state.totalPages, state.page + 1);
+    loadData(false);
+  });
+  pageLast.addEventListener('click', function () {
+    state.page = state.totalPages;
+    loadData(false);
+  });
+  pageGo.addEventListener('click', function () {
+    let p = parseInt(pageInput.value, 10);
+    if (isNaN(p) || p < 1) p = 1;
+    state.page = p;
+    loadData(false);
+  });
 })();
 </script>
 {% endblock script %}

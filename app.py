@@ -91,6 +91,13 @@ SESSION_LOG_FIND_MAX_FILES = max(1, min(500, int(os.getenv('SESSION_LOG_FIND_MAX
 SESSION_LOG_TAIL_LINES = max(100, min(20000, int(os.getenv('SESSION_LOG_TAIL_LINES', '8000') or '8000')))
 SESSION_LOG_REMOTE_TIMEOUT = max(10, min(300, int(os.getenv('SESSION_LOG_REMOTE_TIMEOUT', '90') or '90')))
 _SESSION_TD_SPLIT_RE = re.compile(r',(?=[A-Za-z][A-Za-z0-9_]*=)')
+# 会话表日志固定从该主机 SSH 拉取（须在主机管理中已配置）
+SESSION_LOG_HOST_IP = (os.getenv('SESSION_LOG_HOST_IP', '172.16.80.132') or '172.16.80.132').strip()
+SESSION_TABLE_CACHE_TTL = max(15, min(600, int(os.getenv('SESSION_TABLE_CACHE_TTL', '120') or '120')))
+SESSION_TABLE_PAGE_SIZE_MAX = max(20, min(500, int(os.getenv('SESSION_TABLE_PAGE_SIZE_MAX', '200') or '200')))
+SESSION_TABLE_PAGE_SIZE_DEFAULT = max(10, min(SESSION_TABLE_PAGE_SIZE_MAX, int(os.getenv('SESSION_TABLE_PAGE_SIZE_DEFAULT', '50') or '50')))
+_SESSION_TABLE_ROWS_CACHE = {}
+_SESSION_TABLE_CACHE_LOCK = threading.RLock()
 
 DINGTALK_APP_KEY = (os.getenv('DINGTALK_APP_KEY') or os.getenv('DD_APPKEY') or '').strip()
 DINGTALK_APP_SECRET = (os.getenv('DINGTALK_APP_SECRET') or os.getenv('DD_APPSECRET') or '').strip()
@@ -1394,6 +1401,78 @@ def _usg_collect_session_teardown_remote(host, date_str):
         f"timeout {SESSION_LOG_REMOTE_TIMEOUT} sh -c {shlex.quote(inner_body)}"
     )
     return _remote_bash_lc(host, script)
+
+
+def _resolve_session_log_host(cursor=None):
+    """固定日志主机：按 SESSION_LOG_HOST_IP 在主机列表中解析 id / 展示名。"""
+    ip = SESSION_LOG_HOST_IP
+    for h in _get_rule_view_hosts(cursor) or []:
+        if (h.get('ip_address') or '').strip() == ip:
+            try:
+                hid = int(h.get('id'))
+            except (TypeError, ValueError):
+                continue
+            name = (h.get('host_name') or '').strip() or ip
+            return {'id': hid, 'ip_address': ip, 'host_name': name}
+    return None
+
+
+def _session_table_cache_key(host_id, date_str):
+    return f'{int(host_id)}:{date_str}'
+
+
+def _session_table_rows_cache_get(host_id, date_str):
+    key = _session_table_cache_key(host_id, date_str)
+    now = time.time()
+    with _SESSION_TABLE_CACHE_LOCK:
+        ent = _SESSION_TABLE_ROWS_CACHE.get(key)
+        if not ent:
+            return None
+        if now - float(ent.get('ts') or 0) > SESSION_TABLE_CACHE_TTL:
+            try:
+                del _SESSION_TABLE_ROWS_CACHE[key]
+            except KeyError:
+                pass
+            return None
+        return {
+            'rows': ent.get('rows') or [],
+            'raw_line_count': int(ent.get('raw_line_count') or 0),
+            'truncated': bool(ent.get('truncated')),
+        }
+
+
+def _session_table_rows_cache_set(host_id, date_str, rows, raw_line_count, truncated):
+    key = _session_table_cache_key(host_id, date_str)
+    with _SESSION_TABLE_CACHE_LOCK:
+        if len(_SESSION_TABLE_ROWS_CACHE) > 16:
+            oldest_k = min(_SESSION_TABLE_ROWS_CACHE.items(), key=lambda kv: float(kv[1].get('ts') or 0))[0]
+            _SESSION_TABLE_ROWS_CACHE.pop(oldest_k, None)
+        _SESSION_TABLE_ROWS_CACHE[key] = {
+            'ts': time.time(),
+            'rows': rows,
+            'raw_line_count': int(raw_line_count or 0),
+            'truncated': bool(truncated),
+        }
+
+
+def _session_table_row_matches_keyword(row, keyword):
+    if not keyword:
+        return True
+    q = keyword.strip().lower()
+    if not q:
+        return True
+    blob = ' '.join(str(v) for v in row.values()).lower()
+    return q in blob
+
+
+def _session_source_display_name(source_ip, ip_to_name):
+    k = (source_ip or '').strip()
+    if not k:
+        return '无'
+    n = (ip_to_name or {}).get(k)
+    if n and str(n).strip():
+        return str(n).strip()
+    return '无'
 
 
 _TR_SSH_FAIL_PATTERNS = (
@@ -4237,16 +4316,20 @@ def session_table():
         if not USE_LOCAL_FILE_STORE:
             db = get_db()
             cursor = db.cursor()
-        host_options = _get_rule_view_hosts(cursor)
+        log_host = _resolve_session_log_host(cursor)
         default_date = datetime.now().strftime('%Y-%m-%d')
         session_log_hint = f'{SESSION_LOG_REMOTE_BASE}/{SESSION_LOG_FIREWALL_IP}/YYYY-MM-DD'
         return render_template(
             'session_table.html',
-            host_options=host_options,
+            log_host=log_host,
+            session_log_host_ip=SESSION_LOG_HOST_IP,
             default_date=default_date,
             session_log_base=SESSION_LOG_REMOTE_BASE,
             session_log_firewall_ip=SESSION_LOG_FIREWALL_IP,
             session_log_hint=session_log_hint,
+            session_table_page_size_default=SESSION_TABLE_PAGE_SIZE_DEFAULT,
+            session_table_page_size_max=SESSION_TABLE_PAGE_SIZE_MAX,
+            session_table_cache_ttl=SESSION_TABLE_CACHE_TTL,
         )
     except Exception as e:
         return f"加载会话表页面失败: {str(e)}", 500
@@ -4367,10 +4450,20 @@ def host_connection_insight_api():
 @login_required
 @permission_required('hosts_view')
 def session_table_api():
-    host_id = request.args.get('host_id')
-    if not str(host_id).isdigit():
-        return jsonify({'success': False, 'message': '请选择主机'}), 400
-    host = _load_host_connection_info(int(host_id))
+    cursor = None
+    if not USE_LOCAL_FILE_STORE:
+        db = get_db()
+        cursor = db.cursor()
+
+    log_host = _resolve_session_log_host(cursor)
+    if not log_host:
+        return jsonify({
+            'success': False,
+            'message': f'未找到 IP 为 {SESSION_LOG_HOST_IP} 的主机，请在「主机管理」中添加后再使用会话表。',
+        }), 400
+
+    host_id = int(log_host['id'])
+    host = _load_host_connection_info(host_id)
     if not host:
         return jsonify({'success': False, 'message': '主机不存在'}), 404
 
@@ -4380,93 +4473,132 @@ def session_table_api():
     except ValueError as e:
         return jsonify({'success': False, 'message': str(e)}), 400
 
+    refresh = (request.args.get('refresh') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+    try:
+        page = max(1, int(request.args.get('page') or '1'))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.args.get('page_size') or SESSION_TABLE_PAGE_SIZE_DEFAULT)
+    except (TypeError, ValueError):
+        page_size = SESSION_TABLE_PAGE_SIZE_DEFAULT
+    page_size = max(10, min(SESSION_TABLE_PAGE_SIZE_MAX, page_size))
+
+    keyword = (request.args.get('keyword') or '').strip()
+
     remote_dir = _session_log_build_remote_dir(date_str)
     notices = [
-        f'远端目录 {remote_dir}：对至多 {SESSION_LOG_FIND_MAX_FILES} 个文件执行 strings，'
-        f'筛选 SESSION_TEARDOWN 后取末 {SESSION_LOG_TAIL_LINES} 行；'
-        f'可通过环境变量 SESSION_LOG_REMOTE_BASE、SESSION_LOG_FIREWALL_IP 等调整。'
+        f'日志主机固定为 {SESSION_LOG_HOST_IP}（{log_host.get("host_name") or "未命名"}）。'
+        f'远端目录 {remote_dir}：至多 {SESSION_LOG_FIND_MAX_FILES} 个文件 strings 后匹配 SESSION_TEARDOWN，'
+        f'保留末 {SESSION_LOG_TAIL_LINES} 行；同日期缓存 {SESSION_TABLE_CACHE_TTL}s，翻页不重复 SSH；'
+        f'参数 refresh=1 强制重新拉取。',
     ]
 
-    try:
-        text = _usg_collect_session_teardown_remote(host, date_str)
-    except RuntimeError as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+    bundle = None
+    if not refresh:
+        bundle = _session_table_rows_cache_get(host_id, date_str)
 
-    stripped = (text or '').strip()
-    if stripped == '__NO_SESSION_DIR__':
-        return jsonify({
-            'success': True,
-            'host_id': int(host_id),
-            'host_ip': host.get('ip_address'),
-            'date': date_str,
-            'remote_dir': remote_dir,
-            'sessions': [],
-            'parsed_count': 0,
-            'raw_line_count': 0,
-            'truncated': False,
-            'notices': notices + [f'目录不存在或不可读：{remote_dir}'],
-            'collected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        })
-
-    lines = []
-    for ln in (text or '').splitlines():
-        s = ln.strip()
-        if 'SESSION_TEARDOWN' in s:
-            lines.append(s)
-
-    rows = []
-    for ln in lines:
-        kv = _parse_usg_session_teardown_line(ln)
-        if not kv:
-            continue
-        rows.append({
-            'ip_ver': kv.get('IPVer') or '',
-            'protocol': kv.get('Protocol') or '',
-            'source_ip': kv.get('SourceIP') or '',
-            'destination_ip': kv.get('DestinationIP') or '',
-            'source_port': kv.get('SourcePort') or '',
-            'destination_port': kv.get('DestinationPort') or '',
-            'source_nat_ip': kv.get('SourceNatIP') or '',
-            'source_nat_port': kv.get('SourceNatPort') or '',
-            'begin_time': kv.get('BeginTime') or '',
-            'end_time': kv.get('EndTime') or '',
-            'begin_time_human': _session_ts_human(kv.get('BeginTime')),
-            'end_time_human': _session_ts_human(kv.get('EndTime')),
-            'send_pkts': kv.get('SendPkts') or '',
-            'send_bytes': kv.get('SendBytes') or '',
-            'rcv_pkts': kv.get('RcvPkts') or '',
-            'rcv_bytes': kv.get('RcvBytes') or '',
-            'source_vpn_id': kv.get('SourceVpnID') or '',
-            'destination_vpn_id': kv.get('DestinationVpnID') or '',
-            'source_zone': kv.get('SourceZone') or '',
-            'destination_zone': kv.get('DestinationZone') or '',
-            'policy_name': kv.get('PolicyName') or '',
-            'close_reason': kv.get('CloseReason') or '',
-        })
-
-    def _end_ts(row):
+    fetched_remote = bundle is None
+    if bundle is None:
         try:
-            return int(str(row.get('end_time') or '0') or '0')
-        except Exception:
-            return 0
+            text = _usg_collect_session_teardown_remote(host, date_str)
+        except RuntimeError as e:
+            return jsonify({'success': False, 'message': str(e)}), 500
 
-    rows.sort(key=_end_ts, reverse=True)
-    max_return = min(8000, max(100, SESSION_LOG_TAIL_LINES))
-    truncated = len(rows) > max_return
-    rows = rows[:max_return]
+        stripped = (text or '').strip()
+        if stripped == '__NO_SESSION_DIR__':
+            notices.append(f'目录不存在或不可读：{remote_dir}')
+            _session_table_rows_cache_set(host_id, date_str, [], 0, False)
+            bundle = {'rows': [], 'raw_line_count': 0, 'truncated': False}
+        else:
+            lines = []
+            for ln in (text or '').splitlines():
+                s = ln.strip()
+                if 'SESSION_TEARDOWN' in s:
+                    lines.append(s)
+
+            rows_all = []
+            for ln in lines:
+                kv = _parse_usg_session_teardown_line(ln)
+                if not kv:
+                    continue
+                rows_all.append({
+                    'ip_ver': kv.get('IPVer') or '',
+                    'protocol': kv.get('Protocol') or '',
+                    'source_ip': kv.get('SourceIP') or '',
+                    'destination_ip': kv.get('DestinationIP') or '',
+                    'source_port': kv.get('SourcePort') or '',
+                    'destination_port': kv.get('DestinationPort') or '',
+                    'source_nat_ip': kv.get('SourceNatIP') or '',
+                    'source_nat_port': kv.get('SourceNatPort') or '',
+                    'begin_time': kv.get('BeginTime') or '',
+                    'end_time': kv.get('EndTime') or '',
+                    'begin_time_human': _session_ts_human(kv.get('BeginTime')),
+                    'end_time_human': _session_ts_human(kv.get('EndTime')),
+                    'send_pkts': kv.get('SendPkts') or '',
+                    'send_bytes': kv.get('SendBytes') or '',
+                    'rcv_pkts': kv.get('RcvPkts') or '',
+                    'rcv_bytes': kv.get('RcvBytes') or '',
+                    'source_vpn_id': kv.get('SourceVpnID') or '',
+                    'destination_vpn_id': kv.get('DestinationVpnID') or '',
+                    'source_zone': kv.get('SourceZone') or '',
+                    'destination_zone': kv.get('DestinationZone') or '',
+                })
+
+            def _end_ts(row):
+                try:
+                    return int(str(row.get('end_time') or '0') or '0')
+                except Exception:
+                    return 0
+
+            rows_all.sort(key=_end_ts, reverse=True)
+            max_return = min(8000, max(100, SESSION_LOG_TAIL_LINES))
+            truncated = len(rows_all) > max_return
+            rows_all = rows_all[:max_return]
+            _session_table_rows_cache_set(host_id, date_str, rows_all, len(lines), truncated)
+            bundle = {
+                'rows': rows_all,
+                'raw_line_count': len(lines),
+                'truncated': truncated,
+            }
+
+    rows_all = bundle['rows']
+    raw_line_count = int(bundle.get('raw_line_count') or 0)
+    truncated = bool(bundle.get('truncated'))
+
+    filtered = [r for r in rows_all if _session_table_row_matches_keyword(r, keyword)]
+    total = len(filtered)
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * page_size
+    page_rows = filtered[start:start + page_size]
+
+    ip_to_name = _threat_customer_ip_to_name_map(timeout_seconds=25)
+    sessions_out = []
+    for r in page_rows:
+        item = dict(r)
+        item['source_name'] = _session_source_display_name(item.get('source_ip'), ip_to_name)
+        sessions_out.append(item)
 
     return jsonify({
         'success': True,
-        'host_id': int(host_id),
+        'host_id': host_id,
         'host_ip': host.get('ip_address'),
+        'log_host_display': f'{log_host.get("host_name") or "主机"} ({SESSION_LOG_HOST_IP})',
         'date': date_str,
         'remote_dir': remote_dir,
-        'sessions': rows,
-        'parsed_count': len(rows),
-        'raw_line_count': len(lines),
+        'sessions': sessions_out,
+        'parsed_count': len(rows_all),
+        'filtered_count': total,
+        'raw_line_count': raw_line_count,
         'truncated': truncated,
         'notices': notices,
         'collected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'page': page,
+        'page_size': page_size,
+        'total_pages': total_pages,
+        'fetched_remote': fetched_remote,
     })
 
 
