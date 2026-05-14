@@ -36,25 +36,34 @@
         </p>
         {% endif %}
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-          <div class="lg:col-span-3">
+          <div class="lg:col-span-2">
             <label class="block text-sm text-gray-700 mb-1">日志日期 <span class="text-red-500">*</span></label>
             <input id="log-date" type="date" value="{{ default_date }}" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white" {% if not log_host %}disabled{% endif %}>
           </div>
-          <div class="lg:col-span-4 flex flex-wrap items-center gap-2">
+          <div class="lg:col-span-2">
+            <label class="block text-sm text-gray-700 mb-1">开始时刻</label>
+            <input id="time-start" type="time" step="1" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white" {% if not log_host %}disabled{% endif %} title="留空则从 00:00:00 起">
+          </div>
+          <div class="lg:col-span-2">
+            <label class="block text-sm text-gray-700 mb-1">结束时刻</label>
+            <input id="time-end" type="time" step="1" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white" {% if not log_host %}disabled{% endif %} title="留空则到当日 23:59:59">
+          </div>
+          <div class="lg:col-span-3 flex flex-wrap items-center gap-2">
             <button id="refresh-btn" type="button" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 text-sm inline-flex items-center gap-1.5 shadow-sm" {% if not log_host %}disabled{% endif %}>
               <i class="fa fa-refresh"></i>
               拉取并解析
             </button>
-            <span class="text-xs text-gray-500">同日期 {{ session_table_cache_ttl }}s 内翻页不重复 SSH；拉取会强制刷新远端。</span>
+            <button id="clear-time-btn" type="button" class="px-2 py-2 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50" {% if not log_host %}disabled{% endif %} title="清空起止时刻，按全天">清空时段</button>
           </div>
-          <div class="lg:col-span-5 flex flex-wrap items-end gap-2">
-            <div class="flex-1 min-w-[200px]">
+          <div class="lg:col-span-3 flex flex-wrap items-end gap-2">
+            <div class="flex-1 min-w-[160px]">
               <label class="block text-sm text-gray-700 mb-1">关键词（服务端筛选）</label>
-              <input id="filter-input" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" placeholder="IP、端口、协议、区域、姓名等" {% if not log_host %}disabled{% endif %}>
+              <input id="filter-input" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" placeholder="IP、端口、宽带、姓名等" {% if not log_host %}disabled{% endif %}>
             </div>
             <button id="search-btn" type="button" class="px-3 py-2 border border-gray-300 rounded-md text-sm hover:bg-gray-50" {% if not log_host %}disabled{% endif %}>应用筛选</button>
           </div>
         </div>
+        <p class="text-xs text-gray-500 mt-3">远端仍按「日志日期」目录整包拉取；<strong>起止时刻</strong>仅在服务端按会话 Begin/End 时间过滤。同日期 {{ session_table_cache_ttl }}s 内翻页不重复 SSH；「拉取并解析」会强制刷新远端。</p>
       </div>
 
       <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -102,11 +111,12 @@
                 <th class="px-3 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">发送 P/B</th>
                 <th class="px-3 py-2 text-right text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">接收 P/B</th>
                 <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">区域</th>
+                <th class="px-3 py-2 text-left text-xs text-secondary uppercase tracking-wide font-medium whitespace-nowrap">宽带</th>
               </tr>
             </thead>
             <tbody id="session-body" class="bg-white divide-y divide-gray-200 text-xs">
               <tr>
-                <td colspan="13" class="px-4 py-14 text-center">
+                <td colspan="14" class="px-4 py-14 text-center">
                   <div class="inline-flex flex-col items-center gap-2 text-gray-500">
                     <span class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                       <i class="fa fa-table text-lg"></i>
@@ -144,6 +154,9 @@
 (function () {
   const logHostOk = {{ 'true' if log_host else 'false' }};
   const logDate = document.getElementById('log-date');
+  const timeStart = document.getElementById('time-start');
+  const timeEnd = document.getElementById('time-end');
+  const clearTimeBtn = document.getElementById('clear-time-btn');
   const refreshBtn = document.getElementById('refresh-btn');
   const searchBtn = document.getElementById('search-btn');
   const statusBar = document.getElementById('status-bar');
@@ -191,12 +204,23 @@
     return '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-50 text-gray-700 border border-gray-200">' + escapeHtml(u || '—') + '</span>';
   }
 
+  function broadbandBadge(lab) {
+    const s = String(lab || '—');
+    if (s === '电信') {
+      return '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-orange-50 text-orange-900 border border-orange-100">电信</span>';
+    }
+    if (s === '联通') {
+      return '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 text-blue-900 border border-blue-100">联通</span>';
+    }
+    return '<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] text-gray-600 border border-gray-200">' + escapeHtml(s) + '</span>';
+  }
+
   function emptyStateHtml(message, isError) {
     const icon = isError ? 'fa-exclamation-circle' : 'fa-table';
     const color = isError ? 'text-red-500 bg-red-50' : 'text-slate-400 bg-slate-100';
     const textCls = isError ? 'text-red-600' : 'text-gray-500';
     return (
-      '<tr><td colspan="13" class="px-4 py-14 text-center">' +
+      '<tr><td colspan="14" class="px-4 py-14 text-center">' +
       '<div class="inline-flex flex-col items-center gap-2 ' + textCls + '">' +
       '<span class="flex h-12 w-12 items-center justify-center rounded-full ' + color + '">' +
       '<i class="fa ' + icon + ' text-lg"></i></span>' +
@@ -209,7 +233,8 @@
     const chips = [
       { label: '采集时间', val: data.collected_at || '—', cls: 'px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-100' },
       { label: '解析条数', val: String(data.parsed_count ?? 0), cls: 'px-2 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-100' },
-      { label: '筛选后', val: String(data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-cyan-50 text-cyan-800 border border-cyan-100' },
+      { label: '时间窗后', val: String(data.time_filtered_count ?? data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-100' },
+      { label: '关键词后', val: String(data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-cyan-50 text-cyan-800 border border-cyan-100' },
       { label: '原始匹配行', val: String(data.raw_line_count ?? 0), cls: 'px-2 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-100' },
       { label: '截断', val: data.truncated ? '是' : '否', cls: 'px-2 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100' },
       { label: '数据源', val: data.fetched_remote ? '已重新拉取' : '缓存', cls: 'px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200' }
@@ -267,6 +292,7 @@
           '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + sb + '</td>' +
           '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + rb + '</td>' +
           '<td class="px-3 py-2 text-gray-800 max-w-[160px]" title="' + zones + '">' + zones + '</td>' +
+          '<td class="px-3 py-2 whitespace-nowrap">' + broadbandBadge(r.broadband) + '</td>' +
           '</tr>'
         );
       })
@@ -281,6 +307,10 @@
     params.set('page', String(state.page));
     params.set('page_size', String(ps));
     if (state.keyword) params.set('keyword', state.keyword);
+    const ts = (timeStart && timeStart.value) ? String(timeStart.value).trim() : '';
+    const te = (timeEnd && timeEnd.value) ? String(timeEnd.value).trim() : '';
+    if (ts) params.set('time_start', ts);
+    if (te) params.set('time_end', te);
     if (refresh) params.set('refresh', '1');
     return '/api/session-table?' + params.toString();
   }
@@ -295,6 +325,9 @@
     refreshBtn.disabled = true;
     searchBtn.disabled = true;
     pageSizeEl.disabled = true;
+    if (timeStart) timeStart.disabled = true;
+    if (timeEnd) timeEnd.disabled = true;
+    if (clearTimeBtn) clearTimeBtn.disabled = true;
     statusBar.textContent = refresh ? '正在 SSH 拉取并解析，请稍候…' : '正在加载…';
     try {
       const res = await fetch(buildQuery(refresh));
@@ -309,8 +342,10 @@
 
       const rows = data.sessions || [];
       const ps = parseInt(data.page_size, 10) || parseInt(pageSizeEl.value, 10) || 50;
+      const tfc = parseInt(data.time_filtered_count, 10);
+      const tfcSafe = isNaN(tfc) ? state.filteredCount : tfc;
       resultCount.textContent =
-        '筛选后 ' + state.filteredCount + ' 条，解析 ' + state.parsedCount + ' 条；本页 ' + rows.length + ' 条';
+        '解析 ' + state.parsedCount + ' 条 → 时间窗后 ' + tfcSafe + ' 条 → 关键词后 ' + state.filteredCount + ' 条；本页 ' + rows.length + ' 条';
       pageHint.classList.remove('hidden');
       pageHint.textContent =
         '第 ' + state.page + ' / ' + state.totalPages + ' 页（每页 ' + ps + ' 条） · ' + (data.log_host_display || '');
@@ -325,8 +360,18 @@
       } else {
         renderRows(rows);
       }
+      var timeHint = '';
+      if (data.time_start || data.time_end) {
+        var a = data.time_start || '';
+        var b = data.time_end || '';
+        if (a && b) timeHint = '，时段 ' + a + ' ~ ' + b;
+        else if (a) timeHint = '，从 ' + a + ' 起至当日末';
+        else timeHint = '，从当日起至 ' + b;
+      } else {
+        timeHint = '，时段 全天';
+      }
       statusBar.textContent =
-        '已更新：' + (data.log_host_display || '') + '，日期 ' + (data.date || date);
+        '已更新：' + (data.log_host_display || '') + '，日期 ' + (data.date || date) + timeHint;
     } catch (e) {
       statusBar.textContent = e.message || '加载失败';
       metaBar.classList.add('hidden');
@@ -339,6 +384,9 @@
       refreshBtn.disabled = false;
       searchBtn.disabled = false;
       pageSizeEl.disabled = false;
+      if (timeStart) timeStart.disabled = false;
+      if (timeEnd) timeEnd.disabled = false;
+      if (clearTimeBtn) clearTimeBtn.disabled = false;
     }
   }
 
@@ -370,6 +418,15 @@
   logDate.addEventListener('change', function () {
     state.page = 1;
   });
+
+  if (clearTimeBtn) {
+    clearTimeBtn.addEventListener('click', function () {
+      if (timeStart) timeStart.value = '';
+      if (timeEnd) timeEnd.value = '';
+      state.page = 1;
+      loadData(false);
+    });
+  }
 
   pageFirst.addEventListener('click', function () {
     state.page = 1;

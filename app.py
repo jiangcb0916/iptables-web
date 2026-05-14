@@ -1475,6 +1475,80 @@ def _session_source_display_name(source_ip, ip_to_name):
     return '无'
 
 
+def _session_table_parse_clock(value):
+    """解析 HH:MM 或 HH:MM:SS（来自 input type=time），返回 (h,m,s)。"""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    parts = s.split(':')
+    try:
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        sec = int(parts[2]) if len(parts) > 2 else 0
+    except (ValueError, IndexError):
+        return None
+    h = max(0, min(23, h))
+    m = max(0, min(59, m))
+    sec = max(0, min(59, sec))
+    return h, m, sec
+
+
+def _session_table_day_time_window_epoch(date_str, time_start_raw, time_end_raw):
+    """
+    将所选日志日期与可选起止时刻（本地时区）转为 Unix 秒闭区间 [ts_lo, ts_hi]。
+    起止均未填则返回 (None, None)，表示不按时间过滤。
+    """
+    ts_lo_parsed = _session_table_parse_clock(time_start_raw)
+    ts_hi_parsed = _session_table_parse_clock(time_end_raw)
+    if ts_lo_parsed is None and ts_hi_parsed is None:
+        return None, None
+    base = datetime.strptime(date_str, '%Y-%m-%d')
+    day_lo = int(base.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    day_hi = int(base.replace(hour=23, minute=59, second=59, microsecond=0).timestamp())
+    if ts_lo_parsed is not None:
+        ts_lo = int(base.replace(
+            hour=ts_lo_parsed[0], minute=ts_lo_parsed[1], second=ts_lo_parsed[2], microsecond=0
+        ).timestamp())
+    else:
+        ts_lo = day_lo
+    if ts_hi_parsed is not None:
+        ts_hi = int(base.replace(
+            hour=ts_hi_parsed[0], minute=ts_hi_parsed[1], second=ts_hi_parsed[2], microsecond=0
+        ).timestamp())
+    else:
+        ts_hi = day_hi
+    if ts_lo > ts_hi:
+        ts_lo, ts_hi = ts_hi, ts_lo
+    return ts_lo, ts_hi
+
+
+def _session_row_overlaps_time_window(row, ts_lo, ts_hi):
+    """会话 [BeginTime, EndTime] 与 [ts_lo, ts_hi] 是否有交集；无时窗参数时恒为 True。"""
+    if ts_lo is None and ts_hi is None:
+        return True
+    try:
+        b = int(str(row.get('begin_time') or '0') or '0')
+        e = int(str(row.get('end_time') or '0') or '0')
+    except (TypeError, ValueError):
+        return False
+    if b == 0 and e == 0:
+        return True
+    return b <= ts_hi and e >= ts_lo
+
+
+def _session_broadband_label(source_zone, dest_zone):
+    """按源/目的安全域映射宽带出口（与 USG 区域命名约定一致）。"""
+    sz = (source_zone or '').strip().lower()
+    dz = (dest_zone or '').strip().lower()
+    if sz == 'trust' and dz == 'untrust1':
+        return '电信'
+    if sz == 'trust' and dz == 'untrust':
+        return '联通'
+    return '—'
+
+
 _TR_SSH_FAIL_PATTERNS = (
     re.compile(r'Failed password for (?:invalid user )?\S+ from (\S+) port \d+', re.I),
     re.compile(r'Invalid user \S+ from (\S+) port \d+', re.I),
@@ -4485,6 +4559,8 @@ def session_table_api():
     page_size = max(10, min(SESSION_TABLE_PAGE_SIZE_MAX, page_size))
 
     keyword = (request.args.get('keyword') or '').strip()
+    time_start_raw = (request.args.get('time_start') or '').strip()
+    time_end_raw = (request.args.get('time_end') or '').strip()
 
     remote_dir = _session_log_build_remote_dir(date_str)
     notices = [
@@ -4492,8 +4568,10 @@ def session_table_api():
         f'远端目录 {remote_dir}：至多 {SESSION_LOG_FIND_MAX_FILES} 个文件 strings 后匹配 SESSION_TEARDOWN，'
         f'保留末 {SESSION_LOG_TAIL_LINES} 行；同日期缓存 {SESSION_TABLE_CACHE_TTL}s，翻页不重复 SSH；'
         f'参数 refresh=1 强制重新拉取。',
+        '时间筛选：按会话 BeginTime/EndTime（Unix）与所选日期内时刻区间求交集；不选起止时刻则展示当日全部已解析记录。',
     ]
 
+    ts_lo, ts_hi = _session_table_day_time_window_epoch(date_str, time_start_raw, time_end_raw)
     bundle = None
     if not refresh:
         bundle = _session_table_rows_cache_get(host_id, date_str)
@@ -4566,7 +4644,15 @@ def session_table_api():
     raw_line_count = int(bundle.get('raw_line_count') or 0)
     truncated = bool(bundle.get('truncated'))
 
-    filtered = [r for r in rows_all if _session_table_row_matches_keyword(r, keyword)]
+    time_filtered = []
+    for r in rows_all:
+        if not _session_row_overlaps_time_window(r, ts_lo, ts_hi):
+            continue
+        rr = dict(r)
+        rr['broadband'] = _session_broadband_label(rr.get('source_zone'), rr.get('destination_zone'))
+        time_filtered.append(rr)
+
+    filtered = [r for r in time_filtered if _session_table_row_matches_keyword(r, keyword)]
     total = len(filtered)
     total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
     if page > total_pages:
@@ -4579,6 +4665,8 @@ def session_table_api():
     for r in page_rows:
         item = dict(r)
         item['source_name'] = _session_source_display_name(item.get('source_ip'), ip_to_name)
+        if 'broadband' not in item:
+            item['broadband'] = _session_broadband_label(item.get('source_zone'), item.get('destination_zone'))
         sessions_out.append(item)
 
     return jsonify({
@@ -4587,9 +4675,12 @@ def session_table_api():
         'host_ip': host.get('ip_address'),
         'log_host_display': f'{log_host.get("host_name") or "主机"} ({SESSION_LOG_HOST_IP})',
         'date': date_str,
+        'time_start': time_start_raw or '',
+        'time_end': time_end_raw or '',
         'remote_dir': remote_dir,
         'sessions': sessions_out,
         'parsed_count': len(rows_all),
+        'time_filtered_count': len(time_filtered),
         'filtered_count': total,
         'raw_line_count': raw_line_count,
         'truncated': truncated,
