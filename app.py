@@ -4695,6 +4695,7 @@ def session_table_api():
         return jsonify({'success': False, 'message': str(e)}), 400
 
     refresh = (request.args.get('refresh') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+    cache_only = (request.args.get('cache_only') or '').strip().lower() in ('1', 'true', 'yes', 'on')
     try:
         page = max(1, int(request.args.get('page') or '1'))
     except (TypeError, ValueError):
@@ -4729,6 +4730,13 @@ def session_table_api():
         bundle = _session_table_rows_cache_get(host_id, date_str, pull_filters)
 
     fetched_remote = bundle is None
+    if bundle is None and cache_only and not refresh:
+        return jsonify({
+            'success': False,
+            'message': '当前日期和拉取条件还没有已拉取的数据，请先点击「拉取并解析」。',
+            'cache_missing': True,
+        }), 409
+
     if bundle is None:
         try:
             text = _usg_collect_session_teardown_remote(host, date_str, pull_filters)

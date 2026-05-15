@@ -91,24 +91,6 @@
               </div>
             </div>
           </div>
-          <div class="border-t border-gray-100 pt-5">
-            <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">关键词筛选</p>
-            <div class="max-w-5xl">
-              <label for="filter-input" class="mb-1 flex items-center justify-between gap-2 text-sm text-gray-700">
-                <span>关键词 <span class="font-normal text-gray-500">（服务端）</span></span>
-                <span class="hidden text-xs text-gray-400 sm:inline">按 Enter 也可应用</span>
-              </label>
-              <div class="flex w-full items-stretch">
-                <input id="filter-input" type="search" enterkeyhint="search" class="h-10 min-w-0 flex-1 rounded-l-md border border-gray-300 px-3 text-sm focus:z-10 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary box-border" placeholder="IP、端口、宽带、姓名等；多词用空格，需同时命中" {% if not log_host %}disabled{% endif %} autocomplete="off">
-                <button id="search-btn" type="button" class="h-10 shrink-0 rounded-r-md border border-l-0 border-primary bg-primary px-4 text-sm font-medium text-white shadow-sm hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-60" {% if not log_host %}disabled{% endif %}>
-                  <span class="inline-flex items-center gap-1.5">
-                    <i class="fa fa-search text-xs" aria-hidden="true"></i>
-                    应用筛选
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
         <details class="mt-4 rounded-lg border border-gray-100 bg-slate-50/60 text-xs text-gray-600 open:bg-white open:shadow-sm">
           <summary class="cursor-pointer select-none px-3 py-2 font-medium text-gray-700 hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-lg">数据说明与检索规则</summary>
@@ -148,6 +130,17 @@
             <i class="fa fa-spinner fa-spin" aria-hidden="true"></i>
             <span>正在请求数据…</span>
           </span>
+        </div>
+
+        <div class="mb-3 border-b border-gray-100 pb-4">
+          <label for="filter-input" class="block text-sm text-gray-700 mb-1">搜索已拉取结果</label>
+          <div class="flex w-full items-stretch gap-2">
+            <input id="filter-input" type="search" enterkeyhint="search" class="min-w-0 flex-1 px-3.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white box-border" style="height: 44px;" placeholder="IP、端口、宽带、姓名等" {% if not log_host %}disabled{% endif %} autocomplete="off">
+            <button id="search-btn" type="button" class="min-w-[6rem] px-4 inline-flex items-center justify-center bg-primary text-white rounded-md hover:bg-primary/90 text-sm font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-60" style="height: 44px;" {% if not log_host %}disabled{% endif %}>
+              <i class="fa fa-search mr-1.5 text-xs" aria-hidden="true"></i>
+              搜索
+            </button>
+          </div>
         </div>
 
         <div class="mb-3 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
@@ -259,7 +252,7 @@
 {% block script %}
 <script>
 (function () {
-  const logHostOk = {{ 'true' if log_host else 'false' }};
+  const logHostOk = "{{ 'true' if log_host else 'false' }}" === "true";
   const logDate = document.getElementById('log-date');
   const timeStart = document.getElementById('time-start');
   const timeEnd = document.getElementById('time-end');
@@ -453,7 +446,7 @@
       { label: '采集时间', val: data.collected_at || '—', cls: 'px-2 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-100' },
       { label: '解析条数', val: String(data.parsed_count ?? 0), cls: 'px-2 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-100' },
       { label: '时间窗后', val: String(data.time_filtered_count ?? data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-100' },
-      { label: '关键词后', val: String(data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-cyan-50 text-cyan-800 border border-cyan-100' },
+      { label: '搜索后', val: String(data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-cyan-50 text-cyan-800 border border-cyan-100' },
       { label: '拉取条件', val: data.pull_filters_active ? (data.pull_filters_label || '已启用') : '无', cls: 'px-2 py-1 rounded-full bg-sky-50 text-sky-800 border border-sky-100' },
       { label: '原始匹配行', val: String(data.raw_line_count ?? 0), cls: 'px-2 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-100' },
       { label: '截断', val: data.truncated ? '是' : '否', cls: 'px-2 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100' },
@@ -542,6 +535,7 @@
     if (pport) params.set('pull_port', pport);
     if (pproto) params.set('pull_proto', pproto);
     if (refresh) params.set('refresh', '1');
+    else params.set('cache_only', '1');
     return '/api/session-table?' + params.toString();
   }
 
@@ -564,7 +558,7 @@
     if (clearTimeBtn) clearTimeBtn.disabled = true;
     document.querySelectorAll('.pull-filter').forEach(function (el) { el.disabled = true; });
     if (clearPullFilterBtn) clearPullFilterBtn.disabled = true;
-    statusBar.textContent = refresh ? '正在 SSH 拉取并解析，请稍候…' : '正在加载…';
+    statusBar.textContent = refresh ? '正在 SSH 拉取并解析，请稍候…' : '正在搜索已拉取数据…';
     try {
       const res = await fetch(buildQuery(refresh));
       const data = await res.json();
@@ -581,7 +575,7 @@
       const tfc = parseInt(data.time_filtered_count, 10);
       const tfcSafe = isNaN(tfc) ? state.filteredCount : tfc;
       resultCount.textContent =
-        '解析 ' + state.parsedCount + ' 条 → 时间窗后 ' + tfcSafe + ' 条 → 关键词后 ' + state.filteredCount + ' 条；本页 ' + rows.length + ' 条';
+        '解析 ' + state.parsedCount + ' 条 → 时间窗后 ' + tfcSafe + ' 条 → 搜索后 ' + state.filteredCount + ' 条；本页 ' + rows.length + ' 条';
       pageHint.classList.remove('hidden');
       pageHint.textContent =
         '第 ' + state.page + ' / ' + state.totalPages + ' 页（每页 ' + ps + ' 条） · ' + (data.log_host_display || '');
