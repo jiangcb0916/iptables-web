@@ -1385,16 +1385,84 @@ def _session_ts_human(ts_str):
         return ''
 
 
-def _usg_collect_session_teardown_remote(host, date_str):
+def _session_table_pull_filters_from_request():
+    """拉取前远端预过滤条件。仅做精确字段匹配，避免把普通关键词误用于远端 grep。"""
+    proto = (request.args.get('pull_proto') or '').strip().lower()
+    if proto not in ('tcp', 'udp'):
+        proto = ''
+    port = (request.args.get('pull_port') or '').strip()
+    if port and not re.fullmatch(r'\d{1,5}', port):
+        port = ''
+    elif port:
+        try:
+            p = int(port)
+            port = str(p) if 0 < p <= 65535 else ''
+        except Exception:
+            port = ''
+
+    def _ip_arg(name):
+        raw = (request.args.get(name) or '').strip()
+        if not raw:
+            return ''
+        try:
+            return str(ipaddress.ip_address(raw))
+        except Exception:
+            return ''
+
+    return {
+        'source_ip': _ip_arg('pull_sip'),
+        'destination_ip': _ip_arg('pull_dip'),
+        'port': port,
+        'protocol': proto,
+    }
+
+
+def _session_table_pull_filters_active(pull_filters):
+    return bool(pull_filters and any(str(v or '').strip() for v in pull_filters.values()))
+
+
+def _session_table_pull_filters_label(pull_filters):
+    if not _session_table_pull_filters_active(pull_filters):
+        return '无'
+    parts = []
+    if pull_filters.get('source_ip'):
+        parts.append(f'源 IP={pull_filters["source_ip"]}')
+    if pull_filters.get('destination_ip'):
+        parts.append(f'目的 IP={pull_filters["destination_ip"]}')
+    if pull_filters.get('port'):
+        parts.append(f'端口={pull_filters["port"]}')
+    if pull_filters.get('protocol'):
+        parts.append(f'协议={pull_filters["protocol"].upper()}')
+    return '，'.join(parts) if parts else '无'
+
+
+def _usg_collect_session_teardown_remote(host, date_str, pull_filters=None):
     """在目标主机上对日志目录执行 find + strings + grep，提取 SESSION_TEARDOWN 行。"""
     remote_dir = _session_log_build_remote_dir(date_str)
     rd = shlex.quote(remote_dir)
+    pipe_filters = []
+    if pull_filters:
+        sip = (pull_filters.get('source_ip') or '').strip()
+        if sip:
+            pipe_filters.append(r"grep -E " + shlex.quote(r"SourceIP=" + re.escape(sip) + r"([^0-9.]|$)"))
+        dip = (pull_filters.get('destination_ip') or '').strip()
+        if dip:
+            pipe_filters.append(r"grep -E " + shlex.quote(r"DestinationIP=" + re.escape(dip) + r"([^0-9.]|$)"))
+        port = (pull_filters.get('port') or '').strip()
+        if port:
+            pipe_filters.append(r"grep -E " + shlex.quote(r"(SourcePort=" + re.escape(port) + r"|DestinationPort=" + re.escape(port) + r")([^0-9]|$)"))
+        proto = (pull_filters.get('protocol') or '').strip().lower()
+        if proto in ('tcp', 'udp'):
+            pipe_filters.append(r"grep -Ei " + shlex.quote(r"Protocol=" + re.escape(proto) + r"([^[:alnum:]]|$)"))
+
+    filter_pipe = ''.join(' | ' + f for f in pipe_filters)
     inner_body = (
         f'find {rd} -type f 2>/dev/null | head -n {SESSION_LOG_FIND_MAX_FILES} | '
         'while IFS= read -r f; do '
         '[ -f "$f" ] || continue; '
         'strings -n 5 "$f" 2>/dev/null || true; '
-        'done | grep -F SESSION_TEARDOWN | '
+        'done | grep -F SESSION_TEARDOWN'
+        f'{filter_pipe} | '
         f'tail -n {SESSION_LOG_TAIL_LINES}'
     )
     script = (
@@ -1418,12 +1486,16 @@ def _resolve_session_log_host(cursor=None):
     return None
 
 
-def _session_table_cache_key(host_id, date_str):
-    return f'{int(host_id)}:{date_str}'
+def _session_table_cache_key(host_id, date_str, pull_filters=None):
+    suffix = ''
+    if _session_table_pull_filters_active(pull_filters):
+        raw = json.dumps(pull_filters or {}, sort_keys=True, ensure_ascii=False)
+        suffix = ':' + hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
+    return f'{int(host_id)}:{date_str}{suffix}'
 
 
-def _session_table_rows_cache_get(host_id, date_str):
-    key = _session_table_cache_key(host_id, date_str)
+def _session_table_rows_cache_get(host_id, date_str, pull_filters=None):
+    key = _session_table_cache_key(host_id, date_str, pull_filters)
     now = time.time()
     with _SESSION_TABLE_CACHE_LOCK:
         ent = _SESSION_TABLE_ROWS_CACHE.get(key)
@@ -1442,8 +1514,8 @@ def _session_table_rows_cache_get(host_id, date_str):
         }
 
 
-def _session_table_rows_cache_set(host_id, date_str, rows, raw_line_count, truncated):
-    key = _session_table_cache_key(host_id, date_str)
+def _session_table_rows_cache_set(host_id, date_str, rows, raw_line_count, truncated, pull_filters=None):
+    key = _session_table_cache_key(host_id, date_str, pull_filters)
     with _SESSION_TABLE_CACHE_LOCK:
         if len(_SESSION_TABLE_ROWS_CACHE) > 16:
             oldest_k = min(_SESSION_TABLE_ROWS_CACHE.items(), key=lambda kv: float(kv[1].get('ts') or 0))[0]
@@ -4636,6 +4708,8 @@ def session_table_api():
     keyword = (request.args.get('keyword') or '').strip()
     time_start_raw = (request.args.get('time_start') or '').strip()
     time_end_raw = (request.args.get('time_end') or '').strip()
+    pull_filters = _session_table_pull_filters_from_request()
+    pull_filters_active = _session_table_pull_filters_active(pull_filters)
 
     remote_dir = _session_log_build_remote_dir(date_str)
     notices = [
@@ -4648,20 +4722,23 @@ def session_table_api():
 
     ts_lo, ts_hi = _session_table_day_time_window_epoch(date_str, time_start_raw, time_end_raw)
     bundle = None
+    if pull_filters_active:
+        notices.append('本次启用拉取前过滤：' + _session_table_pull_filters_label(pull_filters))
+
     if not refresh:
-        bundle = _session_table_rows_cache_get(host_id, date_str)
+        bundle = _session_table_rows_cache_get(host_id, date_str, pull_filters)
 
     fetched_remote = bundle is None
     if bundle is None:
         try:
-            text = _usg_collect_session_teardown_remote(host, date_str)
+            text = _usg_collect_session_teardown_remote(host, date_str, pull_filters)
         except RuntimeError as e:
             return jsonify({'success': False, 'message': str(e)}), 500
 
         stripped = (text or '').strip()
         if stripped == '__NO_SESSION_DIR__':
             notices.append(f'目录不存在或不可读：{remote_dir}')
-            _session_table_rows_cache_set(host_id, date_str, [], 0, False)
+            _session_table_rows_cache_set(host_id, date_str, [], 0, False, pull_filters)
             bundle = {'rows': [], 'raw_line_count': 0, 'truncated': False}
         else:
             lines = []
@@ -4708,7 +4785,7 @@ def session_table_api():
             max_return = min(150000, max(500, SESSION_LOG_TAIL_LINES))
             truncated = len(rows_all) > max_return
             rows_all = rows_all[:max_return]
-            _session_table_rows_cache_set(host_id, date_str, rows_all, len(lines), truncated)
+            _session_table_rows_cache_set(host_id, date_str, rows_all, len(lines), truncated, pull_filters)
             bundle = {
                 'rows': rows_all,
                 'raw_line_count': len(lines),
@@ -4759,6 +4836,9 @@ def session_table_api():
         'date': date_str,
         'time_start': time_start_raw or '',
         'time_end': time_end_raw or '',
+        'pull_filters': pull_filters,
+        'pull_filters_active': pull_filters_active,
+        'pull_filters_label': _session_table_pull_filters_label(pull_filters),
         'remote_dir': remote_dir,
         'sessions': sessions_out,
         'parsed_count': len(rows_all),

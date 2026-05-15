@@ -59,6 +59,37 @@
                 <button id="clear-time-btn" type="button" class="px-2 py-2 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50" {% if not log_host %}disabled{% endif %} title="清空起止时刻，按全天">清空时段</button>
               </div>
             </div>
+            <div class="mt-4 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+              <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p class="m-0 text-xs font-semibold text-blue-900">拉取前过滤 <span class="font-normal text-blue-700">（可选，减少远端返回量）</span></p>
+                <button id="clear-pull-filter-btn" type="button" class="text-xs text-blue-700 hover:text-blue-900 hover:underline" {% if not log_host %}disabled{% endif %}>清空拉取条件</button>
+              </div>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div>
+                  <label for="pull-sip" class="mb-1 block text-xs text-gray-600">源 IP</label>
+                  <input id="pull-sip" type="text" inputmode="numeric" class="pull-filter w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" placeholder="如 172.16.63.20" {% if not log_host %}disabled{% endif %} autocomplete="off">
+                </div>
+                <div>
+                  <label for="pull-dip" class="mb-1 block text-xs text-gray-600">目的 IP</label>
+                  <input id="pull-dip" type="text" inputmode="numeric" class="pull-filter w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" placeholder="如 8.8.8.8" {% if not log_host %}disabled{% endif %} autocomplete="off">
+                </div>
+                <div>
+                  <label for="pull-port" class="mb-1 block text-xs text-gray-600">端口（源/目的）</label>
+                  <input id="pull-port" type="number" min="1" max="65535" class="pull-filter w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" placeholder="如 443" {% if not log_host %}disabled{% endif %} autocomplete="off">
+                </div>
+                <div>
+                  <label for="pull-proto" class="mb-1 block text-xs text-gray-600">协议</label>
+                  <select id="pull-proto" class="pull-filter w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" {% if not log_host %}disabled{% endif %}>
+                    <option value="">全部</option>
+                    <option value="tcp">TCP</option>
+                    <option value="udp">UDP</option>
+                  </select>
+                </div>
+                <div class="flex items-end">
+                  <p class="m-0 text-xs leading-relaxed text-blue-800">条件会参与缓存；改条件后重新拉取对应结果。</p>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="border-t border-gray-100 pt-5">
             <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">关键词筛选</p>
@@ -233,6 +264,11 @@
   const timeStart = document.getElementById('time-start');
   const timeEnd = document.getElementById('time-end');
   const clearTimeBtn = document.getElementById('clear-time-btn');
+  const clearPullFilterBtn = document.getElementById('clear-pull-filter-btn');
+  const pullSip = document.getElementById('pull-sip');
+  const pullDip = document.getElementById('pull-dip');
+  const pullPort = document.getElementById('pull-port');
+  const pullProto = document.getElementById('pull-proto');
   const refreshBtn = document.getElementById('refresh-btn');
   const searchBtn = document.getElementById('search-btn');
   const statusBar = document.getElementById('status-bar');
@@ -418,6 +454,7 @@
       { label: '解析条数', val: String(data.parsed_count ?? 0), cls: 'px-2 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-100' },
       { label: '时间窗后', val: String(data.time_filtered_count ?? data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-100' },
       { label: '关键词后', val: String(data.filtered_count ?? 0), cls: 'px-2 py-1 rounded-full bg-cyan-50 text-cyan-800 border border-cyan-100' },
+      { label: '拉取条件', val: data.pull_filters_active ? (data.pull_filters_label || '已启用') : '无', cls: 'px-2 py-1 rounded-full bg-sky-50 text-sky-800 border border-sky-100' },
       { label: '原始匹配行', val: String(data.raw_line_count ?? 0), cls: 'px-2 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-100' },
       { label: '截断', val: data.truncated ? '是' : '否', cls: 'px-2 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100' },
       { label: '数据源', val: data.fetched_remote ? '已重新拉取' : '缓存', cls: 'px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200' }
@@ -496,6 +533,14 @@
     const te = (timeEnd && timeEnd.value) ? String(timeEnd.value).trim() : '';
     if (ts) params.set('time_start', ts);
     if (te) params.set('time_end', te);
+    const psip = pullSip ? String(pullSip.value || '').trim() : '';
+    const pdip = pullDip ? String(pullDip.value || '').trim() : '';
+    const pport = pullPort ? String(pullPort.value || '').trim() : '';
+    const pproto = pullProto ? String(pullProto.value || '').trim() : '';
+    if (psip) params.set('pull_sip', psip);
+    if (pdip) params.set('pull_dip', pdip);
+    if (pport) params.set('pull_port', pport);
+    if (pproto) params.set('pull_proto', pproto);
     if (refresh) params.set('refresh', '1');
     return '/api/session-table?' + params.toString();
   }
@@ -517,6 +562,8 @@
     if (timeStart) timeStart.disabled = true;
     if (timeEnd) timeEnd.disabled = true;
     if (clearTimeBtn) clearTimeBtn.disabled = true;
+    document.querySelectorAll('.pull-filter').forEach(function (el) { el.disabled = true; });
+    if (clearPullFilterBtn) clearPullFilterBtn.disabled = true;
     statusBar.textContent = refresh ? '正在 SSH 拉取并解析，请稍候…' : '正在加载…';
     try {
       const res = await fetch(buildQuery(refresh));
@@ -582,6 +629,8 @@
       if (timeStart) timeStart.disabled = false;
       if (timeEnd) timeEnd.disabled = false;
       if (clearTimeBtn) clearTimeBtn.disabled = false;
+      document.querySelectorAll('.pull-filter').forEach(function (el) { el.disabled = false; });
+      if (clearPullFilterBtn) clearPullFilterBtn.disabled = false;
     }
   }
 
@@ -693,6 +742,17 @@
       if (timeEnd) timeEnd.value = '';
       state.page = 1;
       loadData(false);
+    });
+  }
+
+  if (clearPullFilterBtn) {
+    clearPullFilterBtn.addEventListener('click', function () {
+      if (pullSip) pullSip.value = '';
+      if (pullDip) pullDip.value = '';
+      if (pullPort) pullPort.value = '';
+      if (pullProto) pullProto.value = '';
+      state.page = 1;
+      loadData(true);
     });
   }
 
